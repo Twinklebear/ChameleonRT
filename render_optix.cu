@@ -1,11 +1,35 @@
 #include <optix.h>
 #include <optix_math.h>
 
+// Global camera parameters
+rtDeclareVariable(float3, cam_pos, , );
+rtDeclareVariable(float3, cam_du, , );
+rtDeclareVariable(float3, cam_dv, , );
+rtDeclareVariable(float3, cam_dir_top_left, , );
+
+rtDeclareVariable(rtObject, model, , );
+
 rtDeclareVariable(uint2, pixel, rtLaunchIndex, );
 
 rtBuffer<uchar4, 2> framebuffer;
 
+// Per-ray data
+rtDeclareVariable(float3, prd_color, rtPayload, );
+
 RT_PROGRAM void perspective_camera() {
-	framebuffer[pixel] = make_uchar4(255, 0, 0, 255);
+	optix::size_t2 screen = framebuffer.size();
+	const float2 d = make_float2(pixel) / make_float2(screen);
+	const float3 ray_dir = normalize(d.x * cam_du + d.y * cam_dv + cam_dir_top_left);
+
+	optix::Ray ray(cam_pos, ray_dir, 0, 0.0001);
+
+	float3 color = make_float3(0);
+	rtTrace(model, ray, color);
+	framebuffer[pixel] = make_uchar4(color.x * 255.f, color.y * 255.f,
+			color.z * 255.f, 255);
+}
+
+RT_PROGRAM void closest_hit() {
+	prd_color = make_float3(0.f, 0.f, 1.f);
 }
 

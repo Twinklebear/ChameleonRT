@@ -8,6 +8,7 @@ struct RenderOptiX : RenderBackend {
 	optix::Context context;
 	optix::Buffer fb;
 	int width, height;
+	float fovy;
 
 	RenderOptiX();
 
