@@ -42,6 +42,8 @@ public:
 	/*
 	 * Get the camera transformation matrix
 	 */
+	// Update the window dimensions
+	void update_screen(const std::array<int, 2> &screen);
 	const glm::mat4& transform() const;
 	/*
 	 * Get the camera inverse transformation matrix

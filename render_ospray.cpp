@@ -1,7 +1,7 @@
 #include <iostream>
 #include "render_ospray.h"
 
-RenderOSPRay::RenderOSPRay() {
+RenderOSPRay::RenderOSPRay() : fb(nullptr) {
 	const char *argv[] = {"render_ospray_backend"};
 	int argc = 1;
 	if (ospInit(&argc, argv) != OSP_NO_ERROR) {
@@ -18,6 +18,10 @@ RenderOSPRay::RenderOSPRay() {
 
 void RenderOSPRay::initialize(const int fb_width, const int fb_height) {
 	ospSet1f(camera, "aspect", static_cast<float>(fb_width) / fb_height);
+
+	if (fb) {
+		ospRelease(fb);
+	}
 
 	fb = ospNewFrameBuffer(osp::vec2i{fb_width, fb_height},
 			OSP_FB_SRGBA, OSP_FB_COLOR);

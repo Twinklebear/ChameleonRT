@@ -39,6 +39,10 @@ bool ArcballCamera::mouse(const SDL_Event &mouse, float elapsed){
 	}
 	return false;
 }
+void ArcballCamera::update_screen(const std::array<int, 2> &screen) {
+	inv_screen[0] = 1.f / screen[0];
+	inv_screen[1] = 1.f / screen[1];
+}
 const glm::mat4& ArcballCamera::transform() const {
 	return camera;
 }

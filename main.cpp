@@ -41,6 +41,9 @@ void main(void){
 	color = texelFetch(img, uv, 0);
 })";
 
+int win_width = 1280;
+int win_height = 720;
+
 void run_app(int argc, const char **argv, SDL_Window *window);
 
 int main(int argc, const char **argv) {
@@ -67,7 +70,7 @@ int main(int argc, const char **argv) {
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
     SDL_Window* window = SDL_CreateWindow("rtobj",
-			SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720,
+			SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_width, win_height,
 			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
@@ -105,7 +108,7 @@ int main(int argc, const char **argv) {
 void run_app(int argc, const char **argv, SDL_Window *window) {
     ImGuiIO& io = ImGui::GetIO();
 
-	ArcballCamera camera(glm::vec3(0.f), 100.f, {1280, 720});
+	ArcballCamera camera(glm::vec3(0.f), 100.f, {win_width, win_height});
 
 	// Load the model w/ tinyobjloader. We just take any OBJ groups etc. stuff
 	// that may be in the file and dump them all into a single OBJ model.
@@ -145,7 +148,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	} else {
 		throw std::runtime_error("Invalid renderer name");
 	}
-	renderer->initialize(1280, 720);
+	renderer->initialize(win_width, win_height);
 	renderer->set_mesh(attrib.vertices, indices);
 
 	Shader display_render(fullscreen_quad_vs, display_texture_fs);
@@ -154,7 +157,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	glGenTextures(1, &render_texture);
 	// Setup the render textures for color and normals
 	glBindTexture(GL_TEXTURE_2D, render_texture);
-	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 1280, 720);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, win_width, win_height);
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -197,6 +200,26 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 			if (!io.WantCaptureMouse && (event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEWHEEL)) {
 				camera.mouse(event, 0.016f);
 			}
+			if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED) {
+				win_width = event.window.data1;
+				win_height = event.window.data2;
+				io.DisplaySize.x = win_width;
+				io.DisplaySize.y = win_height;
+				renderer->initialize(win_width, win_height);
+				camera.update_screen({win_width, win_height});
+
+				glDeleteTextures(1, &render_texture);
+				glGenTextures(1, &render_texture);
+				// Setup the render textures for color and normals
+				glBindTexture(GL_TEXTURE_2D, render_texture);
+				glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, win_width, win_height);
+
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+			}
         }
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -214,7 +237,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 
 		renderer->render(camera.eye_pos(), camera.eye_dir(), camera.up_dir(), 65.f);
 
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1280, 720, GL_RGBA,
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, win_width, win_height, GL_RGBA,
 				GL_UNSIGNED_BYTE, renderer->img.data());
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
