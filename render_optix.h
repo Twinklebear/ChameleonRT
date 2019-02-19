@@ -1,8 +1,13 @@
 #pragma once
 
+#include <optixu/optixpp_namespace.h>
+#include <optixu/optixu_math_stream_namespace.h>
 #include "render_backend.h"
 
 struct RenderOptiX : RenderBackend {
+	optix::Context context;
+	optix::Buffer fb;
+	int width, height;
 
 	RenderOptiX();
 

@@ -12,6 +12,7 @@
 #include "arcball_camera.h"
 #include "shader.h"
 #include "render_ospray.h"
+#include "render_optix.h"
 
 const std::string fullscreen_quad_vs = R"(
 #version 450 core
@@ -43,8 +44,8 @@ void main(void){
 void run_app(int argc, const char **argv, SDL_Window *window);
 
 int main(int argc, const char **argv) {
-	if (argc < 2) {
-		std::cout << "Usage: " << argv[0] << " <obj file>\n";
+	if (argc < 3) {
+		std::cout << "Usage: " << argv[0] << " (-ospray|-optix) <obj_file>\n";
 		return 1;
 	}
 
@@ -112,7 +113,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> materials;
 	std::string err, warn;
-	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, argv[1]);
+	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, argv[2]);
 	if (!warn.empty()) {
 		std::cout << "Warning loading model: " << warn << "\n";
 	}
@@ -121,7 +122,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		std::exit(1);
 	}
 	if (!ret) {
-		std::cerr << "Failed to load OBJ model '" << argv[1] << "', aborting\n";
+		std::cerr << "Failed to load OBJ model '" << argv[2] << "', aborting\n";
 		std::exit(1);
 	}
 
@@ -136,7 +137,14 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		}
 	}
 
-	auto renderer = std::make_unique<RenderOSPRay>();
+	std::unique_ptr<RenderBackend> renderer = nullptr;
+	if (std::strcmp(argv[1], "-ospray") == 0) {
+		renderer = std::make_unique<RenderOSPRay>();
+	} else if (std::strcmp(argv[1], "-optix") == 0) {
+		renderer = std::make_unique<RenderOptiX>();
+	} else {
+		throw std::runtime_error("Invalid renderer name");
+	}
 	renderer->initialize(65.f, 1280, 720);
 	renderer->set_mesh(attrib.vertices, indices);
 
