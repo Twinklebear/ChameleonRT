@@ -13,6 +13,9 @@ rtDeclareVariable(uint2, pixel, rtLaunchIndex, );
 
 rtBuffer<uchar4, 2> framebuffer;
 
+rtBuffer<int3, 1> index_buffer;
+rtBuffer<float3, 1> vertex_buffer;
+
 // Per-ray data
 rtDeclareVariable(float3, prd_color, rtPayload, );
 
@@ -30,6 +33,11 @@ RT_PROGRAM void perspective_camera() {
 }
 
 RT_PROGRAM void closest_hit() {
-	prd_color = make_float3(0.f, 0.f, 1.f);
+	const int3 indices = index_buffer[rtGetPrimitiveIndex()];
+	const float3 v0 = vertex_buffer[indices.x];
+	const float3 v1 = vertex_buffer[indices.y];
+	const float3 v2 = vertex_buffer[indices.z];
+	const float3 normal = normalize(cross(v1 - v0, v2 - v0));
+	prd_color = (normal + make_float3(1.f)) * 0.5f;
 }
 

@@ -42,10 +42,6 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 	geom_tri->setTriangleIndices(index_buffer, RT_FORMAT_UNSIGNED_INT3);
 	geom_tri->setVertices(num_verts, vertex_buffer, RT_FORMAT_FLOAT3);
 
-	// TODO: Is this necessary?
-	geom_tri["index_buffer"]->setBuffer(index_buffer);
-	geom_tri["vertex_buffer"]->setBuffer(vertex_buffer);
-
 	auto mat = context->createMaterial();
 	mat->setClosestHitProgram(0,
 			context->createProgramFromPTXString(render_optix_programs, "closest_hit"));
@@ -57,6 +53,9 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 	model->setAcceleration(context->createAcceleration("Trbvh"));
 
 	context["model"]->set(model);
+	// We use these in the hit program to color by normal
+	context["index_buffer"]->set(index_buffer);
+	context["vertex_buffer"]->set(vertex_buffer);
 }
 void RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up)
