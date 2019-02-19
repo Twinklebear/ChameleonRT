@@ -12,12 +12,9 @@ RenderOptiX::RenderOptiX() {
 	context->setRayGenerationProgram(0, prog);
 }
 
-void RenderOptiX::initialize(const float cam_fovy,
-		const int fb_width, const int fb_height)
-{
+void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 	width = fb_width;
 	height = fb_height;
-	fovy = cam_fovy;
 
 	fb = context->createBuffer(RT_BUFFER_OUTPUT, RT_FORMAT_UNSIGNED_BYTE4,
 			fb_width, fb_height);
@@ -25,7 +22,7 @@ void RenderOptiX::initialize(const float cam_fovy,
 	img.resize(fb_width * fb_height);
 }
 void RenderOptiX::set_mesh(const std::vector<float> &verts,
-		const std::vector<int32_t> &indices)
+		const std::vector<uint32_t> &indices)
 {
 	const size_t num_verts = verts.size() / 3;
 	const size_t num_tris = indices.size() / 3;
@@ -34,7 +31,7 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 	vertex_buffer->unmap();
 
 	auto index_buffer = context->createBuffer(RT_BUFFER_INPUT, RT_FORMAT_UNSIGNED_INT3, num_tris);
-	std::copy(indices.begin(), indices.end(), (int32_t*)index_buffer->map());
+	std::copy(indices.begin(), indices.end(), (uint32_t*)index_buffer->map());
 	index_buffer->unmap();
 
 	auto geom_tri = context->createGeometryTriangles();
@@ -58,7 +55,7 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 	context["vertex_buffer"]->set(vertex_buffer);
 }
 void RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
-		const glm::vec3 &up)
+		const glm::vec3 &up, const float fovy)
 {
 	glm::vec2 img_plane_size;
 	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));

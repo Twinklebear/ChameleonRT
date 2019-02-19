@@ -126,7 +126,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		std::exit(1);
 	}
 
-	std::vector<int32_t> indices;
+	std::vector<uint32_t> indices;
 	for (size_t s = 0; s < shapes.size(); ++s) {
 		const tinyobj::mesh_t &mesh = shapes[s].mesh;
 		std::cout << "Loading shape " << shapes[s].name
@@ -145,7 +145,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	} else {
 		throw std::runtime_error("Invalid renderer name");
 	}
-	renderer->initialize(65.f, 1280, 720);
+	renderer->initialize(1280, 720);
 	renderer->set_mesh(attrib.vertices, indices);
 
 	Shader display_render(fullscreen_quad_vs, display_texture_fs);
@@ -212,7 +212,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
         ImGui::Render();
         glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
 
-		renderer->render(camera.eye_pos(), camera.eye_dir(), camera.up_dir());
+		renderer->render(camera.eye_pos(), camera.eye_dir(), camera.up_dir(), 65.f);
 
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1280, 720, GL_RGBA,
 				GL_UNSIGNED_BYTE, renderer->img.data());

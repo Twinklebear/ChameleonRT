@@ -16,10 +16,7 @@ RenderOSPRay::RenderOSPRay() {
 	ospSetObject(renderer, "camera", camera);
 }
 
-void RenderOSPRay::initialize(const float fovy,
-		const int fb_width, const int fb_height)
-{
-	ospSet1f(camera, "fovy", fovy);
+void RenderOSPRay::initialize(const int fb_width, const int fb_height) {
 	ospSet1f(camera, "aspect", static_cast<float>(fb_width) / fb_height);
 
 	fb = ospNewFrameBuffer(osp::vec2i{fb_width, fb_height},
@@ -27,7 +24,7 @@ void RenderOSPRay::initialize(const float fovy,
 	img.resize(fb_width * fb_height);
 }
 void RenderOSPRay::set_mesh(const std::vector<float> &verts,
-		const std::vector<int32_t> &indices)
+		const std::vector<uint32_t> &indices)
 {
 	OSPData verts_data = ospNewData(verts.size() / 3, OSP_FLOAT3, verts.data());
 	ospCommit(verts_data);
@@ -43,11 +40,12 @@ void RenderOSPRay::set_mesh(const std::vector<float> &verts,
 	ospCommit(world);
 }
 void RenderOSPRay::render(const glm::vec3 &pos, const glm::vec3 &dir,
-		const glm::vec3 &up)
+		const glm::vec3 &up, const float fovy)
 {
 	ospSet3fv(camera, "pos", &pos.x);
 	ospSet3fv(camera, "dir", &dir.x);
 	ospSet3fv(camera, "up", &up.x);
+	ospSet1f(camera, "fovy", fovy);
 	ospCommit(camera);
 	ospCommit(renderer);
 
