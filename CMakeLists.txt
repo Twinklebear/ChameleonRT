@@ -20,6 +20,7 @@ find_package(ospray REQUIRED)
 add_subdirectory(imgui)
 
 add_executable(rtobj main.cpp
+	render_ospray.cpp
 	arcball_camera.cpp
 	imgui_impl_sdl.cpp
 	imgui_impl_opengl3.cpp

@@ -1,8 +1,8 @@
 #include <iostream>
+#include <memory>
 #include <vector>
 #include <array>
 #include <SDL.h>
-#include <ospray/ospray.h>
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 #include "gl_core_4_5.h"
@@ -11,6 +11,7 @@
 #include "imgui_impl_opengl3.h"
 #include "arcball_camera.h"
 #include "shader.h"
+#include "render_ospray.h"
 
 const std::string fullscreen_quad_vs = R"(
 #version 450 core
@@ -124,7 +125,6 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		std::exit(1);
 	}
 
-	const std::vector<float> &vertices = attrib.vertices;
 	std::vector<int32_t> indices;
 	for (size_t s = 0; s < shapes.size(); ++s) {
 		const tinyobj::mesh_t &mesh = shapes[s].mesh;
@@ -136,43 +136,9 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		}
 	}
 
-	if (ospInit(&argc, argv) != OSP_NO_ERROR) {
-		std::cout << "Failed to init OSPRay\n";
-		throw std::runtime_error("Failed to init OSPRay");
-	}
-
-	OSPData verts_data = ospNewData(vertices.size() / 3, OSP_FLOAT3, vertices.data());
-	ospCommit(verts_data);
-	OSPData indices_data = ospNewData(indices.size() / 3, OSP_INT3, indices.data());
-	ospCommit(indices_data);
-
-	OSPGeometry geom = ospNewGeometry("triangles");
-	ospSetObject(geom, "vertex", verts_data);
-	ospSetObject(geom, "index", indices_data);
-	ospCommit(geom);
-
-	OSPModel world = ospNewModel();
-	ospAddGeometry(world, geom);
-	ospCommit(world);
-
-	glm::vec3 cam_pos = camera.eye_pos();
-	glm::vec3 cam_dir = camera.eye_dir();
-	glm::vec3 cam_up = camera.up_dir();
-
-	OSPCamera osp_camera = ospNewCamera("perspective");
-	ospSet1f(osp_camera, "fovy", 65.f);
-	ospSet1f(osp_camera, "aspect", 1280.f / 720.f);
-	ospSet3fv(osp_camera, "pos", &cam_pos.x);
-	ospSet3fv(osp_camera, "dir", &cam_dir.x);
-	ospSet3fv(osp_camera, "up", &cam_up.x);
-	ospCommit(osp_camera);
-
-	OSPRenderer renderer = ospNewRenderer("raycast_Ns");
-	ospSetObject(renderer, "model", world);
-	ospSetObject(renderer, "camera", osp_camera);
-	ospCommit(renderer);
-
-	OSPFrameBuffer osp_fb = ospNewFrameBuffer(osp::vec2i{1280, 720}, OSP_FB_SRGBA, OSP_FB_COLOR);
+	auto renderer = std::make_unique<RenderOSPRay>();
+	renderer->initialize(65.f, 1280, 720);
+	renderer->set_mesh(attrib.vertices, indices);
 
 	Shader display_render(fullscreen_quad_vs, display_texture_fs);
 
@@ -238,25 +204,10 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
         ImGui::Render();
         glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
 
-		cam_pos = camera.eye_pos();
-		cam_dir = camera.eye_dir();
-		cam_up = camera.up_dir();
+		renderer->render(camera.eye_pos(), camera.eye_dir(), camera.up_dir());
 
-		ospSet3fv(osp_camera, "pos", &cam_pos.x);
-		ospSet3fv(osp_camera, "dir", &cam_dir.x);
-		ospSet3fv(osp_camera, "up", &cam_up.x);
-		ospCommit(osp_camera);
-
-		ospSetObject(renderer, "camera", osp_camera);
-		ospCommit(renderer);
-
-		ospFrameBufferClear(osp_fb, OSP_FB_COLOR);
-		ospRenderFrame(osp_fb, renderer, OSP_FB_COLOR);
-
-		const uint32_t *fb = static_cast<const uint32_t*>(ospMapFrameBuffer(osp_fb, OSP_FB_COLOR));
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1280, 720, GL_RGBA,
-				GL_UNSIGNED_BYTE, fb);
-		ospUnmapFrameBuffer(fb, osp_fb);
+				GL_UNSIGNED_BYTE, renderer->img.data());
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glUseProgram(display_render.program);
