@@ -12,7 +12,7 @@ ArcballCamera::ArcballCamera(const glm::vec3 &center, float motion_speed, const 
 	: motion_speed(motion_speed), inv_screen({1.f / screen[0], 1.f / screen[1]})
 {
 	center_translation = glm::inverse(glm::translate(center));
-	translation = glm::translate(glm::vec3(0.f, 0.f, -10.f));
+	translation = glm::translate(glm::vec3(0.f, 0.f, -1.f));
 	rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
 
 	update_camera();
