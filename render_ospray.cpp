@@ -11,7 +11,7 @@ RenderOSPRay::RenderOSPRay() {
 
 	world = ospNewModel();
 	camera = ospNewCamera("perspective");
-	renderer = ospNewRenderer("raycast_Ns");
+	renderer = ospNewRenderer("raycast_Ng");
 	ospSetObject(renderer, "model", world);
 	ospSetObject(renderer, "camera", camera);
 }
