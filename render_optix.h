@@ -1,15 +1,10 @@
 #pragma once
 
-#include <ospray/ospray.h>
 #include "render_backend.h"
 
-struct RenderOSPRay : RenderBackend {
-	OSPModel world;
-	OSPCamera camera;
-	OSPRenderer renderer;
-	OSPFrameBuffer fb;
+struct RenderOptiX : RenderBackend {
 
-	RenderOSPRay();
+	RenderOptiX();
 
 	void initialize(const float fovy,
 			const int fb_width, const int fb_height) override;

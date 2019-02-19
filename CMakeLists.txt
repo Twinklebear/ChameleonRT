@@ -16,11 +16,24 @@ find_package(glm REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(ospray REQUIRED)
+find_package(CUDA REQUIRED VERSION 10)
+find_package(OptiX REQUIRED VERSION 6)
+include(cmake/Bin2C.cmake)
 
 add_subdirectory(imgui)
 
+include_directories(${OptiX_INCLUDE})
+cuda_compile_ptx(ptx_file render_optix.cu)
+set(optix_embed_output ${CMAKE_CURRENT_BINARY_DIR}/render_optix_embedded_ptx.c)
+add_custom_command(OUTPUT ${optix_embed_output}
+	COMMAND ${bin2c} -c --padd 0 --type char --name "render_optix_programs" ${ptx_file} > ${optix_embed_output}
+	DEPENDS ${ptx_file}
+	COMMENT "Compiling and embedding PTX code")
+
 add_executable(rtobj main.cpp
 	render_ospray.cpp
+	render_optix.cpp
+	${optix_embed_output}
 	arcball_camera.cpp
 	imgui_impl_sdl.cpp
 	imgui_impl_opengl3.cpp
@@ -37,5 +50,9 @@ target_include_directories(rtobj PUBLIC
 	$<BUILD_INTERFACE:${OPENGL_INCLUDE_DIR}>)
 
 target_link_libraries(rtobj PUBLIC
-	imgui ${OSPRAY_LIBRARIES} ${SDL2_LIBRARY} ${OPENGL_LIBRARIES})
+	imgui
+	optix
+	${OSPRAY_LIBRARIES}
+	${SDL2_LIBRARY}
+	${OPENGL_LIBRARIES})
 
