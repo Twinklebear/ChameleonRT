@@ -19,6 +19,13 @@ rtBuffer<float3, 1> vertex_buffer;
 // Per-ray data
 rtDeclareVariable(float3, prd_color, rtPayload, );
 
+__device__ float linear_to_srgb(float x) {
+	if (x <= 0.0031308f) {
+		return 12.92f * x;
+	}
+	return 1.055f * pow(x, 1.f/2.4f) - 0.055f;
+}
+
 RT_PROGRAM void perspective_camera() {
 	optix::size_t2 screen = framebuffer.size();
 	const float2 d = make_float2(pixel) / make_float2(screen);
@@ -28,8 +35,9 @@ RT_PROGRAM void perspective_camera() {
 
 	float3 color = make_float3(0);
 	rtTrace(model, ray, color);
-	framebuffer[pixel] = make_uchar4(color.x * 255.f, color.y * 255.f,
-			color.z * 255.f, 255);
+	framebuffer[pixel] = make_uchar4(linear_to_srgb(color.x) * 255.f,
+			linear_to_srgb(color.y) * 255.f,
+			linear_to_srgb(color.z) * 255.f, 255);
 }
 
 RT_PROGRAM void closest_hit() {
