@@ -6,8 +6,6 @@ if (NOT WIN32)
 endif()
 
 add_definitions(-DNOMINMAX -DGLM_ENABLE_EXPERIMENTAL -DSDL_MAIN_HANDLED)
-# TODO: Make optional
-add_definitions(-DENABLE_OSPRAY -DENABLE_OPTIX -DENABLE_EMBREE)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
@@ -15,27 +13,48 @@ find_package(Threads REQUIRED)
 find_package(glm REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
-find_package(ospray REQUIRED)
-find_package(embree 3 REQUIRED)
-find_package(CUDA 10 REQUIRED)
-find_package(OptiX 6 REQUIRED)
-include(cmake/Bin2C.cmake)
+
+set(RENDER_BACKEND_SRCS "") 
+
+if (${ENABLE_OSPRAY})
+	find_package(ospray REQUIRED)
+	add_definitions(-DENABLE_OSPRAY)
+	list(APPEND RENDER_BACKEND_SRCS render_ospray.cpp)
+endif()
+
+if (${ENABLE_EMBREE})
+	find_package(embree 3 REQUIRED)
+	find_package(TBB REQUIRED)
+	add_definitions(-DENABLE_EMBREE)
+	list(APPEND RENDER_BACKEND_SRCS render_embree.cpp)
+endif()
+
+if (${ENABLE_OPTIX})
+	find_package(CUDA 10 REQUIRED)
+	find_package(OptiX 6 REQUIRED)
+	include(cmake/Bin2C.cmake)
+	add_definitions(-DENABLE_OPTIX)
+
+	include_directories(${OptiX_INCLUDE})
+	cuda_compile_ptx(ptx_file render_optix.cu)
+	set(optix_embed_output ${CMAKE_CURRENT_BINARY_DIR}/render_optix_embedded_ptx.c)
+	add_custom_command(OUTPUT ${optix_embed_output}
+		COMMAND ${bin2c} -c --padd 0 --type char --name "render_optix_programs" ${ptx_file} > ${optix_embed_output}
+		DEPENDS ${ptx_file}
+		COMMENT "Compiling and embedding PTX code")
+
+	list(APPEND RENDER_BACKEND_SRCS render_optix.cpp ${optix_embed_output})
+endif()
+
+if (RENDER_BACKEND_SRCS STREQUAL "")
+	message(FATAL_ERROR "At least one rendering backend (OSPRAY, EMBREE, OPTIX) must be selected\n"
+		"Enable at least one of: ENABLE_OSPRAY, ENABLE_EMBREE, ENABLE_OPTIX") 
+endif()
 
 add_subdirectory(imgui)
 
-include_directories(${OptiX_INCLUDE})
-cuda_compile_ptx(ptx_file render_optix.cu)
-set(optix_embed_output ${CMAKE_CURRENT_BINARY_DIR}/render_optix_embedded_ptx.c)
-add_custom_command(OUTPUT ${optix_embed_output}
-	COMMAND ${bin2c} -c --padd 0 --type char --name "render_optix_programs" ${ptx_file} > ${optix_embed_output}
-	DEPENDS ${ptx_file}
-	COMMENT "Compiling and embedding PTX code")
-
 add_executable(rtobj main.cpp
-	render_ospray.cpp
-	render_embree.cpp
-	render_optix.cpp
-	${optix_embed_output}
+	${RENDER_BACKEND_SRCS}
 	arcball_camera.cpp
 	imgui_impl_sdl.cpp
 	imgui_impl_opengl3.cpp
@@ -48,19 +67,34 @@ set_target_properties(rtobj PROPERTIES
 
 target_include_directories(rtobj PUBLIC
 	$<BUILD_INTERFACE:${SDL2_INCLUDE_DIR}>
-	$<BUILD_INTERFACE:${OSPRAY_INCLUDE_DIR}>
-	$<BUILD_INTERFACE:${EMBREE_INCLUDE_DIRS}>
-	$<BUILD_INTERFACE:${GLM_INCLUDE_DIRS}>
-	$<BUILD_INTERFACE:${OptiX_INCLUDE}>
-	$<BUILD_INTERFACE:${CUDA_INCLUDE_DIRS}>
-	$<BUILD_INTERFACE:${OPENGL_INCLUDE_DIR}>)
+	$<BUILD_INTERFACE:${OPENGL_INCLUDE_DIR}>
+	$<BUILD_INTERFACE:${GLM_INCLUDE_DIRS}>)
 
 target_link_libraries(rtobj PUBLIC
 	imgui
-	optix
 	${SDL2_LIBRARY}
-	${OSPRAY_LIBRARIES}
-	${EMBREE_LIBRARIES}
-	${CUDA_LIBRARIES}
 	${OPENGL_LIBRARIES})
+
+if (${ENABLE_OSPRAY})
+	target_include_directories(rtobj PUBLIC
+		$<BUILD_INTERFACE:${OSPRAY_INCLUDE_DIR}>)
+
+	target_link_libraries(rtobj PUBLIC ${OSPRAY_LIBRARIES})
+endif()
+
+if (${ENABLE_EMBREE})
+	target_include_directories(rtobj PUBLIC
+		$<BUILD_INTERFACE:${TBB_INCLUDE_DIR}>
+		$<BUILD_INTERFACE:${EMBREE_INCLUDE_DIRS}>)
+
+	target_link_libraries(rtobj PUBLIC ${EMBREE_LIBRARIES} ${TBB_LIBRARY})
+endif()
+
+if (${ENABLE_OPTIX})
+	target_include_directories(rtobj PUBLIC
+		$<BUILD_INTERFACE:${OptiX_INCLUDE}>
+		$<BUILD_INTERFACE:${CUDA_INCLUDE_DIRS}>)
+
+	target_link_libraries(rtobj PUBLIC optix ${CUDA_LIBRARIES})
+endif()
 
