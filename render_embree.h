@@ -4,6 +4,9 @@
 #include "render_backend.h"
 
 struct RenderEmbree : RenderBackend {
+	RTCDevice device;
+	RTCScene scene;
+	glm::ivec2 fb_dims;
 
 	RenderEmbree();
 

@@ -11,9 +11,18 @@
 #include "imgui_impl_opengl3.h"
 #include "arcball_camera.h"
 #include "shader.h"
+
+#if ENABLE_OSPRAY
 #include "render_ospray.h"
+#endif
+
+#if ENABLE_OPTIX
 #include "render_optix.h"
+#endif
+
+#if ENABLE_EMBREE
 #include "render_embree.h"
+#endif
 
 const std::string fullscreen_quad_vs = R"(
 #version 450 core
@@ -49,7 +58,18 @@ void run_app(int argc, const char **argv, SDL_Window *window);
 
 int main(int argc, const char **argv) {
 	if (argc < 3) {
-		std::cout << "Usage: " << argv[0] << " (-ospray|-optix) <obj_file>\n";
+		std::cout << "Usage: " << argv[0] << " [backend] <obj_file>\n"
+			<< "Backends:\n"
+#if ENABLE_OSPRAY
+			<< "\t-ospray    Render with OSPRay\n"
+#endif
+#if ENABLE_OSPRAY
+			<< "\t-optix     Render with OptiX\n"
+#endif
+#if ENABLE_EMBREE
+			<< "\t-embree    Render with Embree\n"
+#endif
+			<< "\n";
 		return 1;
 	}
 
@@ -142,11 +162,22 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	}
 
 	std::unique_ptr<RenderBackend> renderer = nullptr;
+#if ENABLE_OSPRAY
 	if (std::strcmp(argv[1], "-ospray") == 0) {
 		renderer = std::make_unique<RenderOSPRay>();
-	} else if (std::strcmp(argv[1], "-optix") == 0) {
+	}
+#endif
+#if ENABLE_OPTIX
+	if (std::strcmp(argv[1], "-optix") == 0) {
 		renderer = std::make_unique<RenderOptiX>();
-	} else {
+	}
+#endif
+#if ENABLE_EMBREE
+	if (std::strcmp(argv[1], "-embree") == 0) {
+		renderer = std::make_unique<RenderEmbree>();
+	}
+#endif
+	if (!renderer) {
 		throw std::runtime_error("Invalid renderer name");
 	}
 	renderer->initialize(win_width, win_height);
