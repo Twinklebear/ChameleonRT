@@ -23,7 +23,7 @@ void RenderEmbree::set_mesh(const std::vector<float> &verts,
 {
 	RTCGeometry geom = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
 	RTCBuffer vert_buf = rtcNewBuffer(device, verts.size() * sizeof(float));
-	RTCBuffer idx_buf = rtcNewBuffer(device, indices.size() * sizeof(uint32_t));
+	RTCBuffer index_buf = rtcNewBuffer(device, indices.size() * sizeof(uint32_t));
 
 	rtcSetGeometryBuffer(geom, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3,
 			vert_buf, 0, 16, verts.size() / 3);
@@ -47,7 +47,7 @@ void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 {
 	glm::vec2 img_plane_size;
 	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
-	img_plane_size.x = img_plane_size.y * static_cast<float>(width) / height;
+	img_plane_size.x = img_plane_size.y * static_cast<float>(fb_dims.x) / fb_dims.y;
 
 	const glm::vec3 dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
 	const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
@@ -59,12 +59,12 @@ void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	// TODO: Trace ray streams, parallelize over tiles with TBB,
 	// shade and trace from ISPC for vectorization
-	for (int j = 0; j < fb_dims.height; ++j) {
-		for (int i = 0; i < fb_dims.width; ++i) {
+	for (int j = 0; j < fb_dims.y; ++j) {
+		for (int i = 0; i < fb_dims.x; ++i) {
 			const glm::vec2 px = glm::vec2(i + 0.5f, j + 0.5f) / glm::vec2(fb_dims);
 			const glm::vec3 dir = glm::normalize(px.x * dir_du
 					+ px.y * dir_dv + dir_top_left);
-			RTCRay ray = {0};
+			RTCRay ray;
 			ray.org_x = pos.x;
 			ray.org_y = pos.y;
 			ray.org_z = pos.z;
@@ -81,13 +81,14 @@ void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 			ray.id = 0;
 			ray.flags = 0;
 
-			RTCRayHit ray_hit = {0};
+			RTCRayHit ray_hit;
+			std::memset(&ray_hit, 0, sizeof(RTCRayHit));
 			ray_hit.ray = ray;
 
 			rtcIntersect1(scene, &context, &ray_hit);
 
-			if (ray_hit.geomID != std::numeric_limits<uint32_t>::max()) {
-				img[j * fb_dims.width + i] = std::numeric_limits<uint32_t>::max();
+			if (ray_hit.hit.geomID != std::numeric_limits<uint32_t>::max()) {
+				img[j * fb_dims.x + i] = std::numeric_limits<uint32_t>::max();
 			}
 		}
 	}
