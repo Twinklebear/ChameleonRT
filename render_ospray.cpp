@@ -27,6 +27,7 @@ void RenderOSPRay::initialize(const int fb_width, const int fb_height) {
 			OSP_FB_SRGBA, OSP_FB_COLOR);
 	img.resize(fb_width * fb_height);
 }
+
 void RenderOSPRay::set_mesh(const std::vector<float> &verts,
 		const std::vector<uint32_t> &indices)
 {
@@ -43,6 +44,7 @@ void RenderOSPRay::set_mesh(const std::vector<float> &verts,
 	ospAddGeometry(world, geom);
 	ospCommit(world);
 }
+
 void RenderOSPRay::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy)
 {

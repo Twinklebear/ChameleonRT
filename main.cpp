@@ -13,6 +13,7 @@
 #include "shader.h"
 #include "render_ospray.h"
 #include "render_optix.h"
+#include "render_embree.h"
 
 const std::string fullscreen_quad_vs = R"(
 #version 450 core

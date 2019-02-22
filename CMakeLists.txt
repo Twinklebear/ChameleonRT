@@ -14,8 +14,9 @@ find_package(glm REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(ospray REQUIRED)
-find_package(CUDA REQUIRED VERSION 10)
-find_package(OptiX REQUIRED VERSION 6)
+find_package(embree 3 REQUIRED)
+find_package(CUDA 10 REQUIRED)
+find_package(OptiX 6 REQUIRED)
 include(cmake/Bin2C.cmake)
 
 add_subdirectory(imgui)
@@ -30,6 +31,7 @@ add_custom_command(OUTPUT ${optix_embed_output}
 
 add_executable(rtobj main.cpp
 	render_ospray.cpp
+	render_embree.cpp
 	render_optix.cpp
 	${optix_embed_output}
 	arcball_camera.cpp
@@ -43,8 +45,9 @@ set_target_properties(rtobj PROPERTIES
 	CXX_STANDARD_REQUIRED ON)
 
 target_include_directories(rtobj PUBLIC
-	$<BUILD_INTERFACE:${OSPRAY_INCLUDE_DIR}>
 	$<BUILD_INTERFACE:${SDL2_INCLUDE_DIR}>
+	$<BUILD_INTERFACE:${OSPRAY_INCLUDE_DIR}>
+	$<BUILD_INTERFACE:${EMBREE_INCLUDE_DIRS}>
 	$<BUILD_INTERFACE:${GLM_INCLUDE_DIRS}>
 	$<BUILD_INTERFACE:${OptiX_INCLUDE}>
 	$<BUILD_INTERFACE:${CUDA_INCLUDE_DIRS}>
@@ -53,8 +56,9 @@ target_include_directories(rtobj PUBLIC
 target_link_libraries(rtobj PUBLIC
 	imgui
 	optix
-	${OSPRAY_LIBRARIES}
 	${SDL2_LIBRARY}
+	${OSPRAY_LIBRARIES}
+	${EMBREE_LIBRARIES}
 	${CUDA_LIBRARIES}
 	${OPENGL_LIBRARIES})
 

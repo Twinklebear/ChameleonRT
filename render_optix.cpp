@@ -21,6 +21,7 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 	context["framebuffer"]->setBuffer(fb);
 	img.resize(fb_width * fb_height);
 }
+
 void RenderOptiX::set_mesh(const std::vector<float> &verts,
 		const std::vector<uint32_t> &indices)
 {
@@ -54,6 +55,7 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 	context["index_buffer"]->set(index_buffer);
 	context["vertex_buffer"]->set(vertex_buffer);
 }
+
 void RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy)
 {
