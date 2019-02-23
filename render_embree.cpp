@@ -1,5 +1,6 @@
 #include <limits>
 #include <iostream>
+#include <tbb/parallel_for.h>
 #include "render_embree.h"
 
 static float linear_to_srgb(float x) {
@@ -72,56 +73,67 @@ void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	uint8_t *color = reinterpret_cast<uint8_t*>(img.data());
 
-	// TODO: Trace ray streams, parallelize over tiles with TBB,
-	// shade and trace from ISPC for vectorization
-	for (int j = 0; j < fb_dims.y; ++j) {
-		for (int i = 0; i < fb_dims.x; ++i) {
-			const glm::vec2 px = glm::vec2(i + 0.5f, j + 0.5f) / glm::vec2(fb_dims);
-			const glm::vec3 dir = glm::normalize(px.x * dir_du
-					+ px.y * dir_dv + dir_top_left);
-			RTCRay ray;
-			ray.org_x = pos.x;
-			ray.org_y = pos.y;
-			ray.org_z = pos.z;
+	const glm::uvec2 tile_size(64);
+	// Round up the number of tiles we need to run in case the
+	// framebuffer is not an even multiple of tile size
+	const glm::uvec2 ntiles(fb_dims.x / tile_size.x + (fb_dims.x % tile_size.x != 0 ? 1 : 0),
+			fb_dims.y / tile_size.y + (fb_dims.y % tile_size.y != 0 ? 1 : 0));
 
-			ray.dir_x = dir.x;
-			ray.dir_y = dir.y;
-			ray.dir_z = dir.z;
+	tbb::parallel_for(uint32_t(0), ntiles.x * ntiles.y, [&](uint32_t tile_id) {
+		const glm::uvec2 tile = glm::uvec2(tile_id % ntiles.x, tile_id / ntiles.x);
+		const glm::uvec2 tile_pos = tile * tile_size;
+		const glm::uvec2 tile_end = glm::min(tile_pos + tile_size, fb_dims);
 
-			ray.tnear = 0.f;
-			ray.tfar = std::numeric_limits<float>::infinity();
-			ray.time = 0.f;
+		// TODO: Trace ray streams, generate streams and shade from ISPC for vectorization
+		for (uint32_t j = tile_pos.y; j < tile_end.y; ++j) {
+			for (uint32_t i = tile_pos.x; i < tile_end.x; ++i) {
+				const glm::vec2 px = glm::vec2(i + 0.5f, j + 0.5f) / glm::vec2(fb_dims);
+				const glm::vec3 dir = glm::normalize(px.x * dir_du
+						+ px.y * dir_dv + dir_top_left);
+				RTCRay ray;
+				ray.org_x = pos.x;
+				ray.org_y = pos.y;
+				ray.org_z = pos.z;
 
-			ray.mask = std::numeric_limits<uint32_t>::max();
-			ray.id = 0;
-			ray.flags = 0;
+				ray.dir_x = dir.x;
+				ray.dir_y = dir.y;
+				ray.dir_z = dir.z;
 
-			RTCRayHit ray_hit;
-			ray_hit.ray = ray;
-			ray_hit.hit.primID = std::numeric_limits<uint32_t>::max();
-			ray_hit.hit.geomID = std::numeric_limits<uint32_t>::max();
-			ray_hit.hit.instID[0] = std::numeric_limits<uint32_t>::max();
+				ray.tnear = 0.f;
+				ray.tfar = std::numeric_limits<float>::infinity();
+				ray.time = 0.f;
 
-			rtcIntersect1(scene, &context, &ray_hit);
+				ray.mask = std::numeric_limits<uint32_t>::max();
+				ray.id = 0;
+				ray.flags = 0;
 
-			if (ray_hit.hit.geomID != std::numeric_limits<uint32_t>::max()) {
-				const glm::uvec3 tri(indices[ray_hit.hit.primID]);
+				RTCRayHit ray_hit;
+				ray_hit.ray = ray;
+				ray_hit.hit.primID = std::numeric_limits<uint32_t>::max();
+				ray_hit.hit.geomID = std::numeric_limits<uint32_t>::max();
+				ray_hit.hit.instID[0] = std::numeric_limits<uint32_t>::max();
 
-				const glm::vec3 v0(verts[tri.x]);
-				const glm::vec3 v1(verts[tri.y]);
-				const glm::vec3 v2(verts[tri.z]);
+				rtcIntersect1(scene, &context, &ray_hit);
 
-				glm::vec3 n = glm::normalize(glm::cross(v1 - v0, v2 - v0));
-				n = (n + glm::vec3(1.f)) * 0.5f;
+				if (ray_hit.hit.geomID != std::numeric_limits<uint32_t>::max()) {
+					const glm::uvec3 tri(indices[ray_hit.hit.primID]);
 
-				color[(j * fb_dims.x + i) * 4] = linear_to_srgb(n.x) * 255.f;
-				color[(j * fb_dims.x + i) * 4 + 1] = linear_to_srgb(n.y) * 255.f;
-				color[(j * fb_dims.x + i) * 4 + 2] = linear_to_srgb(n.z) * 255.f;
-				color[(j * fb_dims.x + i) * 4 + 3] = 255;
-			} else {
-				img[j * fb_dims.x + i] = 0;
+					const glm::vec3 v0(verts[tri.x]);
+					const glm::vec3 v1(verts[tri.y]);
+					const glm::vec3 v2(verts[tri.z]);
+
+					glm::vec3 n = glm::normalize(glm::cross(v1 - v0, v2 - v0));
+					n = (n + glm::vec3(1.f)) * 0.5f;
+
+					color[(j * fb_dims.x + i) * 4] = linear_to_srgb(n.x) * 255.f;
+					color[(j * fb_dims.x + i) * 4 + 1] = linear_to_srgb(n.y) * 255.f;
+					color[(j * fb_dims.x + i) * 4 + 2] = linear_to_srgb(n.z) * 255.f;
+					color[(j * fb_dims.x + i) * 4 + 3] = 255;
+				} else {
+					img[j * fb_dims.x + i] = 0;
+				}
 			}
 		}
-	}
+	});
 }
 

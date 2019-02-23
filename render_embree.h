@@ -6,7 +6,7 @@
 struct RenderEmbree : RenderBackend {
 	RTCDevice device;
 	RTCScene scene;
-	glm::ivec2 fb_dims;
+	glm::uvec2 fb_dims;
 	std::vector<glm::vec4> verts;
 	std::vector<glm::uvec3> indices;
 
