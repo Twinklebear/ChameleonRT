@@ -2,6 +2,7 @@
 #include <iostream>
 #include <tbb/parallel_for.h>
 #include "render_embree.h"
+#include "render_embree_ispc.h"
 
 static float linear_to_srgb(float x) {
 	if (x <= 0.0031308f) {
@@ -83,11 +84,15 @@ void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::uvec2 tile = glm::uvec2(tile_id % ntiles.x, tile_id / ntiles.x);
 		const glm::uvec2 tile_pos = tile * tile_size;
 		const glm::uvec2 tile_end = glm::min(tile_pos + tile_size, fb_dims);
+		const glm::uvec2 actual_tile_dims = tile_end - tile_pos;
+		std::vector<float> tile_data(actual_tile_dims.x * actual_tile_dims.y * 3, 0.f);
 
 		// TODO: Trace ray streams, generate streams and shade from ISPC for vectorization
-		for (uint32_t j = tile_pos.y; j < tile_end.y; ++j) {
-			for (uint32_t i = tile_pos.x; i < tile_end.x; ++i) {
-				const glm::vec2 px = glm::vec2(i + 0.5f, j + 0.5f) / glm::vec2(fb_dims);
+		for (uint32_t j = 0; j < actual_tile_dims.y; ++j) {
+			for (uint32_t i = 0; i < actual_tile_dims.x; ++i) {
+				const glm::vec2 px = glm::vec2(i + tile_pos.x + 0.5f,
+						j + tile_pos.y + 0.5f) / glm::vec2(fb_dims);
+
 				const glm::vec3 dir = glm::normalize(px.x * dir_du
 						+ px.y * dir_dv + dir_top_left);
 				RTCRay ray;
@@ -125,15 +130,15 @@ void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 					glm::vec3 n = glm::normalize(glm::cross(v1 - v0, v2 - v0));
 					n = (n + glm::vec3(1.f)) * 0.5f;
 
-					color[(j * fb_dims.x + i) * 4] = linear_to_srgb(n.x) * 255.f;
-					color[(j * fb_dims.x + i) * 4 + 1] = linear_to_srgb(n.y) * 255.f;
-					color[(j * fb_dims.x + i) * 4 + 2] = linear_to_srgb(n.z) * 255.f;
-					color[(j * fb_dims.x + i) * 4 + 3] = 255;
-				} else {
-					img[j * fb_dims.x + i] = 0;
+					const uint32_t pixel = (j * actual_tile_dims.x + i) * 3;
+					tile_data[pixel] = n.x;
+					tile_data[pixel + 1] = n.y;
+					tile_data[pixel + 2] = n.z;
 				}
 			}
 		}
+		ispc::tile_to_uint8(tile_data.data(), color, fb_dims.x, fb_dims.y,
+				tile_pos.x, tile_pos.y, actual_tile_dims.x, actual_tile_dims.y);
 	});
 }
 

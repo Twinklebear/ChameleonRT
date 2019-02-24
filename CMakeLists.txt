@@ -27,6 +27,30 @@ if (${ENABLE_EMBREE})
 	find_package(TBB REQUIRED)
 	add_definitions(-DENABLE_EMBREE)
 	list(APPEND RENDER_BACKEND_SRCS render_embree.cpp)
+
+	set(ISPC_ARCH "x86")
+	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+		set(ISPC_ARCH "x86-64")
+	endif()
+
+
+	include(cmake/ISPC.cmake)
+	add_custom_command(OUTPUT
+		${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.o
+		${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.h
+		COMMAND ${ispc} ${CMAKE_CURRENT_LIST_DIR}/render_embree.ispc
+		-o ${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.o
+		-h ${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.h
+		--arch=${ISPC_ARCH}
+		--opt=fast-math
+		-O2
+		DEPENDS ${CMAKE_CURRENT_LIST_DIR}/render_embree.ispc
+		COMMENT "Compiling Embree ISPC kernels")
+
+	add_library(ispc_kernels ${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.o)
+	target_include_directories(ispc_kernels PUBLIC
+		$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+	set_target_properties(ispc_kernels PROPERTIES LINKER_LANGUAGE C)
 endif()
 
 if (${ENABLE_OPTIX})
@@ -87,7 +111,7 @@ if (${ENABLE_EMBREE})
 		$<BUILD_INTERFACE:${TBB_INCLUDE_DIR}>
 		$<BUILD_INTERFACE:${EMBREE_INCLUDE_DIRS}>)
 
-	target_link_libraries(rtobj PUBLIC ${EMBREE_LIBRARIES} ${TBB_LIBRARY})
+	target_link_libraries(rtobj PUBLIC ispc_kernels ${EMBREE_LIBRARIES} ${TBB_LIBRARY})
 endif()
 
 if (${ENABLE_OPTIX})
