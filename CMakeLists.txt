@@ -33,7 +33,6 @@ if (${ENABLE_EMBREE})
 		set(ISPC_ARCH "x86-64")
 	endif()
 
-
 	include(cmake/ISPC.cmake)
 	add_custom_command(OUTPUT
 		${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.o
@@ -41,6 +40,7 @@ if (${ENABLE_EMBREE})
 		COMMAND ${ispc} ${CMAKE_CURRENT_LIST_DIR}/render_embree.ispc
 		-o ${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.o
 		-h ${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.h
+		-I ${EMBREE_INCLUDE_DIRS}
 		--arch=${ISPC_ARCH}
 		--opt=fast-math
 		-O2

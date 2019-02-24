@@ -4,13 +4,6 @@
 #include "render_embree.h"
 #include "render_embree_ispc.h"
 
-static float linear_to_srgb(float x) {
-	if (x <= 0.0031308f) {
-		return 12.92f * x;
-	}
-	return 1.055f * pow(x, 1.f/2.4f) - 0.055f;
-}
-
 RenderEmbree::RenderEmbree()
 	: device(rtcNewDevice(NULL)), scene(rtcNewScene(device))
 {}
@@ -57,6 +50,86 @@ void RenderEmbree::set_mesh(const std::vector<float> &verts_unaligned,
 	rtcCommitScene(scene);
 }
 
+// TODO WILL: We might need to be careful of the alignment
+// of the vector data
+struct RaySoA {
+	std::vector<float> org_x;
+	std::vector<float> org_y;
+	std::vector<float> org_z;
+	std::vector<float> tnear;
+
+	std::vector<float> dir_x;
+	std::vector<float> dir_y;
+	std::vector<float> dir_z;
+	std::vector<float> time;
+
+	std::vector<float> tfar;
+
+	std::vector<unsigned int> mask;
+	std::vector<unsigned int> id;
+	std::vector<unsigned int> flags;
+
+	RaySoA(const size_t nrays)
+		: org_x(nrays, 0.f), org_y(nrays, 0.f), org_z(nrays, 0.f), tnear(nrays, 0.f),
+		dir_x(nrays, 0.f), dir_y(nrays, 0.f), dir_z(nrays, 0.f), time(nrays, 0.f),
+		tfar(nrays, std::numeric_limits<float>::infinity()),
+		mask(nrays, std::numeric_limits<uint32_t>::max()),
+		id(nrays, 0),
+		flags(nrays, 0)
+	{}
+};
+
+struct HitSoA {
+	std::vector<float> ng_x;
+	std::vector<float> ng_y;
+	std::vector<float> ng_z;
+
+	std::vector<float> u;
+	std::vector<float> v;
+
+	std::vector<unsigned int> prim_id;
+	std::vector<unsigned int> geom_id;
+	std::vector<unsigned int> inst_id;
+
+	HitSoA(const size_t nrays)
+		: ng_x(nrays, 0.f), ng_y(nrays, 0.f), ng_z(nrays, 0.f),
+		u(nrays, 0.f), v(nrays, 0.f),
+		prim_id(nrays, std::numeric_limits<uint32_t>::max()),
+		geom_id(nrays, std::numeric_limits<uint32_t>::max()),
+		inst_id(nrays, std::numeric_limits<uint32_t>::max())
+	{}
+};
+
+RTCRayHitNp make_ray_hit_soa(RaySoA &rays, HitSoA &hits) {
+	RTCRayHitNp rh;
+	rh.ray.org_x = rays.org_x.data();
+	rh.ray.org_y = rays.org_y.data();
+	rh.ray.org_z = rays.org_z.data();
+	rh.ray.tnear = rays.tnear.data();
+
+	rh.ray.dir_x = rays.dir_x.data();
+	rh.ray.dir_y = rays.dir_y.data();
+	rh.ray.dir_z = rays.dir_z.data();
+	rh.ray.time = rays.time.data();
+	rh.ray.tfar = rays.tfar.data();
+
+	rh.ray.mask = rays.mask.data();
+	rh.ray.id = rays.id.data();
+	rh.ray.flags = rays.flags.data();
+
+	rh.hit.Ng_x = hits.ng_x.data();
+	rh.hit.Ng_y = hits.ng_y.data();
+	rh.hit.Ng_z = hits.ng_z.data();
+
+	rh.hit.u = hits.u.data();
+	rh.hit.v = hits.v.data();
+
+	rh.hit.primID = hits.prim_id.data();
+	rh.hit.geomID = hits.geom_id.data();
+	rh.hit.instID[0] = hits.inst_id.data();
+	return rh;
+}
+
 void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy)
 {
@@ -85,58 +158,27 @@ void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::uvec2 tile_pos = tile * tile_size;
 		const glm::uvec2 tile_end = glm::min(tile_pos + tile_size, fb_dims);
 		const glm::uvec2 actual_tile_dims = tile_end - tile_pos;
-		std::vector<float> tile_data(actual_tile_dims.x * actual_tile_dims.y * 3, 0.f);
 
-		// TODO: Trace ray streams, generate streams and shade from ISPC for vectorization
-		for (uint32_t j = 0; j < actual_tile_dims.y; ++j) {
-			for (uint32_t i = 0; i < actual_tile_dims.x; ++i) {
-				const glm::vec2 px = glm::vec2(i + tile_pos.x + 0.5f,
-						j + tile_pos.y + 0.5f) / glm::vec2(fb_dims);
+		const size_t npixels = actual_tile_dims.x * actual_tile_dims.y;
+		std::vector<float> tile_data(npixels * 3, 0.f);
 
-				const glm::vec3 dir = glm::normalize(px.x * dir_du
-						+ px.y * dir_dv + dir_top_left);
-				RTCRay ray;
-				ray.org_x = pos.x;
-				ray.org_y = pos.y;
-				ray.org_z = pos.z;
+		RaySoA rays(npixels);
+		HitSoA hits(npixels);
+		RTCRayHitNp ray_hit = make_ray_hit_soa(rays, hits);
 
-				ray.dir_x = dir.x;
-				ray.dir_y = dir.y;
-				ray.dir_z = dir.z;
+		// TODO: Make some shared ISPC state to store these params
+		ispc::generate_primary_rays((ispc::RTCRayHitNp*)&ray_hit, tile_pos.x, tile_pos.y,
+				fb_dims.x, fb_dims.y,
+				actual_tile_dims.x, actual_tile_dims.y,
+				&pos.x, &dir_du.x, &dir_dv.x, &dir_top_left.x);
 
-				ray.tnear = 0.f;
-				ray.tfar = std::numeric_limits<float>::infinity();
-				ray.time = 0.f;
+		rtcIntersectNp(scene, &context, &ray_hit, npixels);
 
-				ray.mask = std::numeric_limits<uint32_t>::max();
-				ray.id = 0;
-				ray.flags = 0;
+		ispc::shade_ray_stream((ispc::RTCRayHitNp*)&ray_hit, actual_tile_dims.x, actual_tile_dims.y,
+				reinterpret_cast<const uint32_t*>(indices.data()),
+				reinterpret_cast<const float*>(verts.data()),
+				tile_data.data());
 
-				RTCRayHit ray_hit;
-				ray_hit.ray = ray;
-				ray_hit.hit.primID = std::numeric_limits<uint32_t>::max();
-				ray_hit.hit.geomID = std::numeric_limits<uint32_t>::max();
-				ray_hit.hit.instID[0] = std::numeric_limits<uint32_t>::max();
-
-				rtcIntersect1(scene, &context, &ray_hit);
-
-				if (ray_hit.hit.geomID != std::numeric_limits<uint32_t>::max()) {
-					const glm::uvec3 tri(indices[ray_hit.hit.primID]);
-
-					const glm::vec3 v0(verts[tri.x]);
-					const glm::vec3 v1(verts[tri.y]);
-					const glm::vec3 v2(verts[tri.z]);
-
-					glm::vec3 n = glm::normalize(glm::cross(v1 - v0, v2 - v0));
-					n = (n + glm::vec3(1.f)) * 0.5f;
-
-					const uint32_t pixel = (j * actual_tile_dims.x + i) * 3;
-					tile_data[pixel] = n.x;
-					tile_data[pixel + 1] = n.y;
-					tile_data[pixel + 2] = n.z;
-				}
-			}
-		}
 		ispc::tile_to_uint8(tile_data.data(), color, fb_dims.x, fb_dims.y,
 				tile_pos.x, tile_pos.y, actual_tile_dims.x, actual_tile_dims.y);
 	});
