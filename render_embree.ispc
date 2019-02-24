@@ -64,6 +64,7 @@ export void shade_ray_stream(uniform RTCRayHitNp *uniform ray_hit,
 		const uint32 ray = j * tile_width + i;
 		const uint32 pixel = (j * tile_width + i) * 3;
 
+		// TODO: Here we could now flip and batch by geomID
 		if (ray_hit->hit.geomID[ray] != (uint32)-1) {
 			const uniform uint32 *tri = indices + ray_hit->hit.primID[ray] * 3;
 
