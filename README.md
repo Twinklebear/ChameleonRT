@@ -28,7 +28,8 @@ You can then pass `-ospray` to use the OSPRay backend.
 
 ### Embree
 
-Dependencies: [Embree](https://embree.github.io/), [TBB](https://www.threadingbuildingblocks.org/).
+Dependencies: [Embree](https://embree.github.io/),
+[TBB](https://www.threadingbuildingblocks.org/) and [ISPC](https://ispc.github.io/).
 
 To build the Embree backend run CMake with:
 
