@@ -45,15 +45,15 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 			context->createProgramFromPTXString(render_optix_programs, "closest_hit"));
 
 	auto instance = context->createGeometryInstance(geom_tri, mat);
+	// We use these in the hit program to color by normal
+	instance["index_buffer"]->set(index_buffer);
+	instance["vertex_buffer"]->set(vertex_buffer);
 
 	auto model = context->createGeometryGroup();
 	model->addChild(instance);
 	model->setAcceleration(context->createAcceleration("Trbvh"));
 
 	context["model"]->set(model);
-	// We use these in the hit program to color by normal
-	context["index_buffer"]->set(index_buffer);
-	context["vertex_buffer"]->set(vertex_buffer);
 }
 
 void RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,

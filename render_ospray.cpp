@@ -12,8 +12,10 @@ RenderOSPRay::RenderOSPRay() : fb(nullptr) {
 	world = ospNewModel();
 	camera = ospNewCamera("perspective");
 	renderer = ospNewRenderer("raycast_Ng");
+#if OSPRAY_VERSION_MAJOR == 1
 	ospSetObject(renderer, "model", world);
 	ospSetObject(renderer, "camera", camera);
+#endif
 }
 
 void RenderOSPRay::initialize(const int fb_width, const int fb_height) {
@@ -53,10 +55,15 @@ void RenderOSPRay::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	ospSet3fv(camera, "up", &up.x);
 	ospSet1f(camera, "fovy", fovy);
 	ospCommit(camera);
-	ospCommit(renderer);
 
+#if OSPRAY_VERSION_MAJOR == 2
+	ospResetAccumulation(fb);
+	ospRenderFrame(fb, renderer, camera, world);
+#else
+	ospCommit(renderer);
 	ospFrameBufferClear(fb, OSP_FB_COLOR);
 	ospRenderFrame(fb, renderer, OSP_FB_COLOR);
+#endif
 
 	const uint32_t *mapped = static_cast<const uint32_t*>(ospMapFrameBuffer(fb, OSP_FB_COLOR));
 	std::memcpy(img.data(), mapped, sizeof(uint32_t) * img.size());

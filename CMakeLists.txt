@@ -19,6 +19,13 @@ set(RENDER_BACKEND_SRCS "")
 if (${ENABLE_OSPRAY})
 	find_package(ospray REQUIRED)
 	add_definitions(-DENABLE_OSPRAY)
+	# TODO WILL: Once OSPRay 2.0 is released we'll only support 2+
+	# so it's fine to ignore the minor & patch versions here
+	if ("${OSPRAY_VERSION}" STREQUAL "2.0.0")
+		add_definitions(-DOSPRAY_VERSION_MAJOR=2)
+	else()
+		add_definitions(-DOSPRAY_VERSION_MAJOR=1)
+	endif()
 	list(APPEND RENDER_BACKEND_SRCS render_ospray.cpp)
 endif()
 
@@ -33,6 +40,10 @@ if (${ENABLE_EMBREE})
 		set(ISPC_ARCH "x86-64")
 	endif()
 
+	if (UNIX)
+		set(ISPC_PIC "--pic")
+	endif()
+
 	include(cmake/ISPC.cmake)
 	add_custom_command(OUTPUT
 		${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.o
@@ -44,6 +55,7 @@ if (${ENABLE_EMBREE})
 		--arch=${ISPC_ARCH}
 		--opt=fast-math
 		-O2
+		${ISPC_PIC}
 		DEPENDS ${CMAKE_CURRENT_LIST_DIR}/render_embree.ispc
 		COMMENT "Compiling Embree ISPC kernels")
 
