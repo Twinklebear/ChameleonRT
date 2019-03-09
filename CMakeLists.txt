@@ -120,10 +120,9 @@ endif()
 
 if (${ENABLE_EMBREE})
 	target_include_directories(rtobj PUBLIC
-		$<BUILD_INTERFACE:${TBB_INCLUDE_DIR}>
 		$<BUILD_INTERFACE:${EMBREE_INCLUDE_DIRS}>)
 
-	target_link_libraries(rtobj PUBLIC ispc_kernels ${EMBREE_LIBRARIES} ${TBB_LIBRARY})
+	target_link_libraries(rtobj PUBLIC ispc_kernels TBB::tbb ${EMBREE_LIBRARIES})
 endif()
 
 if (${ENABLE_OPTIX})

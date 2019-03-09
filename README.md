@@ -42,10 +42,12 @@ To build the Embree backend run CMake with:
 
 ```
 cmake .. -DENABLE_EMBREE=ON -Dembree_DIR=<path to embree-config.cmake> \
-    -DTBB_DIR=<path to root of TBB install>
+    -DTBB_DIR=<path TBBConfig.cmake>
 ```
 
-You can then pass `-embree` to use the Embree backend.
+You can then pass `-embree` to use the Embree backend. The `TBBConfig.cmake` will
+be under `<tbb root>/cmake`, while `embree-config.cmake` is in the root of the
+Embree directory.
 
 ### OptiX
 
