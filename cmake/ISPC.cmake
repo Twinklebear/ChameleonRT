@@ -29,9 +29,9 @@ function(add_ispc_library)
 		# First build the list of dependencies of the ISPC file to
 		# populate its actual dependencies list
 		get_filename_component(FNAME ${SRC} NAME_WE)
-		message("Compiling ISPC dependecies for ${SRC}")
 		list(APPEND ISPC_OBJS ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.o)
 
+		message("Writing ISPC dependecy list for ${SRC} to ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep")
 		execute_process(
 			COMMAND ${ispc} ${CMAKE_CURRENT_LIST_DIR}/${SRC}
 			-MMM ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep
