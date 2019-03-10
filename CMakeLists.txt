@@ -35,34 +35,14 @@ if (${ENABLE_EMBREE})
 	add_definitions(-DENABLE_EMBREE)
 	list(APPEND RENDER_BACKEND_SRCS render_embree.cpp)
 
-	set(ISPC_ARCH "x86")
-	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
-		set(ISPC_ARCH "x86-64")
-	endif()
-
-	if (UNIX)
-		set(ISPC_PIC "--pic")
-	endif()
-
 	include(cmake/ISPC.cmake)
-	add_custom_command(OUTPUT
-		${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.o
-		${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.h
-		COMMAND ${ispc} ${CMAKE_CURRENT_LIST_DIR}/render_embree.ispc
-		-o ${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.o
-		-h ${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.h
-		-I ${EMBREE_INCLUDE_DIRS}
-		--arch=${ISPC_ARCH}
-		--opt=fast-math
-		-O2
-		${ISPC_PIC}
-		DEPENDS ${CMAKE_CURRENT_LIST_DIR}/render_embree.ispc
-		COMMENT "Compiling Embree ISPC kernels")
 
-	add_library(ispc_kernels ${CMAKE_CURRENT_BINARY_DIR}/render_embree_ispc.o)
+	add_ispc_library(ispc_kernels render_embree.ispc
+		INCLUDE_DIRECTORIES ${EMBREE_INCLUDE_DIRS}
+		COMPILE_DEFINITIONS --opt=fast-math -O2)
 	target_include_directories(ispc_kernels PUBLIC
 		$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-	set_target_properties(ispc_kernels PROPERTIES LINKER_LANGUAGE C)
+
 endif()
 
 if (${ENABLE_OPTIX})
