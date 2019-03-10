@@ -56,6 +56,10 @@ int win_height = 720;
 
 void run_app(int argc, const char **argv, SDL_Window *window);
 
+glm::vec2 transform_mouse(glm::vec2 in) {
+	return glm::vec2(in.x * 2.f / win_width - 1.f, 1.f - 2.f * in.y / win_height);
+}
+
 int main(int argc, const char **argv) {
 	if (argc < 3) {
 		std::cout << "Usage: " << argv[0] << " [backend] <obj_file>\n"
@@ -129,7 +133,7 @@ int main(int argc, const char **argv) {
 void run_app(int argc, const char **argv, SDL_Window *window) {
 	ImGuiIO& io = ImGui::GetIO();
 
-	ArcballCamera camera(glm::vec3(0.f), 100.f, {win_width, win_height});
+	ArcballCamera camera(glm::vec3(0, 0, 5), glm::vec3(0), glm::vec3(0, 1, 0));
 
 	// Load the model w/ tinyobjloader. We just take any OBJ groups etc. stuff
 	// that may be in the file and dump them all into a single OBJ model.
@@ -203,6 +207,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	glClearColor(0.0, 0.0, 0.0, 0.0);
 	glDisable(GL_DEPTH_TEST);
 
+	glm::vec2 prev_mouse(-2.f);
 	bool done = false;
 	while (!done) {
 		// Poll and handle events (inputs, window resize, etc.)
@@ -229,8 +234,20 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 					&& event.window.windowID == SDL_GetWindowID(window)) {
 				done = true;
 			}
-			if (!io.WantCaptureMouse && (event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEWHEEL)) {
-				camera.mouse(event, 0.016f);
+			if (!io.WantCaptureMouse) {
+				if (event.type == SDL_MOUSEMOTION) {
+					const glm::vec2 cur_mouse = transform_mouse(glm::vec2(event.motion.x, event.motion.y));
+					if (prev_mouse != glm::vec2(-2.f)) {
+						if (event.motion.state & SDL_BUTTON_LMASK) {
+							camera.rotate(prev_mouse, cur_mouse);
+						} else if (event.motion.state & SDL_BUTTON_RMASK) {
+							camera.pan(cur_mouse - prev_mouse);
+						}
+					}
+					prev_mouse = cur_mouse;
+				} else if (event.type == SDL_MOUSEWHEEL) {
+					camera.zoom(event.wheel.y * 0.1);
+				}
 			}
 			if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED) {
 				win_width = event.window.data1;
@@ -238,7 +255,6 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 				io.DisplaySize.x = win_width;
 				io.DisplaySize.y = win_height;
 				renderer->initialize(win_width, win_height);
-				camera.update_screen({win_width, win_height});
 
 				glDeleteTextures(1, &render_texture);
 				glGenTextures(1, &render_texture);
@@ -267,7 +283,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		ImGui::Render();
 		glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
 
-		renderer->render(camera.eye_pos(), camera.eye_dir(), camera.up_dir(), 65.f);
+		renderer->render(camera.eye(), camera.dir(), camera.up(), 65.f);
 
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, win_width, win_height, GL_RGBA,
 				GL_UNSIGNED_BYTE, renderer->img.data());

@@ -1,47 +1,52 @@
+#include <iostream>
 #include <cmath>
 #include <glm/ext.hpp>
 #include <glm/gtx/transform.hpp>
 #include "arcball_camera.h"
 
-/*
- * Project the point in [-1, 1] screen space onto the arcball sphere
- */
+// Project the point in [-1, 1] screen space onto the arcball sphere
 static glm::quat screen_to_arcball(const glm::vec2 &p);
 
-ArcballCamera::ArcballCamera(const glm::vec3 &center, float motion_speed, const std::array<int, 2> &screen)
-	: motion_speed(motion_speed), inv_screen({1.f / screen[0], 1.f / screen[1]})
+ArcballCamera::ArcballCamera(const glm::vec3 &eye, const glm::vec3 &center,
+		const glm::vec3 &up)
 {
+	const glm::vec3 dir = center - eye;
+	glm::vec3 z_axis = glm::normalize(dir);
+	glm::vec3 x_axis = glm::normalize(glm::cross(z_axis, glm::normalize(up)));
+	glm::vec3 y_axis = glm::normalize(glm::cross(x_axis, z_axis));
+	x_axis = glm::normalize(glm::cross(z_axis, y_axis));
+
 	center_translation = glm::inverse(glm::translate(center));
-	translation = glm::translate(glm::vec3(0.f, 0.f, -5.f));
-	rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
+	translation = glm::translate(glm::vec3(0.f, 0.f, -glm::length(dir)));
+	rotation = glm::normalize(glm::quat_cast(glm::transpose(glm::mat3(x_axis, y_axis, -z_axis))));
 
 	update_camera();
 }
-bool ArcballCamera::mouse(const SDL_Event &mouse, float elapsed){
-	if (mouse.type == SDL_MOUSEMOTION) {
-		auto motion = mouse.motion;
-		if (motion.state & SDL_BUTTON_LMASK) {
-			rotate(motion);
-			return true;
-		} else if (motion.state & SDL_BUTTON_RMASK) {
-			pan(motion);
-			return true;
-		}
-	} else if (mouse.type == SDL_MOUSEWHEEL) {
-		auto scroll = mouse.wheel;
-		if (scroll.y != 0){
-			glm::vec3 motion{0.f};
-			motion.z = scroll.y * 0.35;
-			translation = glm::translate(motion * motion_speed * elapsed) * translation;
-			update_camera();
-			return true;
-		}
-	}
-	return false;
+void ArcballCamera::rotate(glm::vec2 prev_mouse, glm::vec2 cur_mouse) {
+	// Clamp mouse positions to stay in NDC
+	cur_mouse = glm::clamp(cur_mouse, glm::vec2{-1, -1}, glm::vec2{1, 1});
+	prev_mouse = glm::clamp(prev_mouse, glm::vec2{-1, -1}, glm::vec2{1, 1});
+
+	const glm::quat mouse_cur_ball = screen_to_arcball(cur_mouse);
+	const glm::quat mouse_prev_ball = screen_to_arcball(prev_mouse);
+
+	rotation = mouse_cur_ball * mouse_prev_ball * rotation;
+	update_camera();
 }
-void ArcballCamera::update_screen(const std::array<int, 2> &screen) {
-	inv_screen[0] = 1.f / screen[0];
-	inv_screen[1] = 1.f / screen[1];
+void ArcballCamera::pan(glm::vec2 mouse_delta) {
+	const float zoom_amount = std::abs(translation[3][2]);
+	glm::vec4 motion(mouse_delta.x * zoom_amount, mouse_delta.y * zoom_amount, 0.f, 0.f);
+	// Find the panning amount in the world space
+	motion = inv_camera * motion;
+
+	center_translation = glm::translate(glm::vec3(motion)) * center_translation;
+	update_camera();
+}
+void ArcballCamera::zoom(const float zoom_amount) {
+	const glm::vec3 motion(0.f, 0.f, zoom_amount);
+
+	translation = glm::translate(motion) * translation;
+	update_camera();
 }
 const glm::mat4& ArcballCamera::transform() const {
 	return camera;
@@ -49,39 +54,14 @@ const glm::mat4& ArcballCamera::transform() const {
 const glm::mat4& ArcballCamera::inv_transform() const {
 	return inv_camera;
 }
-glm::vec3 ArcballCamera::eye_pos() const {
+glm::vec3 ArcballCamera::eye() const {
 	return glm::vec3{inv_camera * glm::vec4{0, 0, 0, 1}};
 }
-glm::vec3 ArcballCamera::eye_dir() const {
+glm::vec3 ArcballCamera::dir() const {
 	return glm::normalize(glm::vec3{inv_camera * glm::vec4{0, 0, -1, 0}});
 }
-glm::vec3 ArcballCamera::up_dir() const {
+glm::vec3 ArcballCamera::up() const {
 	return glm::normalize(glm::vec3{inv_camera * glm::vec4{0, 1, 0, 0}});
-}
-void ArcballCamera::rotate(const SDL_MouseMotionEvent &mouse) {
-	// Compute current and previous mouse positions in clip space
-	glm::vec2 mouse_cur = glm::vec2{mouse.x * 2.0 * inv_screen[0] - 1.0,
-		1.0 - 2.0 * mouse.y * inv_screen[1]};
-	glm::vec2 mouse_prev = glm::vec2{(mouse.x - mouse.xrel) * 2.0 * inv_screen[0] - 1.0,
-		1.0 - 2.0 * (mouse.y - mouse.yrel) * inv_screen[1]};
-	// Clamp mouse positions to stay in screen space range
-	mouse_cur = glm::clamp(mouse_cur, glm::vec2{-1, -1}, glm::vec2{1, 1});
-	mouse_prev = glm::clamp(mouse_prev, glm::vec2{-1, -1}, glm::vec2{1, 1});
-	glm::quat mouse_cur_ball = screen_to_arcball(mouse_cur);
-	glm::quat mouse_prev_ball = screen_to_arcball(mouse_prev);
-
-	rotation = mouse_cur_ball * mouse_prev_ball * rotation;
-	update_camera();
-}
-void ArcballCamera::pan(const SDL_MouseMotionEvent &mouse){
-	const float zoom_amount = std::abs(translation[3][2]);
-	glm::vec4 motion(mouse.xrel * inv_screen[0] * zoom_amount,
-			-mouse.yrel * inv_screen[1] * zoom_amount,
-			0.f, 0.f);
-	// Find the panning amount in the world space
-	motion = inv_camera * motion;
-	center_translation = glm::translate(glm::vec3(motion)) * center_translation;
-	update_camera();
 }
 void ArcballCamera::update_camera() {
 	camera = translation * glm::mat4_cast(rotation) * center_translation;

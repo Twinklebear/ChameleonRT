@@ -1,22 +1,14 @@
 #pragma once
 
-#include <array>
-#include <SDL.h>
 #include <glm/glm.hpp>
 #include <glm/ext.hpp>
 
-/*
- * A simple arcball camera that moves around the camera's focal point
- * Controls:
- * left mouse + drag: rotate camera round focal point
- * right mouse + drag: translate camera
- * shift + right mouse + drag +/- y: zoom in/out
- * r key: reset camera to original look_at matrix
+/* A simple arcball camera that moves around the camera's focal point.
+ * The mouse inputs to the camera should be in normalized device coordinates,
+ * where the top-left of the screen corresponds to [-1, 1], and the bottom
+ * right is [1, -1].
  */
 class ArcballCamera {
-	float motion_speed;
-	// Inverse x, y window dimensions
-	std::array<float, 2> inv_screen;
 	// We store the unmodified look at matrix along with
 	// decomposed translation and rotation components
 	glm::mat4 center_translation, translation;
@@ -27,47 +19,35 @@ class ArcballCamera {
 	glm::mat4 camera, inv_camera;
 
 public:
-	/*
-	 * Create an arcball camera focused on some center point
-	 * zoom speed: units per second speed of panning the camera
-	 * screen: { WIN_X_SIZE, WIN_Y_SIZE }
+	/* Create an arcball camera focused on some center point
+	 * screen: [win_width, win_height]
 	 */
-	ArcballCamera(const glm::vec3 &center, float zoom_speed,
-			const std::array<int, 2> &screen);
-	/*
-	 * Handle mouse events to move the camera
-	 * returns true if the camera has changed
+	ArcballCamera(const glm::vec3 &eye, const glm::vec3 &center,
+		   const glm::vec3 &up);
+	/* Rotate the camera from the previous mouse position to the current
+	 * one. Mouse positions should be in normalized device coordinates
 	 */
-	bool mouse(const SDL_Event &mouse, float elapsed);
-	/*
-	 * Get the camera transformation matrix
+	void rotate(glm::vec2 prev_mouse, glm::vec2 cur_mouse);
+	/* Pan the camera given the translation vector. Mouse
+	 * delta amount should be in normalized device coordinates
 	 */
-	// Update the window dimensions
-	void update_screen(const std::array<int, 2> &screen);
+	void pan(glm::vec2 mouse_delta);
+	/* Zoom the camera given the zoom amount to (i.e., the scroll amount).
+	 * Positive values zoom in, negative will zoom out.
+	 */
+	void zoom(const float zoom_amount);
+	// Get the camera transformation matrix
 	const glm::mat4& transform() const;
-	/*
-	 * Get the camera inverse transformation matrix
-	 */
+	// Get the camera's inverse transformation matrix
 	const glm::mat4& inv_transform() const;
-	/*
-	 * Get the eye position of the camera in world space
-	 */
-	glm::vec3 eye_pos() const;
+	// Get the eye position of the camera in world space
+	glm::vec3 eye() const;
 	// Get the eye direction of the camera in world space
-	glm::vec3 eye_dir() const;
+	glm::vec3 dir() const;
 	// Get the up direction of the camera in world space
-	glm::vec3 up_dir() const;
+	glm::vec3 up() const;
 
 private:
-	/*
-	 * Handle rotation events
-	 */
-	void rotate(const SDL_MouseMotionEvent &mouse);
-	/*
-	 * Handle panning/zooming events
-	 */
-	void pan(const SDL_MouseMotionEvent &mouse);
-
 	void update_camera();
 };
 
