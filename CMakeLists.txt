@@ -40,26 +40,18 @@ if (${ENABLE_EMBREE})
 	add_ispc_library(ispc_kernels render_embree.ispc
 		INCLUDE_DIRECTORIES ${EMBREE_INCLUDE_DIRS}
 		COMPILE_DEFINITIONS --opt=fast-math -O2)
-	target_include_directories(ispc_kernels PUBLIC
-		$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-
 endif()
 
 if (${ENABLE_OPTIX})
 	find_package(CUDA 10 REQUIRED)
 	find_package(OptiX 6 REQUIRED)
-	include(cmake/Bin2C.cmake)
 	add_definitions(-DENABLE_OPTIX)
+	list(APPEND RENDER_BACKEND_SRCS render_optix.cpp)
 
-	include_directories(${OptiX_INCLUDE})
-	cuda_compile_ptx(ptx_file render_optix.cu)
-	set(optix_embed_output ${CMAKE_CURRENT_BINARY_DIR}/render_optix_embedded_ptx.c)
-	add_custom_command(OUTPUT ${optix_embed_output}
-		COMMAND ${bin2c} -c --padd 0 --type char --name "render_optix_programs" ${ptx_file} > ${optix_embed_output}
-		DEPENDS ${ptx_file}
-		COMMENT "Compiling and embedding PTX code")
-
-	list(APPEND RENDER_BACKEND_SRCS render_optix.cpp ${optix_embed_output})
+	include(cmake/Bin2C.cmake)
+	add_ptx_embed_library(optix_kernels render_optix.cu
+		INCLUDE_DIRECTORIES ${OptiX_INCLUDE}
+		COMPILE_DEFINITIONS --use_fast_math)
 endif()
 
 if (RENDER_BACKEND_SRCS STREQUAL "")
@@ -110,6 +102,6 @@ if (${ENABLE_OPTIX})
 		$<BUILD_INTERFACE:${OptiX_INCLUDE}>
 		$<BUILD_INTERFACE:${CUDA_INCLUDE_DIRS}>)
 
-	target_link_libraries(rtobj PUBLIC optix ${CUDA_LIBRARIES})
+	target_link_libraries(rtobj PUBLIC optix optix_kernels ${CUDA_LIBRARIES})
 endif()
 

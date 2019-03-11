@@ -1,6 +1,6 @@
 #include "render_optix.h"
 
-extern "C" const char render_optix_programs[];
+extern "C" const char render_optix_ptx[];
 
 using namespace optix;
 
@@ -8,7 +8,7 @@ RenderOptiX::RenderOptiX() {
 	context = Context::create();
 	context->setRayTypeCount(1);
 	context->setEntryPointCount(1);
-	Program prog = context->createProgramFromPTXString(render_optix_programs, "perspective_camera");
+	Program prog = context->createProgramFromPTXString(render_optix_ptx, "perspective_camera");
 	context->setRayGenerationProgram(0, prog);
 }
 
@@ -42,7 +42,7 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 
 	auto mat = context->createMaterial();
 	mat->setClosestHitProgram(0,
-			context->createProgramFromPTXString(render_optix_programs, "closest_hit"));
+			context->createProgramFromPTXString(render_optix_ptx, "closest_hit"));
 
 	auto instance = context->createGeometryInstance(geom_tri, mat);
 	// We use these in the hit program to color by normal
