@@ -41,6 +41,7 @@ function(add_ispc_library)
 			${ISPC_PIC}
 			--quiet)
 
+		set(DEPS "")
 		if (EXISTS ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep)
 			file(READ ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep DEPS_CONTENT)
 			string(REPLACE "\n" ";" DEPS_CONTENT "${DEPS_CONTENT}")
@@ -54,7 +55,7 @@ function(add_ispc_library)
 
 		add_custom_command(OUTPUT
 			${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.o
-			${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.h
+			${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_ispc.h
 			COMMAND ${ispc} ${CMAKE_CURRENT_LIST_DIR}/${SRC}
 			-o ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.o
 			-h ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_ispc.h
@@ -63,7 +64,6 @@ function(add_ispc_library)
 			${ISPC_COMPILE_DEFINITIONS}
 			${ISPC_PIC}
 			DEPENDS
-			${CMAKE_CURRENT_LIST_DIR}/render_embree.ispc
 			${DEPS}
 			COMMENT "Compiling ISPC file ${SRC}")
 	endforeach()
