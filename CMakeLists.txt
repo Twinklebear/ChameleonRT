@@ -36,7 +36,6 @@ if (${ENABLE_EMBREE})
 	list(APPEND RENDER_BACKEND_SRCS render_embree.cpp)
 
 	include(cmake/ISPC.cmake)
-
 	add_ispc_library(ispc_kernels render_embree.ispc
 		INCLUDE_DIRECTORIES ${EMBREE_INCLUDE_DIRS}
 		COMPILE_DEFINITIONS --opt=fast-math -O2)
