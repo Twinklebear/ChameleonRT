@@ -13,15 +13,15 @@
 #include "shader.h"
 
 #if ENABLE_OSPRAY
-#include "render_ospray.h"
+#include "ospray/render_ospray.h"
 #endif
 
 #if ENABLE_OPTIX
-#include "render_optix.h"
+#include "optix/render_optix.h"
 #endif
 
 #if ENABLE_EMBREE
-#include "render_embree.h"
+#include "embree/render_embree.h"
 #endif
 
 const std::string fullscreen_quad_vs = R"(
