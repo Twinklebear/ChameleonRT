@@ -19,7 +19,6 @@ function(add_ptx_embed_library)
 	set(PTX_SRCS "")
 	foreach (SRC ${CUDA_SRCS})
 		get_filename_component(FNAME ${SRC} NAME_WE)
-		message(${CMAKE_CURRENT_LIST_DIR}/${SRC})
 		cuda_compile_ptx(ptx_file ${CMAKE_CURRENT_LIST_DIR}/${SRC}
 			OPTIONS ${PTX_COMPILE_DEFINITIONS})
 
@@ -34,5 +33,4 @@ function(add_ptx_embed_library)
 
 	add_library(${PTX_LIB} ${PTX_SRCS})
 endfunction()
-
 
