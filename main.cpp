@@ -286,7 +286,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		// We don't instrument inside OSPRay so we don't show these statistics for it
 		if (rays_per_sec > 0.0) {
 			avg_rays_per_sec = avg_rays_per_sec + (rays_per_sec - avg_rays_per_sec) / (frame_id + 1);
-			ImGui::Text("Avg. Rays/sec: %s/sec", pretty_print_count(avg_rays_per_sec));
+			ImGui::Text("Avg. Rays/sec: %s/sec", pretty_print_count(avg_rays_per_sec).c_str());
 		}
 
 		ImGui::End();
