@@ -188,7 +188,7 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	});
 
 	auto end = high_resolution_clock::now();
-	const double render_time = duration_cast<milliseconds>(end - start).count() / 1000.0;
+	const double render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-9;
 
 	return fb_dims.x * fb_dims.y / render_time;
 }
