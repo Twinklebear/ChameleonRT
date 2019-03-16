@@ -9,7 +9,8 @@ struct RenderBackend {
 	virtual void initialize(const int fb_width, const int fb_height) = 0;
 	virtual void set_mesh(const std::vector<float> &verts,
 			const std::vector<uint32_t> &indices) = 0;
-	virtual void render(const glm::vec3 &pos, const glm::vec3 &dir,
+	// Returns the rays per-second achieved, or -1 if this is not tracked
+	virtual double render(const glm::vec3 &pos, const glm::vec3 &dir,
 			const glm::vec3 &up, const float fovy) = 0;
 };
 

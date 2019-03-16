@@ -14,7 +14,7 @@ struct RenderOptiX : RenderBackend {
 	void initialize(const int fb_width, const int fb_height) override;
 	void set_mesh(const std::vector<float> &verts,
 			const std::vector<uint32_t> &indices) override;
-	void render(const glm::vec3 &pos, const glm::vec3 &dir,
+	double render(const glm::vec3 &pos, const glm::vec3 &dir,
 			const glm::vec3 &up, const float fovy) override;
 };
 

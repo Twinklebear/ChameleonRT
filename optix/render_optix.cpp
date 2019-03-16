@@ -1,3 +1,4 @@
+#include <chrono>
 #include "render_optix.h"
 
 extern "C" const char render_optix_ptx[];
@@ -56,9 +57,11 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 	context["model"]->set(model);
 }
 
-void RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
+double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy)
 {
+	using namespace std::chrono;
+
 	glm::vec2 img_plane_size;
 	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
 	img_plane_size.x = img_plane_size.y * static_cast<float>(width) / height;
@@ -72,10 +75,20 @@ void RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	context["cam_dv"]->setFloat(dir_dv.x, dir_dv.y, dir_dv.z);
 	context["cam_dir_top_left"]->setFloat(dir_top_left.x, dir_top_left.y, dir_top_left.z);
 
+	// TODO: For tracking rays/sec with secondary rays we'll want to send an image
+	// size count buffer over where each pixel writes how many rays it sent
+	auto start = high_resolution_clock::now();
+
 	context->launch(0, width, height);
+
 	const uint32_t *mapped = static_cast<const uint32_t*>(fb->map(0, RT_BUFFER_MAP_READ));
+	// We want to wait until it's actually mapped back so we know the frame is really finished
+	auto end = high_resolution_clock::now();
+	const double render_time = duration_cast<milliseconds>(end - start).count() / 1000.0;
 
 	std::memcpy(img.data(), mapped, sizeof(uint32_t) * img.size());
 	fb->unmap();
+
+	return img.size() / render_time;
 }
 

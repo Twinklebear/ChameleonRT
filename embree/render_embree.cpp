@@ -1,5 +1,5 @@
 #include <limits>
-#include <iostream>
+#include <chrono>
 #include <tbb/parallel_for.h>
 #include "render_embree.h"
 #include "render_embree_ispc.h"
@@ -130,9 +130,11 @@ RTCRayHitNp make_ray_hit_soa(RaySoA &rays, HitSoA &hits) {
 	return rh;
 }
 
-void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
+double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy)
 {
+	using namespace std::chrono;
+
 	glm::vec2 img_plane_size;
 	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
 	img_plane_size.x = img_plane_size.y * static_cast<float>(fb_dims.x) / fb_dims.y;
@@ -152,6 +154,8 @@ void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	// framebuffer is not an even multiple of tile size
 	const glm::uvec2 ntiles(fb_dims.x / tile_size.x + (fb_dims.x % tile_size.x != 0 ? 1 : 0),
 			fb_dims.y / tile_size.y + (fb_dims.y % tile_size.y != 0 ? 1 : 0));
+
+	auto start = high_resolution_clock::now();
 
 	tbb::parallel_for(uint32_t(0), ntiles.x * ntiles.y, [&](uint32_t tile_id) {
 		const glm::uvec2 tile = glm::uvec2(tile_id % ntiles.x, tile_id / ntiles.x);
@@ -182,5 +186,10 @@ void RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		ispc::tile_to_uint8(tile_data.data(), color, fb_dims.x, fb_dims.y,
 				tile_pos.x, tile_pos.y, actual_tile_dims.x, actual_tile_dims.y);
 	});
+
+	auto end = high_resolution_clock::now();
+	const double render_time = duration_cast<milliseconds>(end - start).count() / 1000.0;
+
+	return fb_dims.x * fb_dims.y / render_time;
 }
 

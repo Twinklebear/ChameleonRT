@@ -3,6 +3,7 @@ add_library(util
 	imgui_impl_sdl.cpp
 	imgui_impl_opengl3.cpp
 	shader.cpp
+	util.cpp
 	gl_core_4_5.c)
 
 set_target_properties(util PROPERTIES

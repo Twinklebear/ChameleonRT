@@ -11,6 +11,7 @@
 #include "imgui_impl_opengl3.h"
 #include "arcball_camera.h"
 #include "shader.h"
+#include "util.h"
 
 #if ENABLE_OSPRAY
 #include "ospray/render_ospray.h"
@@ -207,6 +208,8 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	glClearColor(0.0, 0.0, 0.0, 0.0);
 	glDisable(GL_DEPTH_TEST);
 
+	size_t frame_id = 0;
+	double avg_rays_per_sec = 0.f;
 	glm::vec2 prev_mouse(-2.f);
 	bool done = false;
 	while (!done) {
@@ -270,6 +273,8 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 			}
 		}
 
+		const double rays_per_sec = renderer->render(camera.eye(), camera.dir(), camera.up(), 65.f);
+
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplSDL2_NewFrame(window);
 		ImGui::NewFrame();
@@ -277,13 +282,18 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		ImGui::Begin("Debug Panel");
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
 				1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
+		// We don't instrument inside OSPRay so we don't show these statistics for it
+		if (rays_per_sec > 0.0) {
+			avg_rays_per_sec = avg_rays_per_sec + (rays_per_sec - avg_rays_per_sec) / (frame_id + 1);
+			ImGui::Text("Avg. Rays/sec: %s/sec", pretty_print_count(avg_rays_per_sec));
+		}
+
 		ImGui::End();
 
 		// Rendering
 		ImGui::Render();
 		glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
-
-		renderer->render(camera.eye(), camera.dir(), camera.up(), 65.f);
 
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, win_width, win_height, GL_RGBA,
 				GL_UNSIGNED_BYTE, renderer->img.data());
@@ -295,6 +305,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		SDL_GL_SwapWindow(window);
+		++frame_id;
 	}
 }
 
