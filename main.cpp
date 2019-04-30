@@ -68,7 +68,7 @@ int main(int argc, const char **argv) {
 #if ENABLE_OSPRAY
 			<< "\t-ospray    Render with OSPRay\n"
 #endif
-#if ENABLE_OSPRAY
+#if ENABLE_OPTIX
 			<< "\t-optix     Render with OptiX\n"
 #endif
 #if ENABLE_EMBREE
