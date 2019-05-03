@@ -25,6 +25,10 @@
 #include "embree/render_embree.h"
 #endif
 
+#if ENABLE_DXR
+#include "dxr/render_dxr.h"
+#endif
+
 const std::string fullscreen_quad_vs = R"(
 #version 450 core
 
@@ -73,6 +77,9 @@ int main(int argc, const char **argv) {
 #endif
 #if ENABLE_EMBREE
 			<< "\t-embree    Render with Embree\n"
+#endif
+#if ENABLE_DXR
+			<< "\t-dxr       Render with DirectX Ray Tracing\n"
 #endif
 			<< "\n";
 		return 1;
@@ -180,6 +187,11 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 #if ENABLE_EMBREE
 	if (std::strcmp(argv[1], "-embree") == 0) {
 		renderer = std::make_unique<RenderEmbree>();
+	}
+#endif
+#if ENABLE_DXR
+	if (std::strcmp(argv[1], "-dxr") == 0) {
+		renderer = std::make_unique<RenderDXR>();
 	}
 #endif
 	if (!renderer) {
