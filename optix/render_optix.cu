@@ -34,7 +34,8 @@ RT_PROGRAM void perspective_camera() {
 	optix::Ray ray(cam_pos, ray_dir, 0, 0.0001);
 
 	float3 color = make_float3(0);
-	rtTrace(model, ray, color);
+	rtTrace(model, ray, color, RT_VISIBILITY_ALL,
+			RTrayflags(RT_RAY_FLAG_DISABLE_ANYHIT));
 	framebuffer[pixel] = make_uchar4(linear_to_srgb(color.x) * 255.f,
 			linear_to_srgb(color.y) * 255.f,
 			linear_to_srgb(color.z) * 255.f, 255);
