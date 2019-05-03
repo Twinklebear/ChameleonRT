@@ -1,8 +1,14 @@
 #pragma once
 
+#include <d3d12.h>
+#include <dxgi1_4.h>
+#include <D3Dcompiler.h>
+#include <wrl.h>
 #include "render_backend.h"
 
 struct RenderDXR : RenderBackend {
+	Microsoft::WRL::ComPtr<ID3D12Device> device;
+
 	RenderDXR();
 
 	void initialize(const int fb_width, const int fb_height) override;
