@@ -37,7 +37,7 @@ if (WIN32 AND ${ENABLE_DXR})
 	add_subdirectory(dxr)
 endif()
 
-if (NOT ENABLE_OSPRAY AND NOT ENABLE_EMBREE AND NOT ENABLE_OPTIX)
+if (NOT ENABLE_OSPRAY AND NOT ENABLE_EMBREE AND NOT ENABLE_OPTIX AND NOT ENABLE_DXR)
 	message(FATAL_ERROR "At least one rendering backend (OSPRAY, EMBREE, OPTIX) must be selected\n"
 		"Enable at least one of: ENABLE_OSPRAY, ENABLE_EMBREE, ENABLE_OPTIX") 
 endif()

@@ -7,7 +7,7 @@
 #include "render_backend.h"
 
 struct RenderDXR : RenderBackend {
-	Microsoft::WRL::ComPtr<ID3D12Device> device;
+	Microsoft::WRL::ComPtr<ID3D12Device5> device;
 
 	RenderDXR();
 

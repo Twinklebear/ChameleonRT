@@ -1,5 +1,6 @@
 #include <iostream>
 #include "render_dxr.h"
+#include "render_dxr_embedded_dxil.h"
 
 using Microsoft::WRL::ComPtr;
 
