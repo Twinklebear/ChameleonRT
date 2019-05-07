@@ -15,6 +15,23 @@ RWTexture2D<float4> output : register(u0);
 // Raytracing acceleration structure, accessed as a SRV
 RaytracingAccelerationStructure scene : register(t0);
 
+// View params buffer
+cbuffer ViewParams : register(b0) {
+	float4 cam_pos;
+	float4 cam_du;
+	float4 cam_dv;
+	float4 cam_dir_top_left;
+}
+
+/*
+float linear_to_srgb(float x) {
+	if (x <= 0.0031308f) {
+		return 12.92f * x;
+	}
+	return 1.055f * pow(x, 1.f / 2.4f) - 0.055f;
+}
+*/
+
 [shader("raygeneration")] 
 void RayGen() {
 	// Initialize the ray payload
@@ -27,10 +44,10 @@ void RayGen() {
 	float2 dims = float2(DispatchRaysDimensions().xy);
 
 	// The example traces an orthographic view essentially (or NDC "projection")
-	float2 dir = (((pixel.xy + 0.5f) / dims.xy) * 2.f - 1.f);
+	float2 d = pixel / dims;
 	RayDesc ray;
-	ray.Origin = float3(dir.x, -dir.y, 1);
-	ray.Direction = float3(0, 0, -1);
+	ray.Origin = cam_pos.xyz;
+	ray.Direction = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
 	ray.TMin = 0;
 	ray.TMax = 1e20f;
 

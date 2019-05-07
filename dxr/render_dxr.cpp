@@ -61,6 +61,39 @@ RenderDXR::RenderDXR() {
 		nullptr, IID_PPV_ARGS(&cmd_list)));
 	CHECK_ERR(cmd_list->Close());
 
+	// Allocate a constants buffer for the view parameters.
+	// These are write once, read once (assumed to change each frame).
+	// The params will be:
+	// vec4 cam_pos
+	// vec4 cam_du
+	// vec4 cam_dv
+	// vec4 cam_dir_top_left
+	{
+		D3D12_HEAP_PROPERTIES props = { 0 };
+		props.Type = D3D12_HEAP_TYPE_UPLOAD;
+		props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+		props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
+		D3D12_RESOURCE_DESC res_desc = { 0 };
+		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		res_desc.Width = 4 * sizeof(glm::vec4);
+		// Buffer size must be aligned
+		res_desc.Width += D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT -
+			res_desc.Width % D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+		res_desc.Height = 1;
+		res_desc.DepthOrArraySize = 1;
+		res_desc.MipLevels = 1;
+		res_desc.Format = DXGI_FORMAT_UNKNOWN;
+		res_desc.SampleDesc.Count = 1;
+		res_desc.SampleDesc.Quality = 0;
+		res_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		res_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
+			&res_desc, D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr, IID_PPV_ARGS(&view_param_buf)));
+	}
+
 	build_raytracing_pipeline();
 	build_shader_resource_heap();
 	build_shader_binding_table();
@@ -97,7 +130,7 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 		res_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
 		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_COPY_SOURCE,
+			&res_desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 			nullptr, IID_PPV_ARGS(&render_target)));
 	}
 
@@ -404,8 +437,8 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy)
 {
 	using namespace std::chrono;
-	auto start = high_resolution_clock::now();
 
+	update_view_parameters(pos, dir, up, fovy);
 	// Set the render target and TLAS pointers in the descriptor heap
 	update_descriptor_heap();
 
@@ -434,9 +467,9 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	dispatch_rays.Height = img_dims.y;
 	dispatch_rays.Depth = 1;
 
+	auto start = high_resolution_clock::now();
 	cmd_list->SetDescriptorHeaps(1, shader_desc_heap.GetAddressOf());
 	cmd_list->SetPipelineState1(rt_state_object.Get());
-
 	cmd_list->DispatchRays(&dispatch_rays);
 
 	// Now copy the rendered image into our readback heap so we can give it back
@@ -502,7 +535,10 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	// Map the readback buf and copy out the rendered image
 	{
 		void *buf = nullptr;
-		img_readback_buf->Map(0, nullptr, &buf);
+		D3D12_RANGE range = { 0 };
+		// Explicitly note we want the whole range to silence debug layer warnings
+		range.End = img.size() * sizeof(uint32_t);
+		img_readback_buf->Map(0, &range, &buf);
 		std::memcpy(img.data(), buf, img.size() * sizeof(uint32_t));
 		img_readback_buf->Unmap(0, nullptr);
 	}
@@ -572,7 +608,7 @@ void RenderDXR::build_raytracing_pipeline() {
 		param.DescriptorTable.pDescriptorRanges = &descrip_range_uav;
 		rt_params.push_back(param);
 
-		// SRV param for the output image buffer, which will be the second entry in the table
+		// SRV for the top-level acceleration structure
 		D3D12_DESCRIPTOR_RANGE descrip_range_srv = { 0 };
 		descrip_range_srv.BaseShaderRegister = 0;
 		descrip_range_srv.NumDescriptors = 1;
@@ -582,6 +618,17 @@ void RenderDXR::build_raytracing_pipeline() {
 		descrip_range_srv.OffsetInDescriptorsFromTableStart = 1;
 
 		param.DescriptorTable.pDescriptorRanges = &descrip_range_srv;
+		rt_params.push_back(param);
+
+		// Constants buffer param for the view parameters
+		D3D12_DESCRIPTOR_RANGE descrip_range_cbv = { 0 };
+		descrip_range_cbv.BaseShaderRegister = 0;
+		descrip_range_cbv.NumDescriptors = 1;
+		descrip_range_cbv.RegisterSpace = 0;
+		descrip_range_cbv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+		descrip_range_cbv.OffsetInDescriptorsFromTableStart = 2;
+
+		param.DescriptorTable.pDescriptorRanges = &descrip_range_cbv;
 		rt_params.push_back(param);
 
 		D3D12_ROOT_SIGNATURE_DESC root_desc = { 0 };
@@ -692,7 +739,7 @@ void RenderDXR::build_shader_resource_heap() {
 	// The resource heap has the pointers/views things to our output image buffer
 	// and the top level acceleration structure
 	D3D12_DESCRIPTOR_HEAP_DESC heap_desc = { 0 };
-	heap_desc.NumDescriptors = 2;
+	heap_desc.NumDescriptors = 3;
 	heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	CHECK_ERR(device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&shader_desc_heap)));
@@ -768,6 +815,29 @@ void RenderDXR::build_shader_binding_table() {
 	shader_table->Unmap(0, nullptr);
 }
 
+void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,
+	const glm::vec3 &up, const float fovy) {
+	// TODO: Some doc mentioned you can also send 4byte constants directly in the shader table
+	// having them embedded like that might be nice for the camera parameters, but how
+	// does that get setup? How much difference would it make?
+	glm::vec2 img_plane_size;
+	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
+	img_plane_size.x = img_plane_size.y * static_cast<float>(img_dims.x) / img_dims.y;
+
+	const glm::vec3 dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
+	const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
+	const glm::vec3 dir_top_left = dir - 0.5f * dir_du - 0.5f * dir_dv;
+
+	glm::vec4 *buf = nullptr;
+	D3D12_RANGE range = { 0 };
+	CHECK_ERR(view_param_buf->Map(0, &range, reinterpret_cast<void**>(&buf)));
+	buf[0] = glm::vec4(pos, 0.f);
+	buf[1] = glm::vec4(dir_du, 0.f);
+	buf[2] = glm::vec4(dir_dv, 0.f);
+	buf[3] = glm::vec4(dir_top_left, 0.f);
+	view_param_buf->Unmap(0, nullptr);
+}
+
 void RenderDXR::update_descriptor_heap() {
 	D3D12_CPU_DESCRIPTOR_HANDLE heap_handle = shader_desc_heap->GetCPUDescriptorHandleForHeapStart();
 
@@ -777,13 +847,22 @@ void RenderDXR::update_descriptor_heap() {
 
 	// Write the TLAS after the output image in the heap
 	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
 	D3D12_SHADER_RESOURCE_VIEW_DESC tlas_desc = { 0 };
 	tlas_desc.Format = DXGI_FORMAT_UNKNOWN;
 	tlas_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
 	tlas_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	tlas_desc.RaytracingAccelerationStructure.Location = top_level_as->GetGPUVirtualAddress();
 	device->CreateShaderResourceView(nullptr, &tlas_desc, heap_handle);
+
+	// Write the view params constants buffer
+	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = { 0 };
+	cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
+	cbv_desc.SizeInBytes = 4 * sizeof(glm::vec4);
+	// Align size
+	cbv_desc.SizeInBytes += D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT -
+		cbv_desc.SizeInBytes % D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+	device->CreateConstantBufferView(&cbv_desc, heap_handle);
 }
 
 void RenderDXR::sync_gpu() {

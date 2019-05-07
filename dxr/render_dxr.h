@@ -14,7 +14,7 @@ struct RenderDXR : RenderBackend {
 	
 	Microsoft::WRL::ComPtr<ID3D12Resource> img_readback_buf, render_target,
 		vertex_buf, index_buf, bottom_level_as, top_level_as, instance_buf,
-		shader_table;
+		shader_table, view_param_buf;
 	
 	Microsoft::WRL::ComPtr<ID3D12StateObject> rt_state_object;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> shader_desc_heap;
@@ -39,6 +39,8 @@ private:
 	void build_raytracing_pipeline();
 	void build_shader_resource_heap();
 	void build_shader_binding_table();
+	void update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,
+		const glm::vec3 &up, const float fovy);
 	void update_descriptor_heap();
 	void sync_gpu();
 };
