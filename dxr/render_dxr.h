@@ -20,7 +20,7 @@ struct RenderDXR : RenderBackend {
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> shader_desc_heap;
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> root_signature;
 	
-	uint64_t fence_value = 0;
+	uint64_t fence_value = 1;
 	Microsoft::WRL::ComPtr<ID3D12Fence> fence;
 	HANDLE fence_evt;
 

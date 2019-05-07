@@ -209,14 +209,16 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 	{
 		// Copy over the vertex data
 		void *mapping = nullptr;
-		CHECK_ERR(upload_verts->Map(0, nullptr, &mapping));
+		D3D12_RANGE range = { 0 };
+		CHECK_ERR(upload_verts->Map(0, &range, &mapping));
 		std::memcpy(mapping, verts.data(), sizeof(float) * verts.size());
 		upload_verts->Unmap(0, nullptr);
 	}
 	{
 		// Copy over the index data
 		void *mapping = nullptr;
-		CHECK_ERR(upload_indices->Map(0, nullptr, &mapping));
+		D3D12_RANGE range = { 0 };
+		CHECK_ERR(upload_indices->Map(0, &range, &mapping));
 		std::memcpy(mapping, indices.data(), sizeof(uint32_t) * indices.size());
 		upload_indices->Unmap(0, nullptr);
 	}
@@ -252,7 +254,7 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 
 	rt_geom_desc.Triangles.IndexBuffer = index_buf->GetGPUVirtualAddress();
 	rt_geom_desc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
-	rt_geom_desc.Triangles.IndexCount = indices.size() / 3;
+	rt_geom_desc.Triangles.IndexCount = indices.size();
 	rt_geom_desc.Triangles.Transform3x4 = 0;
 	rt_geom_desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
 
@@ -429,6 +431,11 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		build_barrier.UAV.pResource = top_level_as.Get();
 		cmd_list->ResourceBarrier(1, &build_barrier);
 	}
+
+	CHECK_ERR(cmd_list->Close());
+	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
+	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+
 	// Wait for the work to finish
 	sync_gpu();
 }
@@ -525,6 +532,10 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		res_barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
 		cmd_list->ResourceBarrier(1, &res_barrier);
 	}
+
+	CHECK_ERR(cmd_list->Close());
+	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
+	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
 
 	// Wait for rendering to finish
 	sync_gpu();
@@ -866,10 +877,6 @@ void RenderDXR::update_descriptor_heap() {
 }
 
 void RenderDXR::sync_gpu() {
-	CHECK_ERR(cmd_list->Close());
-	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
-	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
-
 	// Sync with the fence to wait for the assets to upload
 	const uint64_t signal_val = fence_value++;
 	CHECK_ERR(cmd_queue->Signal(fence.Get(), signal_val));
@@ -878,4 +885,5 @@ void RenderDXR::sync_gpu() {
 		CHECK_ERR(fence->SetEventOnCompletion(signal_val, fence_evt));
 		WaitForSingleObject(fence_evt, INFINITE);
 	}
+	++fence_value;
 }
