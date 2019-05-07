@@ -23,20 +23,18 @@ cbuffer ViewParams : register(b0) {
 	float4 cam_dir_top_left;
 }
 
-/*
 float linear_to_srgb(float x) {
 	if (x <= 0.0031308f) {
 		return 12.92f * x;
 	}
 	return 1.055f * pow(x, 1.f / 2.4f) - 0.055f;
 }
-*/
 
 [shader("raygeneration")] 
 void RayGen() {
 	// Initialize the ray payload
 	HitInfo payload;
-	payload.color_dist = float4(0, 0, 1, 1);
+	payload.color_dist = float4(0, 0, 0, 1);
 
 	// Get the location within the dispatched 2D grid of work items
 	// (often maps to pixels, so this could represent a pixel coordinate).
@@ -53,12 +51,14 @@ void RayGen() {
 
 	TraceRay(scene, 0, 0xff, 0, 0, 0, ray, payload);
 
-	output[pixel] = float4(payload.color_dist.rgb, 1.f);
+	output[pixel] = float4(linear_to_srgb(payload.color_dist.r),
+		linear_to_srgb(payload.color_dist.g),
+		linear_to_srgb(payload.color_dist.b), 1.f);
 }
 
 [shader("miss")]
 void Miss(inout HitInfo payload : SV_RayPayload) {
-	payload.color_dist = float4(0.0f, 0.2f, 0.4f, -1.f);
+	payload.color_dist = float4(0, 0, 0, 0);
 }
 
 [shader("closesthit")] 
