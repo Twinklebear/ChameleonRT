@@ -8,13 +8,37 @@
 
 struct RenderDXR : RenderBackend {
 	Microsoft::WRL::ComPtr<ID3D12Device5> device;
+	Microsoft::WRL::ComPtr<ID3D12CommandQueue> cmd_queue;
+	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmd_allocator;
+	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
+	
+	Microsoft::WRL::ComPtr<ID3D12Resource> img_readback_buf, render_target,
+		vertex_buf, index_buf, bottom_level_as, top_level_as, instance_buf,
+		shader_table;
+	
+	Microsoft::WRL::ComPtr<ID3D12StateObject> rt_state_object;
+	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> shader_desc_heap;
+	Microsoft::WRL::ComPtr<ID3D12RootSignature> root_signature;
+	
+	uint64_t fence_value = 0;
+	Microsoft::WRL::ComPtr<ID3D12Fence> fence;
+	HANDLE fence_evt;
+
+	glm::ivec2 img_dims = glm::ivec2(0);
 
 	RenderDXR();
+	virtual ~RenderDXR();
 
 	void initialize(const int fb_width, const int fb_height) override;
 	void set_mesh(const std::vector<float> &verts,
 			const std::vector<uint32_t> &indices) override;
 	double render(const glm::vec3 &pos, const glm::vec3 &dir,
 			const glm::vec3 &up, const float fovy) override;
-};
 
+private:
+	void build_raytracing_pipeline();
+	void build_shader_resource_heap();
+	void build_shader_binding_table();
+	void update_descriptor_heap();
+	void sync_gpu();
+};
