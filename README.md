@@ -64,3 +64,16 @@ You can then pass `-optix` to use the OptiX backend.
 If CMake doesn't find your install of OptiX you can tell it where
 it's installed with `-DOptiX_INSTALL_DIR`.
 
+### DirectX Ray Tracing
+
+If you're on Windows 10 1809, have the 10.0.17763 SDK and a DXR capable GPU you can also run
+the DirectX Ray Tracing backend.
+
+To build the DXR backend run CMake with:
+
+```
+cmake .. -DENABLE_DXR=ON
+```
+
+You can then pass `-dxr` to use the DXR backend.
+
