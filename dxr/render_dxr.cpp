@@ -267,7 +267,7 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		as_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 		as_inputs.NumDescs = 1;
 		as_inputs.pGeometryDescs = &rt_geom_desc;
-		as_inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
+		as_inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
 
 		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuild_info = { 0 };
 		device->GetRaytracingAccelerationStructurePrebuildInfo(&as_inputs, &prebuild_info);
@@ -378,7 +378,7 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		as_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 		as_inputs.NumDescs = 1;
 		as_inputs.InstanceDescs = instance_buf->GetGPUVirtualAddress();
-		as_inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
+		as_inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
 
 		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuild_info = { 0 };
 		device->GetRaytracingAccelerationStructurePrebuildInfo(&as_inputs, &prebuild_info);
@@ -474,14 +474,27 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	dispatch_rays.Height = img_dims.y;
 	dispatch_rays.Depth = 1;
 
-	auto start = high_resolution_clock::now();
 	cmd_list->SetDescriptorHeaps(1, shader_desc_heap.GetAddressOf());
 	cmd_list->SetPipelineState1(rt_state_object.Get());
 	cmd_list->DispatchRays(&dispatch_rays);
+	
+	// We want to just time the raytracing work
+	CHECK_ERR(cmd_list->Close());
+	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
+	auto start = high_resolution_clock::now();
+	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+
+	// Wait for rendering to finish
+	sync_gpu();
+
+	auto end = high_resolution_clock::now();
+	const double render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-9;
 
 	// Now copy the rendered image into our readback heap so we can give it back
 	// to our simple window to blit the image (TODO: Maybe in the future keep this on the GPU?
 	// would we be able to share with GL or need a separate DX window backend?)
+	CHECK_ERR(cmd_allocator->Reset());
+	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	{
 		// Render target from UA -> Copy Source
 		D3D12_RESOURCE_BARRIER res_barrier;
@@ -533,15 +546,11 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		cmd_list->ResourceBarrier(1, &res_barrier);
 	}
 
+	// Run the copy and wait for it to finish
 	CHECK_ERR(cmd_list->Close());
-	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
+	cmd_lists[0] = cmd_list.Get();
 	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
-
-	// Wait for rendering to finish
 	sync_gpu();
-
-	auto end = high_resolution_clock::now();
-	const double render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-9;
 
 	// Map the readback buf and copy out the rendered image
 	{
@@ -714,8 +723,8 @@ void RenderDXR::build_raytracing_pipeline() {
 		root_sig_obj.pDesc = &rt_local_root_sig;
 		subobjects[current_subobj++] = root_sig_obj;
 
-		root_sig_assoc.NumExports = shader_exported_fcns.size();
-		root_sig_assoc.pExports = shader_exported_fcns.data();
+		root_sig_assoc.NumExports = 1;
+		root_sig_assoc.pExports = &shader_exported_fcns[0];
 		root_sig_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
 
 		// Associate it with the symbols
