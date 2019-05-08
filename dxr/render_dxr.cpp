@@ -27,15 +27,19 @@ bool dxr_available(ComPtr<ID3D12Device5> &device) {
 
 RenderDXR::RenderDXR() {
 	// Enable debugging for D3D12
-	ComPtr<ID3D12Debug> debug_controller;
-	auto err = D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller));
-	if (FAILED(err)) {
-		std::cout << "Failed to enable debug layer!\n";
-		throw std::runtime_error("get debug failed");
+#ifdef _DEBUG
+	{
+		ComPtr<ID3D12Debug> debug_controller;
+		auto err = D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller));
+		if (FAILED(err)) {
+			std::cout << "Failed to enable debug layer!\n";
+			throw std::runtime_error("get debug failed");
+		}
+		debug_controller->EnableDebugLayer();
 	}
-	debug_controller->EnableDebugLayer();
+#endif
 
-	err = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&device));
+	auto err = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&device));
 	if (FAILED(err)) {
 		std::cout << "Failed to make D3D12 device\n";
 		throw std::runtime_error("failed to make d3d12 device\n");
@@ -821,7 +825,8 @@ void RenderDXR::build_shader_binding_table() {
 	sbt_map += D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
 
 	D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle = shader_desc_heap->GetGPUDescriptorHandleForHeapStart();
-	std::memcpy(sbt_map, &desc_heap_handle.ptr, sizeof(uint64_t));
+	// It seems like writing this for the ray gen shader in the table isn't needed?
+	//std::memcpy(sbt_map, &desc_heap_handle.ptr, sizeof(uint64_t));
 	// Each entry must start at an alignment of 32bytes, so offset by the required alignment
 	sbt_map += D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
 
