@@ -826,7 +826,7 @@ void RenderDXR::build_shader_binding_table() {
 
 	D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle = shader_desc_heap->GetGPUDescriptorHandleForHeapStart();
 	// It seems like writing this for the ray gen shader in the table isn't needed?
-	//std::memcpy(sbt_map, &desc_heap_handle.ptr, sizeof(uint64_t));
+	std::memcpy(sbt_map, &desc_heap_handle.ptr, sizeof(uint64_t));
 	// Each entry must start at an alignment of 32bytes, so offset by the required alignment
 	sbt_map += D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
 
