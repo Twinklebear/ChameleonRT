@@ -783,7 +783,7 @@ void RenderDXR::build_shader_binding_table() {
 	// binding table in the dispatch rays must have its address start at a 64byte alignment,
 	// and use a 32byte stride. So pad these out to meet those requirements by making each
 	// entry 64 bytes
-	uint32_t sbt_table_size = 4 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+	uint32_t sbt_table_size = 6 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
 	// What's the alignment requirement here?
 	sbt_table_size += D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT -
 		sbt_table_size % D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
@@ -822,13 +822,12 @@ void RenderDXR::build_shader_binding_table() {
 	// First we write the ray-gen shader identifier, followed by the ptr to its descriptor heap
 	std::memcpy(sbt_map, rt_pipeline_props->GetShaderIdentifier(L"RayGen"),
 		D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-	sbt_map += D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
 
-	D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle = shader_desc_heap->GetGPUDescriptorHandleForHeapStart();
-	// It seems like writing this for the ray gen shader in the table isn't needed?
-	std::memcpy(sbt_map, &desc_heap_handle.ptr, sizeof(uint64_t));
+	D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle = shader_desc_heap->GetGPUDescriptorHandleForHeapStart();;
+	std::memcpy(sbt_map + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
+		&desc_heap_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 	// Each entry must start at an alignment of 32bytes, so offset by the required alignment
-	sbt_map += D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
+	sbt_map += 2 * D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
 
 	std::memcpy(sbt_map, rt_pipeline_props->GetShaderIdentifier(L"Miss"),
 		D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
