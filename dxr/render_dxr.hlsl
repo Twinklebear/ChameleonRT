@@ -15,9 +15,9 @@ RWTexture2D<float4> output : register(u0);
 // Raytracing acceleration structure, accessed as a SRV
 RaytracingAccelerationStructure scene : register(t0);
 
-StructuredBuffer<float3> vertices : register(t0, space1);
+StructuredBuffer<float3> vertices : register(t1);
 
-StructuredBuffer<uint3> indices : register(t1, space1);
+StructuredBuffer<uint3> indices : register(t2);
 
 // View params buffer
 cbuffer ViewParams : register(b0) {

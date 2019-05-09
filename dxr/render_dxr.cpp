@@ -794,7 +794,7 @@ void RenderDXR::build_hitgroup_root_signature() {
 	D3D12_DESCRIPTOR_RANGE descrip_range_srv = { 0 };
 	descrip_range_srv.BaseShaderRegister = 0;
 	descrip_range_srv.NumDescriptors = 2;
-	descrip_range_srv.RegisterSpace = 1;
+	descrip_range_srv.RegisterSpace = 0;
 	descrip_range_srv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 	descrip_range_srv.OffsetInDescriptorsFromTableStart = 0;
 
