@@ -20,7 +20,9 @@ struct RenderDXR : RenderBackend {
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> raygen_shader_desc_heap,
 		hitgroup_shader_desc_heap;
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> raygen_root_sig,
-		hitgroup_root_sig;
+		hitgroup_root_sig, global_root_sig;
+
+	uint64_t shader_table_entry_size = 0;
 	
 	uint64_t fence_value = 1;
 	Microsoft::WRL::ComPtr<ID3D12Fence> fence;
@@ -42,6 +44,7 @@ private:
 	void build_raytracing_pipeline();
 	void build_raygen_root_signature();
 	void build_hitgroup_root_signature();
+	void build_empty_global_sig();
 	void build_shader_resource_heap();
 	void build_shader_binding_table();
 	void update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,

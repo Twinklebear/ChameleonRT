@@ -15,10 +15,6 @@ RWTexture2D<float4> output : register(u0);
 // Raytracing acceleration structure, accessed as a SRV
 RaytracingAccelerationStructure scene : register(t0);
 
-StructuredBuffer<float3> vertices : register(t1);
-
-StructuredBuffer<uint3> indices : register(t2);
-
 // View params buffer
 cbuffer ViewParams : register(b0) {
 	float4 cam_pos;
@@ -65,6 +61,9 @@ void Miss(inout HitInfo payload : SV_RayPayload) {
 	payload.color_dist = float4(0.1, 0.1, 0.1, 0);
 }
 
+StructuredBuffer<float3> vertices : register(t0, space1);
+StructuredBuffer<uint3> indices : register(t1, space1);
+
 [shader("closesthit")] 
 void ClosestHit(inout HitInfo payload, Attributes attrib) {
 #if 1
@@ -74,7 +73,7 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 	float3 vc = vertices[idx.z];
 	float3 n = normalize(cross(vb - va, vc - va));
 	float3 c = (n + float3(1, 1, 1)) * 0.5;
-	payload.color_dist = float4(indices[0], RayTCurrent());
+	payload.color_dist = float4(c, RayTCurrent());
 #else
 	float3 barycoords = float3(1.f - attrib.bary.x - attrib.bary.y,
 		attrib.bary.x, attrib.bary.y);
