@@ -2,6 +2,9 @@
 #include <array>
 #include <algorithm>
 #include <chrono>
+#include <sstream>
+#include <string>
+#include <iomanip>
 #include "render_dxr.h"
 #include "render_dxr_embedded_dxil.h"
 
@@ -100,7 +103,6 @@ RenderDXR::RenderDXR() {
 
 	build_raytracing_pipeline();
 	build_shader_resource_heap();
-	build_shader_binding_table();
 }
 
 RenderDXR::~RenderDXR() {
@@ -166,8 +168,10 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 void RenderDXR::set_mesh(const std::vector<float> &verts,
 		const std::vector<uint32_t> &indices)
 {
+	n_verts = verts.size();
+	n_indices = indices.size();
+
 	// Upload the mesh to the vertex buffer, build accel structures
-	
 	// Place the vertex data in an upload heap first, then do a GPU-side copy
 	// into a default heap (resident in VRAM)
 	ComPtr<ID3D12Resource> upload_verts, upload_indices;
@@ -442,6 +446,8 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 
 	// Wait for the work to finish
 	sync_gpu();
+	
+	build_shader_binding_table();
 }
 
 double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -461,24 +467,25 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	D3D12_DISPATCH_RAYS_DESC dispatch_rays = { 0 };
 	// RayGen is first, and has a shader identifier and one param
 	dispatch_rays.RayGenerationShaderRecord.StartAddress = shader_table->GetGPUVirtualAddress();
-	dispatch_rays.RayGenerationShaderRecord.SizeInBytes = 2 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+	dispatch_rays.RayGenerationShaderRecord.SizeInBytes = shader_table_entry_size;
 
 	// Miss is next, followed by hit, each is just a shader identifier
 	dispatch_rays.MissShaderTable.StartAddress =
-		shader_table->GetGPUVirtualAddress() + 2 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-	dispatch_rays.MissShaderTable.SizeInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-	dispatch_rays.MissShaderTable.StrideInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+		shader_table->GetGPUVirtualAddress() + shader_table_entry_size;
+	dispatch_rays.MissShaderTable.SizeInBytes = shader_table_entry_size;
+	dispatch_rays.MissShaderTable.StrideInBytes = shader_table_entry_size;
 
 	dispatch_rays.HitGroupTable.StartAddress =
-		shader_table->GetGPUVirtualAddress() + 4 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-	dispatch_rays.HitGroupTable.SizeInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-	dispatch_rays.HitGroupTable.StrideInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+		shader_table->GetGPUVirtualAddress() + 2 * shader_table_entry_size;
+	dispatch_rays.HitGroupTable.SizeInBytes = shader_table_entry_size;
+	dispatch_rays.HitGroupTable.StrideInBytes = shader_table_entry_size;
 
 	dispatch_rays.Width = img_dims.x;
 	dispatch_rays.Height = img_dims.y;
 	dispatch_rays.Depth = 1;
 
-	cmd_list->SetDescriptorHeaps(1, shader_desc_heap.GetAddressOf());
+	cmd_list->SetDescriptorHeaps(1, raygen_shader_desc_heap.GetAddressOf());
+	cmd_list->SetComputeRootSignature(global_root_sig.Get());
 	cmd_list->SetPipelineState1(rt_state_object.Get());
 	cmd_list->DispatchRays(&dispatch_rays);
 	
@@ -608,72 +615,9 @@ void RenderDXR::build_raytracing_pipeline() {
 	// Attribute size is just the float2 barycentrics
 	shader_desc.MaxAttributeSizeInBytes = 2 * sizeof(float);
 
-	// Create the root signature for our shader library
-	// The closest hit and miss shaders don't need one since they
-	// don't make use of a local root signature (no reads from buffers/textures)
-	{
-		std::vector<D3D12_ROOT_PARAMETER> rt_params;
-		// The raygen program takes two parameters:
-		// the UAV representing the output image buffer
-		// the SRV representing the top-level acceleration structure
-		D3D12_ROOT_PARAMETER param = { 0 };
-		param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-
-		// UAV param for the output image buffer
-		D3D12_DESCRIPTOR_RANGE descrip_range_uav = { 0 };
-		descrip_range_uav.BaseShaderRegister = 0;
-		descrip_range_uav.NumDescriptors = 1;
-		descrip_range_uav.RegisterSpace = 0;
-		descrip_range_uav.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-		descrip_range_uav.OffsetInDescriptorsFromTableStart = 0;
-
-		param.DescriptorTable.NumDescriptorRanges = 1;
-		param.DescriptorTable.pDescriptorRanges = &descrip_range_uav;
-		rt_params.push_back(param);
-
-		// SRV for the top-level acceleration structure
-		D3D12_DESCRIPTOR_RANGE descrip_range_srv = { 0 };
-		descrip_range_srv.BaseShaderRegister = 0;
-		descrip_range_srv.NumDescriptors = 1;
-		descrip_range_srv.RegisterSpace = 0;
-		descrip_range_srv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		// Second entry in our table
-		descrip_range_srv.OffsetInDescriptorsFromTableStart = 1;
-
-		param.DescriptorTable.pDescriptorRanges = &descrip_range_srv;
-		rt_params.push_back(param);
-
-		// Constants buffer param for the view parameters
-		D3D12_DESCRIPTOR_RANGE descrip_range_cbv = { 0 };
-		descrip_range_cbv.BaseShaderRegister = 0;
-		descrip_range_cbv.NumDescriptors = 1;
-		descrip_range_cbv.RegisterSpace = 0;
-		descrip_range_cbv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-		descrip_range_cbv.OffsetInDescriptorsFromTableStart = 2;
-
-		param.DescriptorTable.pDescriptorRanges = &descrip_range_cbv;
-		rt_params.push_back(param);
-
-		D3D12_ROOT_SIGNATURE_DESC root_desc = { 0 };
-		root_desc.NumParameters = rt_params.size();
-		root_desc.pParameters = rt_params.data();
-		// RT root signatures are local (TODO WILL to what? the hit group?)
-		root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-
-		// Create the root signature from the descriptor
-		ComPtr<ID3DBlob> signature_blob;
-		ComPtr<ID3DBlob> err_blob;
-		auto res = D3D12SerializeRootSignature(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1,
-			&signature_blob, &err_blob);
-		if (FAILED(res)) {
-			std::cout << "Failed to serialize root signature: " << err_blob->GetBufferPointer() << "\n";
-			throw std::runtime_error("Failed to serialize root signature");
-		}
-
-		CHECK_ERR(device->CreateRootSignature(0, signature_blob->GetBufferPointer(),
-			signature_blob->GetBufferSize(), IID_PPV_ARGS(&root_signature)));
-	}
+	build_raygen_root_signature();
+	build_hitgroup_root_signature();
+	build_empty_global_sig();
 
 	// TODO WILL: In a utility library the ray tracing shader and pipeline object
 	// should be handled separately
@@ -681,60 +625,104 @@ void RenderDXR::build_raytracing_pipeline() {
 	// Now we can build the raytracing pipeline. It's made of a bunch of subobjects that
 	// describe the shader code libraries, hit groups, root signature associations and
 	// some other config stuff
+	// Our pipeline:
+	// 0: DXIL library
+	// 1: Hit Group
+	// 2: Shader config
+	// 3: Shader config association
+	// 4: Raygen local root signature
+	// 5: Raygen local root signature association
+	// 6: Hitgroup local root signature
+	// 7: Hitgroup local root sign. association
+	// 8: Pipeline config
+	// 9: Empty global root sig.
+	
 	std::vector<D3D12_STATE_SUBOBJECT> subobjects;
-	subobjects.resize(7);
+	subobjects.resize(10);
 	size_t current_subobj = 0;
 	{
 		D3D12_STATE_SUBOBJECT dxil_libs = { 0 };
 		dxil_libs.Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
 		dxil_libs.pDesc = &shader_lib;
+		// 0: DXIL library
 		subobjects[current_subobj++] = dxil_libs;
 	}
 	{
 		D3D12_STATE_SUBOBJECT hit_grp_obj = { 0 };
 		hit_grp_obj.Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
 		hit_grp_obj.pDesc = &hit_group;
+		// 1: Hit Group
 		subobjects[current_subobj++] = hit_grp_obj;
 	}
 	{
 		D3D12_STATE_SUBOBJECT shader_cfg = { 0 };
 		shader_cfg.Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
 		shader_cfg.pDesc = &shader_desc;
+		// 2: Shader config
 		subobjects[current_subobj++] = shader_cfg;
 	}
 
+	// Associate shader payload cfg with the programs
 	D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION shader_paylod_assoc = { 0 };
 	shader_paylod_assoc.NumExports = shader_exported_fcns.size();
 	shader_paylod_assoc.pExports = shader_exported_fcns.data();
-	// Associate with the raytracing shader config subobject
+	// Associate the raytracing shader config subobject with the shader exports
 	shader_paylod_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
 	{
 		D3D12_STATE_SUBOBJECT payload_subobj = { 0 };
 		payload_subobj.Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
 		payload_subobj.pDesc = &shader_paylod_assoc;
+		// 3: Shader config association
 		subobjects[current_subobj++] = payload_subobj;
 	}
 
 	// The root signature needs two subobjects: one to declare it, and one to associate it
 	// with a set of symbols
-	D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION root_sig_assoc = { 0 };
-	D3D12_LOCAL_ROOT_SIGNATURE rt_local_root_sig;
-	rt_local_root_sig.pLocalRootSignature = root_signature.Get();
+	D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION rg_root_sig_assoc = { 0 };
+	D3D12_LOCAL_ROOT_SIGNATURE rg_local_root_sig = { 0 };
+	rg_local_root_sig.pLocalRootSignature = raygen_root_sig.Get();
 	{
 		// Declare the root signature
 		D3D12_STATE_SUBOBJECT root_sig_obj = { 0 };
 		root_sig_obj.Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-		root_sig_obj.pDesc = &rt_local_root_sig;
+		root_sig_obj.pDesc = &rg_local_root_sig;
+		// 4: Raygen local root signature
+		subobjects[current_subobj++] = root_sig_obj;
+
+		rg_root_sig_assoc.NumExports = 1;
+		rg_root_sig_assoc.pExports = &shader_exported_fcns[0];
+		rg_root_sig_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
+
+		// Associate it with the symbols
+		D3D12_STATE_SUBOBJECT root_assoc = { 0 };
+		root_assoc.Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+		root_assoc.pDesc = &rg_root_sig_assoc;
+		// 5: Raygen local root signature association
+		subobjects[current_subobj++] = root_assoc;
+	}
+
+	// Setup the local root signature for the hit group program as well
+	D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION root_sig_assoc = { 0 };
+	D3D12_LOCAL_ROOT_SIGNATURE ch_local_root_sig = { 0 };
+	ch_local_root_sig.pLocalRootSignature = hitgroup_root_sig.Get();
+	{
+		
+		// Declare the root signature
+		D3D12_STATE_SUBOBJECT root_sig_obj = { 0 };
+		root_sig_obj.Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+		root_sig_obj.pDesc = &ch_local_root_sig;
+		// 6: Hitgroup local root signature
 		subobjects[current_subobj++] = root_sig_obj;
 
 		root_sig_assoc.NumExports = 1;
-		root_sig_assoc.pExports = &shader_exported_fcns[0];
+		root_sig_assoc.pExports = &shader_exported_fcns[2];
 		root_sig_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
 
 		// Associate it with the symbols
 		D3D12_STATE_SUBOBJECT root_assoc = { 0 };
 		root_assoc.Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
 		root_assoc.pDesc = &root_sig_assoc;
+		// 7: Hitgroup local root sign. association
 		subobjects[current_subobj++] = root_assoc;
 	}
 
@@ -747,7 +735,21 @@ void RenderDXR::build_raytracing_pipeline() {
 		D3D12_STATE_SUBOBJECT pipeline_subobj = { 0 };
 		pipeline_subobj.Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
 		pipeline_subobj.pDesc = &pipeline_cfg;
+		// 8: Pipeline config
 		subobjects[current_subobj++] = pipeline_subobj;
+	}
+
+	// Empty global root signature. Note that since we have no global
+	// parameters we don't actually need to specify this global signature
+	D3D12_GLOBAL_ROOT_SIGNATURE global_root_sig_obj = { 0 };
+	global_root_sig_obj.pGlobalRootSignature = global_root_sig.Get();
+	{
+		// Declare the root signature
+		D3D12_STATE_SUBOBJECT root_sig_obj = { 0 };
+		root_sig_obj.Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
+		root_sig_obj.pDesc = &global_root_sig_obj;
+		// 9: Empty global root sig.
+		subobjects[current_subobj++] = root_sig_obj;
 	}
 
 	// Describe the set of subobjects in our raytracing pipeline
@@ -755,8 +757,126 @@ void RenderDXR::build_raytracing_pipeline() {
 	pipeline_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
 	pipeline_desc.NumSubobjects = current_subobj;
 	pipeline_desc.pSubobjects = subobjects.data();
-
 	CHECK_ERR(device->CreateStateObject(&pipeline_desc, IID_PPV_ARGS(&rt_state_object)));
+}
+
+void RenderDXR::build_raygen_root_signature() {
+	// Create the root signature for our ray gen shader
+	std::vector<D3D12_ROOT_PARAMETER> rt_params;
+	// The raygen program takes two parameters:
+	// the UAV representing the output image buffer
+	// the SRV representing the top-level acceleration structure
+	D3D12_ROOT_PARAMETER param = { 0 };
+	param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+	// UAV param for the output image buffer
+	D3D12_DESCRIPTOR_RANGE descrip_range_uav = { 0 };
+	descrip_range_uav.BaseShaderRegister = 0;
+	descrip_range_uav.NumDescriptors = 1;
+	descrip_range_uav.RegisterSpace = 0;
+	descrip_range_uav.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+	descrip_range_uav.OffsetInDescriptorsFromTableStart = 0;
+
+	param.DescriptorTable.NumDescriptorRanges = 1;
+	param.DescriptorTable.pDescriptorRanges = &descrip_range_uav;
+	rt_params.push_back(param);
+
+	// SRV for the top-level acceleration structure
+	D3D12_DESCRIPTOR_RANGE descrip_range_srv = { 0 };
+	descrip_range_srv.BaseShaderRegister = 0;
+	descrip_range_srv.NumDescriptors = 1;
+	descrip_range_srv.RegisterSpace = 0;
+	descrip_range_srv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	// Second entry in our table
+	descrip_range_srv.OffsetInDescriptorsFromTableStart = 1;
+
+	param.DescriptorTable.pDescriptorRanges = &descrip_range_srv;
+	rt_params.push_back(param);
+
+	// Constants buffer param for the view parameters
+	D3D12_DESCRIPTOR_RANGE descrip_range_cbv = { 0 };
+	descrip_range_cbv.BaseShaderRegister = 0;
+	descrip_range_cbv.NumDescriptors = 1;
+	descrip_range_cbv.RegisterSpace = 0;
+	descrip_range_cbv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+	descrip_range_cbv.OffsetInDescriptorsFromTableStart = 2;
+
+	param.DescriptorTable.pDescriptorRanges = &descrip_range_cbv;
+	rt_params.push_back(param);
+
+	D3D12_ROOT_SIGNATURE_DESC root_desc = { 0 };
+	root_desc.NumParameters = rt_params.size();
+	root_desc.pParameters = rt_params.data();
+	// RT root signatures are local (TODO WILL to what? the hit group?)
+	root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+	// Create the root signature from the descriptor
+	ComPtr<ID3DBlob> signature_blob;
+	ComPtr<ID3DBlob> err_blob;
+	auto res = D3D12SerializeRootSignature(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1,
+		&signature_blob, &err_blob);
+	if (FAILED(res)) {
+		std::cout << "Failed to serialize root signature: " << err_blob->GetBufferPointer() << "\n";
+		throw std::runtime_error("Failed to serialize root signature");
+	}
+
+	CHECK_ERR(device->CreateRootSignature(0, signature_blob->GetBufferPointer(),
+		signature_blob->GetBufferSize(), IID_PPV_ARGS(&raygen_root_sig)));
+}
+
+void RenderDXR::build_hitgroup_root_signature() {
+	// Create the root signature for our closest hit function
+	std::vector<D3D12_ROOT_PARAMETER> rt_params;
+	// SRV for the vertex buffer and index buffer.
+	D3D12_ROOT_PARAMETER param = { 0 };
+	param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+	param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	param.Descriptor.RegisterSpace = 1;
+	param.Descriptor.ShaderRegister = 0;
+	rt_params.push_back(param);
+	
+	param.Descriptor.ShaderRegister = 1;
+	rt_params.push_back(param);
+
+	D3D12_ROOT_SIGNATURE_DESC root_desc = { 0 };
+	root_desc.NumParameters = rt_params.size();
+	root_desc.pParameters = rt_params.data();
+	root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+	// Create the root signature from the descriptor
+	ComPtr<ID3DBlob> signature_blob;
+	ComPtr<ID3DBlob> err_blob;
+	auto res = D3D12SerializeRootSignature(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1,
+		&signature_blob, &err_blob);
+	if (FAILED(res)) {
+		std::cout << "Failed to serialize root signature: " << err_blob->GetBufferPointer() << "\n";
+		throw std::runtime_error("Failed to serialize root signature");
+	}
+
+	CHECK_ERR(device->CreateRootSignature(0, signature_blob->GetBufferPointer(),
+		signature_blob->GetBufferSize(), IID_PPV_ARGS(&hitgroup_root_sig)));
+}
+
+void RenderDXR::build_empty_global_sig() {
+	// Create the empty global root
+	std::vector<D3D12_ROOT_PARAMETER> rt_params;
+
+	D3D12_ROOT_SIGNATURE_DESC root_desc = { 0 };
+	root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+
+	// Create the root signature from the descriptor
+	ComPtr<ID3DBlob> signature_blob;
+	ComPtr<ID3DBlob> err_blob;
+	auto res = D3D12SerializeRootSignature(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1,
+		&signature_blob, &err_blob);
+	if (FAILED(res)) {
+		std::cout << "Failed to serialize root signature: " << err_blob->GetBufferPointer() << "\n";
+		throw std::runtime_error("Failed to serialize root signature");
+	}
+
+	CHECK_ERR(device->CreateRootSignature(0, signature_blob->GetBufferPointer(),
+		signature_blob->GetBufferSize(), IID_PPV_ARGS(&global_root_sig)));
 }
 
 void RenderDXR::build_shader_resource_heap() {
@@ -766,7 +886,7 @@ void RenderDXR::build_shader_resource_heap() {
 	heap_desc.NumDescriptors = 3;
 	heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	CHECK_ERR(device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&shader_desc_heap)));
+	CHECK_ERR(device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&raygen_shader_desc_heap)));
 }
 
 void RenderDXR::build_shader_binding_table() {
@@ -783,11 +903,15 @@ void RenderDXR::build_shader_binding_table() {
 	// binding table in the dispatch rays must have its address start at a 64byte alignment,
 	// and use a 32byte stride. So pad these out to meet those requirements by making each
 	// entry 64 bytes
-	uint32_t sbt_table_size = 6 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+	shader_table_entry_size = 2 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+	uint32_t sbt_table_size = 3 * shader_table_entry_size;
+
 	// What's the alignment requirement here?
 	sbt_table_size += D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT -
 		sbt_table_size % D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
-	std::cout << "SBT is " << sbt_table_size << " bytes\n";
+	
+	std::cout << "Shader table entry size: " << shader_table_entry_size << "\n"
+		<< "SBT is " << sbt_table_size << " bytes\n";
 
 	ID3D12StateObjectProperties *rt_pipeline_props = nullptr;
 	rt_state_object->QueryInterface(&rt_pipeline_props);
@@ -822,19 +946,32 @@ void RenderDXR::build_shader_binding_table() {
 	// First we write the ray-gen shader identifier, followed by the ptr to its descriptor heap
 	std::memcpy(sbt_map, rt_pipeline_props->GetShaderIdentifier(L"RayGen"),
 		D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-
-	D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle = shader_desc_heap->GetGPUDescriptorHandleForHeapStart();;
-	std::memcpy(sbt_map + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
-		&desc_heap_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+	{
+		D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle =
+			raygen_shader_desc_heap->GetGPUDescriptorHandleForHeapStart();
+		// It seems like writing this for the ray gen shader in the table isn't needed?
+		std::memcpy(sbt_map + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
+			&desc_heap_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+	}
 	// Each entry must start at an alignment of 32bytes, so offset by the required alignment
-	sbt_map += 2 * D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
+	sbt_map += shader_table_entry_size;
 
 	std::memcpy(sbt_map, rt_pipeline_props->GetShaderIdentifier(L"Miss"),
 		D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-	sbt_map += 2 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+	// Nothing after for the miss shader, but must pad to alignment
+	sbt_map += shader_table_entry_size;
 
 	std::memcpy(sbt_map, rt_pipeline_props->GetShaderIdentifier(L"HitGroup"),
 		D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+	{
+		D3D12_GPU_VIRTUAL_ADDRESS gpu_handle = vertex_buf->GetGPUVirtualAddress();
+		std::memcpy(sbt_map + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
+			&gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+
+		gpu_handle = index_buf->GetGPUVirtualAddress();
+		std::memcpy(sbt_map + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + sizeof(D3D12_GPU_VIRTUAL_ADDRESS),
+			&gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+	}
 
 	shader_table->Unmap(0, nullptr);
 }
@@ -863,30 +1000,34 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &di
 }
 
 void RenderDXR::update_descriptor_heap() {
-	D3D12_CPU_DESCRIPTOR_HANDLE heap_handle = shader_desc_heap->GetCPUDescriptorHandleForHeapStart();
+	{
+		D3D12_CPU_DESCRIPTOR_HANDLE heap_handle =
+			raygen_shader_desc_heap->GetCPUDescriptorHandleForHeapStart();
 
-	D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = { 0 };
-	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-	device->CreateUnorderedAccessView(render_target.Get(), nullptr, &uav_desc, heap_handle);
+		D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = { 0 };
+		uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+		device->CreateUnorderedAccessView(render_target.Get(), nullptr, &uav_desc, heap_handle);
 
-	// Write the TLAS after the output image in the heap
-	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	D3D12_SHADER_RESOURCE_VIEW_DESC tlas_desc = { 0 };
-	tlas_desc.Format = DXGI_FORMAT_UNKNOWN;
-	tlas_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
-	tlas_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	tlas_desc.RaytracingAccelerationStructure.Location = top_level_as->GetGPUVirtualAddress();
-	device->CreateShaderResourceView(nullptr, &tlas_desc, heap_handle);
+		// Write the TLAS after the output image in the heap
+		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		D3D12_SHADER_RESOURCE_VIEW_DESC tlas_desc = { 0 };
+		tlas_desc.Format = DXGI_FORMAT_UNKNOWN;
+		tlas_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+		tlas_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		tlas_desc.RaytracingAccelerationStructure.Location = top_level_as->GetGPUVirtualAddress();
+		device->CreateShaderResourceView(nullptr, &tlas_desc, heap_handle);
 
-	// Write the view params constants buffer
-	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = { 0 };
-	cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
-	cbv_desc.SizeInBytes = 4 * sizeof(glm::vec4);
-	// Align size
-	cbv_desc.SizeInBytes += D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT -
-		cbv_desc.SizeInBytes % D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
-	device->CreateConstantBufferView(&cbv_desc, heap_handle);
+		// Write the view params constants buffer
+		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = { 0 };
+		cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
+		cbv_desc.SizeInBytes = 4 * sizeof(glm::vec4);
+		// Align size
+		cbv_desc.SizeInBytes += D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT -
+			cbv_desc.SizeInBytes % D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+		device->CreateConstantBufferView(&cbv_desc, heap_handle);
+		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
 }
 
 void RenderDXR::sync_gpu() {
