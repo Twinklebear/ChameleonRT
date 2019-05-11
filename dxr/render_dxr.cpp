@@ -756,31 +756,29 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &di
 }
 
 void RenderDXR::update_descriptor_heap() {
-	{
-		D3D12_CPU_DESCRIPTOR_HANDLE heap_handle =
-			raygen_shader_desc_heap->GetCPUDescriptorHandleForHeapStart();
+	D3D12_CPU_DESCRIPTOR_HANDLE heap_handle =
+		raygen_shader_desc_heap->GetCPUDescriptorHandleForHeapStart();
 
-		D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = { 0 };
-		uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		device->CreateUnorderedAccessView(render_target.get(), nullptr, &uav_desc, heap_handle);
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = { 0 };
+	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+	device->CreateUnorderedAccessView(render_target.get(), nullptr, &uav_desc, heap_handle);
 
-		// Write the TLAS after the output image in the heap
-		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		D3D12_SHADER_RESOURCE_VIEW_DESC tlas_desc = { 0 };
-		tlas_desc.Format = DXGI_FORMAT_UNKNOWN;
-		tlas_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
-		tlas_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		tlas_desc.RaytracingAccelerationStructure.Location = top_level_as->GetGPUVirtualAddress();
-		device->CreateShaderResourceView(nullptr, &tlas_desc, heap_handle);
+	// Write the TLAS after the output image in the heap
+	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	D3D12_SHADER_RESOURCE_VIEW_DESC tlas_desc = { 0 };
+	tlas_desc.Format = DXGI_FORMAT_UNKNOWN;
+	tlas_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+	tlas_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	tlas_desc.RaytracingAccelerationStructure.Location = top_level_as->GetGPUVirtualAddress();
+	device->CreateShaderResourceView(nullptr, &tlas_desc, heap_handle);
 
-		// Write the view params constants buffer
-		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = { 0 };
-		cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
-		cbv_desc.SizeInBytes = view_param_buf.size();
-		device->CreateConstantBufferView(&cbv_desc, heap_handle);
-		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	}
+	// Write the view params constants buffer
+	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = { 0 };
+	cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
+	cbv_desc.SizeInBytes = view_param_buf.size();
+	device->CreateConstantBufferView(&cbv_desc, heap_handle);
+	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 }
 
 void RenderDXR::sync_gpu() {
