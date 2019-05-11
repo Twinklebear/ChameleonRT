@@ -84,8 +84,6 @@ D3D12_RESOURCE_STATES Resource::state() const {
 	return rstate;
 }
 
-Buffer::Buffer() : buf_size(0) {}
-
 D3D12_RESOURCE_DESC Buffer::res_desc(size_t nbytes, D3D12_RESOURCE_FLAGS flags) {
 	D3D12_RESOURCE_DESC desc = { 0 };
 	desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -156,4 +154,33 @@ void Buffer::unmap(D3D12_RANGE written) {
 
 size_t Buffer::size() const {
 	return buf_size;
+}
+
+Texture2D Texture2D::default(ID3D12Device *device, glm::uvec2 dims,
+	D3D12_RESOURCE_STATES state, DXGI_FORMAT img_format,
+	D3D12_RESOURCE_FLAGS flags)
+{
+	D3D12_RESOURCE_DESC desc = { 0 };
+	desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	desc.Width = dims.x;
+	desc.Height = dims.y;
+	desc.DepthOrArraySize = 1;
+	desc.MipLevels = 1;
+	desc.Format = img_format;
+	desc.SampleDesc.Count = 1;
+	desc.SampleDesc.Quality = 0;
+	desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	desc.Flags = flags;
+
+	Texture2D t;
+	t.tdims = dims;
+	t.rstate = state;
+	t.rheap = D3D12_HEAP_TYPE_DEFAULT;
+	CHECK_ERR(device->CreateCommittedResource(&DEFAULT_HEAP_PROPS, D3D12_HEAP_FLAG_NONE,
+		&desc, state, nullptr, IID_PPV_ARGS(&t.res)));
+	return t;
+}
+
+glm::uvec2 Texture2D::dims() const {
+	return tdims;
 }

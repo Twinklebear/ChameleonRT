@@ -70,33 +70,17 @@ RenderDXR::~RenderDXR() {
 }
 
 void RenderDXR::initialize(const int fb_width, const int fb_height) {
-	if (img_dims.x == fb_width && img_dims.y == fb_height) {
+	if (render_target.dims().x == fb_width && render_target.dims().y == fb_height) {
 		return;
 	}
-	img_dims = glm::ivec2(fb_width, fb_height);
-	img.resize(img_dims.x * img_dims.y);
+	img.resize(fb_width * fb_height);
 
-	// Allocate the output texture for the renderer
-	{
-		D3D12_RESOURCE_DESC res_desc = { 0 };
-		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-		res_desc.Width = img_dims.x;
-		res_desc.Height = img_dims.y;
-		res_desc.DepthOrArraySize = 1;
-		res_desc.MipLevels = 1;
-		res_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		res_desc.SampleDesc.Count = 1;
-		res_desc.SampleDesc.Quality = 0;
-		res_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-		res_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-
-		CHECK_ERR(device->CreateCommittedResource(&DEFAULT_HEAP_PROPS, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-			nullptr, IID_PPV_ARGS(&render_target)));
-	}
-
+	render_target = Texture2D::default(device.Get(), glm::uvec2(fb_width, fb_height),
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, DXGI_FORMAT_R8G8B8A8_UNORM,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	
 	// Allocate the readback buffer so we can read the image back to the CPU
-	img_readback_buf = Buffer::readback(device.Get(), img_dims.x * img_dims.y * 4,
+	img_readback_buf = Buffer::readback(device.Get(), fb_width * fb_height * 4,
 		D3D12_RESOURCE_STATE_COPY_DEST);
 }
 
@@ -298,8 +282,8 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	dispatch_rays.HitGroupTable.SizeInBytes = shader_table_entry_size;
 	dispatch_rays.HitGroupTable.StrideInBytes = shader_table_entry_size;
 
-	dispatch_rays.Width = img_dims.x;
-	dispatch_rays.Height = img_dims.y;
+	dispatch_rays.Width = render_target.dims().x;
+	dispatch_rays.Height = render_target.dims().y;
 	dispatch_rays.Depth = 1;
 
 	cmd_list->SetDescriptorHeaps(1, raygen_shader_desc_heap.GetAddressOf());
@@ -326,8 +310,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	{
 		// Render target from UA -> Copy Source
-		D3D12_RESOURCE_BARRIER b = barrier_transition(render_target,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		D3D12_RESOURCE_BARRIER b = barrier_transition(render_target, D3D12_RESOURCE_STATE_COPY_SOURCE);
 		cmd_list->ResourceBarrier(1, &b);
 	}
 
@@ -338,21 +321,21 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		dst_desc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
 		dst_desc.PlacedFootprint.Offset = 0;
 		dst_desc.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		dst_desc.PlacedFootprint.Footprint.Width = img_dims.x;
-		dst_desc.PlacedFootprint.Footprint.Height = img_dims.y;
+		dst_desc.PlacedFootprint.Footprint.Width = render_target.dims().x;
+		dst_desc.PlacedFootprint.Footprint.Height = render_target.dims().y;
 		dst_desc.PlacedFootprint.Footprint.Depth = 1;
-		dst_desc.PlacedFootprint.Footprint.RowPitch = img_dims.x * 4;
+		dst_desc.PlacedFootprint.Footprint.RowPitch = render_target.dims().x * 4;
 
 		D3D12_TEXTURE_COPY_LOCATION src_desc = { 0 };
-		src_desc.pResource = render_target.Get();
+		src_desc.pResource = render_target.get();
 		src_desc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
 		src_desc.SubresourceIndex = 0;
 
 		D3D12_BOX region = { 0 };
 		region.left = 0;
-		region.right = img_dims.x;
+		region.right = render_target.dims().x;
 		region.top = 0;
-		region.bottom = img_dims.y;
+		region.bottom = render_target.dims().y;
 		region.front = 0;
 		region.back = 1;
 		cmd_list->CopyTextureRegion(&dst_desc, 0, 0, 0, &src_desc, &region);
@@ -360,8 +343,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	// Transition the render target back to UA so we can write to it in the next frame
 	{
-		D3D12_RESOURCE_BARRIER b = barrier_transition(render_target,
-			D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		D3D12_RESOURCE_BARRIER b = barrier_transition(render_target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 		cmd_list->ResourceBarrier(1, &b);
 	}
 
@@ -758,7 +740,8 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &di
 	// does that get setup? How much difference would it make?
 	glm::vec2 img_plane_size;
 	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
-	img_plane_size.x = img_plane_size.y * static_cast<float>(img_dims.x) / img_dims.y;
+	img_plane_size.x = img_plane_size.y
+		* static_cast<float>(render_target.dims().x) / render_target.dims().y;
 
 	const glm::vec3 dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
 	const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
@@ -779,7 +762,7 @@ void RenderDXR::update_descriptor_heap() {
 
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = { 0 };
 		uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		device->CreateUnorderedAccessView(render_target.Get(), nullptr, &uav_desc, heap_handle);
+		device->CreateUnorderedAccessView(render_target.get(), nullptr, &uav_desc, heap_handle);
 
 		// Write the TLAS after the output image in the heap
 		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);

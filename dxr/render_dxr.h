@@ -16,7 +16,7 @@ struct RenderDXR : RenderBackend {
 	Buffer vertex_buf, index_buf, view_param_buf, img_readback_buf,
 		bottom_level_as, instance_buf, top_level_as, shader_table;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> render_target;
+	Texture2D render_target;
 	
 	Microsoft::WRL::ComPtr<ID3D12StateObject> rt_state_object;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> raygen_shader_desc_heap,
@@ -29,8 +29,6 @@ struct RenderDXR : RenderBackend {
 	uint64_t fence_value = 1;
 	Microsoft::WRL::ComPtr<ID3D12Fence> fence;
 	HANDLE fence_evt;
-
-	glm::ivec2 img_dims = glm::ivec2(0);
 
 	RenderDXR();
 	virtual ~RenderDXR();

@@ -4,6 +4,7 @@
 #include <dxgi1_4.h>
 #include <wrl.h>
 #include <iostream>
+#include <glm/glm.hpp>
 
 // Utilities for general DX12 ease of use
 
@@ -52,7 +53,7 @@ D3D12_RESOURCE_BARRIER barrier_transition(Resource &res, D3D12_RESOURCE_STATES a
 D3D12_RESOURCE_BARRIER barrier_uav(Resource &res);
 
 class Buffer : public Resource {
-	size_t buf_size;
+	size_t buf_size = 0;
 
 	static D3D12_RESOURCE_DESC res_desc(size_t nbytes, D3D12_RESOURCE_FLAGS flags);
 
@@ -60,8 +61,6 @@ class Buffer : public Resource {
 		D3D12_RESOURCE_STATES state, D3D12_HEAP_PROPERTIES props, D3D12_RESOURCE_DESC desc);
 
 public:
-	Buffer();
-
 	// Allocate an upload buffer of the desired size
 	static Buffer upload(ID3D12Device *device, size_t nbytes,
 		D3D12_RESOURCE_STATES state,
@@ -86,4 +85,15 @@ public:
 	void unmap(D3D12_RANGE written);
 
 	size_t size() const;
+};
+
+class Texture2D : public Resource {
+	glm::uvec2 tdims = glm::uvec2(0);
+
+public:
+	static Texture2D default(ID3D12Device *device, glm::uvec2 dims,
+		D3D12_RESOURCE_STATES state, DXGI_FORMAT img_format,
+		D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+
+	glm::uvec2 dims() const;
 };
