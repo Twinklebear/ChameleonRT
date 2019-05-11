@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 #include <iomanip>
+#include "util.h"
 #include "render_dxr.h"
 #include "render_dxr_embedded_dxil.h"
 
@@ -85,8 +86,7 @@ RenderDXR::RenderDXR() {
 		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 		res_desc.Width = 4 * sizeof(glm::vec4);
 		// Buffer size must be aligned
-		res_desc.Width += D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT -
-			res_desc.Width % D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+		res_desc.Width = align_to(res_desc.Width, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 		res_desc.Height = 1;
 		res_desc.DepthOrArraySize = 1;
 		res_desc.MipLevels = 1;
@@ -281,13 +281,15 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		device->GetRaytracingAccelerationStructurePrebuildInfo(&as_inputs, &prebuild_info);
 
 		// The buffer sizes must be aligned to 256 bytes
-		prebuild_info.ResultDataMaxSizeInBytes += D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT -
-			prebuild_info.ResultDataMaxSizeInBytes % D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT;
-		prebuild_info.ScratchDataSizeInBytes += D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT -
-			prebuild_info.ScratchDataSizeInBytes % D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT;
+		prebuild_info.ResultDataMaxSizeInBytes =
+			align_to(prebuild_info.ResultDataMaxSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
+			
+			
+		prebuild_info.ScratchDataSizeInBytes =
+			align_to(prebuild_info.ScratchDataSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
 
-		std::cout << "Bottom level AS will use at most " << prebuild_info.ResultDataMaxSizeInBytes
-			<< " bytes, and scratch of " << prebuild_info.ScratchDataSizeInBytes << " bytes\n";
+		std::cout << "Bottom level AS will use at most " << pretty_print_count(prebuild_info.ResultDataMaxSizeInBytes)
+			<< "b, and scratch of " << pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
 
 		D3D12_HEAP_PROPERTIES props = { 0 };
 		props.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -342,8 +344,7 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 		res_desc.Width = sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
 		// Align it to the required size
-		res_desc.Width += D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT -
-			res_desc.Width % D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT;
+		res_desc.Width = align_to(res_desc.Width, D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT);
 		res_desc.Height = 1;
 		res_desc.DepthOrArraySize = 1;
 		res_desc.MipLevels = 1;
@@ -392,13 +393,14 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		device->GetRaytracingAccelerationStructurePrebuildInfo(&as_inputs, &prebuild_info);
 
 		// The buffer sizes must be aligned to 256 bytes
-		prebuild_info.ResultDataMaxSizeInBytes += D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT -
-			prebuild_info.ResultDataMaxSizeInBytes % D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT;
-		prebuild_info.ScratchDataSizeInBytes += D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT -
-			prebuild_info.ScratchDataSizeInBytes % D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT;
+		prebuild_info.ResultDataMaxSizeInBytes =
+			align_to(prebuild_info.ResultDataMaxSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
 
-		std::cout << "Top level AS will use at most " << prebuild_info.ResultDataMaxSizeInBytes
-			<< " bytes, and scratch of " << prebuild_info.ScratchDataSizeInBytes << " bytes\n";
+		prebuild_info.ScratchDataSizeInBytes =
+			align_to(prebuild_info.ScratchDataSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
+
+		std::cout << "Top level AS will use at most " << pretty_print_count(prebuild_info.ResultDataMaxSizeInBytes)
+			<< "b, and scratch of " << pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
 
 		D3D12_HEAP_PROPERTIES props = { 0 };
 		props.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -906,10 +908,8 @@ void RenderDXR::build_shader_binding_table() {
 	shader_table_entry_size = 2 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
 	uint32_t sbt_table_size = 3 * shader_table_entry_size;
 
-	// What's the alignment requirement here?
-	sbt_table_size += D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT -
-		sbt_table_size % D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
-	
+	sbt_table_size = align_to(sbt_table_size, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+		
 	std::cout << "Shader table entry size: " << shader_table_entry_size << "\n"
 		<< "SBT is " << sbt_table_size << " bytes\n";
 
@@ -1023,8 +1023,7 @@ void RenderDXR::update_descriptor_heap() {
 		cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
 		cbv_desc.SizeInBytes = 4 * sizeof(glm::vec4);
 		// Align size
-		cbv_desc.SizeInBytes += D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT -
-			cbv_desc.SizeInBytes % D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+		cbv_desc.SizeInBytes = align_to(cbv_desc.SizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 		device->CreateConstantBufferView(&cbv_desc, heap_handle);
 		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
