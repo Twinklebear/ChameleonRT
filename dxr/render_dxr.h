@@ -2,8 +2,9 @@
 
 #include <d3d12.h>
 #include <dxgi1_4.h>
-#include <D3Dcompiler.h>
 #include <wrl.h>
+#include "dx12_utils.h"
+#include "dxr_utils.h"
 #include "render_backend.h"
 
 struct RenderDXR : RenderBackend {
@@ -12,9 +13,10 @@ struct RenderDXR : RenderBackend {
 	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmd_allocator;
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
 	
-	Microsoft::WRL::ComPtr<ID3D12Resource> img_readback_buf, render_target,
-		vertex_buf, index_buf, bottom_level_as, top_level_as, instance_buf,
-		shader_table, view_param_buf;
+	Buffer vertex_buf, index_buf, view_param_buf, img_readback_buf,
+		bottom_level_as, instance_buf, top_level_as, shader_table;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> render_target;
 	
 	Microsoft::WRL::ComPtr<ID3D12StateObject> rt_state_object;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> raygen_shader_desc_heap,
@@ -29,7 +31,6 @@ struct RenderDXR : RenderBackend {
 	HANDLE fence_evt;
 
 	glm::ivec2 img_dims = glm::ivec2(0);
-	uint32_t n_verts, n_indices;
 
 	RenderDXR();
 	virtual ~RenderDXR();

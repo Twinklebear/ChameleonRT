@@ -9,25 +9,7 @@
 #include "render_dxr.h"
 #include "render_dxr_embedded_dxil.h"
 
-#define CHECK_ERR(FN) \
-	{ \
-		auto res = FN; \
-		if (FAILED(res)) { \
-			std::cout << #FN << " failed due to " \
-				<< std::hex << res << std::endl << std::flush; \
-			throw std::runtime_error(#FN); \
-		}\
-	}\
-
 using Microsoft::WRL::ComPtr;
-
-bool dxr_available(ComPtr<ID3D12Device5> &device) {
-	D3D12_FEATURE_DATA_D3D12_OPTIONS5 feature_data = { 0 };
-	CHECK_ERR(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5,
-		&feature_data, sizeof(feature_data)));
-
-	return feature_data.RaytracingTier >= D3D12_RAYTRACING_TIER_1_0;
-}
 
 RenderDXR::RenderDXR() {
 	// Enable debugging for D3D12
@@ -76,31 +58,9 @@ RenderDXR::RenderDXR() {
 	// vec4 cam_du
 	// vec4 cam_dv
 	// vec4 cam_dir_top_left
-	{
-		D3D12_HEAP_PROPERTIES props = { 0 };
-		props.Type = D3D12_HEAP_TYPE_UPLOAD;
-		props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-
-		D3D12_RESOURCE_DESC res_desc = { 0 };
-		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		res_desc.Width = 4 * sizeof(glm::vec4);
-		// Buffer size must be aligned
-		res_desc.Width = align_to(res_desc.Width, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
-		res_desc.Height = 1;
-		res_desc.DepthOrArraySize = 1;
-		res_desc.MipLevels = 1;
-		res_desc.Format = DXGI_FORMAT_UNKNOWN;
-		res_desc.SampleDesc.Count = 1;
-		res_desc.SampleDesc.Quality = 0;
-		res_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		res_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr, IID_PPV_ARGS(&view_param_buf)));
-	}
-
+	view_param_buf = Buffer::upload(device.Get(),
+		align_to(4 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+		D3D12_RESOURCE_STATE_GENERIC_READ);
 	build_raytracing_pipeline();
 	build_shader_resource_heap();
 }
@@ -118,11 +78,6 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 
 	// Allocate the output texture for the renderer
 	{
-		D3D12_HEAP_PROPERTIES props = { 0 };
-		props.Type = D3D12_HEAP_TYPE_DEFAULT;
-		props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-
 		D3D12_RESOURCE_DESC res_desc = { 0 };
 		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 		res_desc.Width = img_dims.x;
@@ -135,120 +90,52 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 		res_desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 		res_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
+		CHECK_ERR(device->CreateCommittedResource(&DEFAULT_HEAP_PROPS, D3D12_HEAP_FLAG_NONE,
 			&res_desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 			nullptr, IID_PPV_ARGS(&render_target)));
 	}
 
 	// Allocate the readback buffer so we can read the image back to the CPU
-	{
-		D3D12_HEAP_PROPERTIES props = { 0 };
-		props.Type = D3D12_HEAP_TYPE_READBACK;
-		props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-
-		D3D12_RESOURCE_DESC res_desc = { 0 };
-		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		res_desc.Width = img_dims.x * img_dims.y * 4;
-		res_desc.Height = 1;
-		res_desc.DepthOrArraySize = 1;
-		res_desc.MipLevels = 1;
-		res_desc.Format = DXGI_FORMAT_UNKNOWN;
-		res_desc.SampleDesc.Count = 1;
-		res_desc.SampleDesc.Quality = 0;
-		res_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		res_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_COPY_DEST,
-			nullptr, IID_PPV_ARGS(&img_readback_buf)));
-	}
+	img_readback_buf = Buffer::readback(device.Get(), img_dims.x * img_dims.y * 4,
+		D3D12_RESOURCE_STATE_COPY_DEST);
 }
 
 void RenderDXR::set_mesh(const std::vector<float> &verts,
 		const std::vector<uint32_t> &indices)
 {
-	n_verts = verts.size();
-	n_indices = indices.size();
-
 	// Upload the mesh to the vertex buffer, build accel structures
 	// Place the vertex data in an upload heap first, then do a GPU-side copy
 	// into a default heap (resident in VRAM)
-	ComPtr<ID3D12Resource> upload_verts, upload_indices;
-	{
-		D3D12_HEAP_PROPERTIES props = { 0 };
-		props.Type = D3D12_HEAP_TYPE_UPLOAD;
-		props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+	Buffer upload_verts = Buffer::upload(device.Get(), verts.size() * sizeof(float),
+		D3D12_RESOURCE_STATE_GENERIC_READ);
+	Buffer upload_indices = Buffer::upload(device.Get(), indices.size() * sizeof(uint32_t),
+		D3D12_RESOURCE_STATE_GENERIC_READ);
 
-		D3D12_RESOURCE_DESC res_desc = { 0 };
-		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		res_desc.Width = verts.size() * sizeof(float);
-		res_desc.Height = 1;
-		res_desc.DepthOrArraySize = 1;
-		res_desc.MipLevels = 1;
-		res_desc.Format = DXGI_FORMAT_UNKNOWN;
-		res_desc.SampleDesc.Count = 1;
-		res_desc.SampleDesc.Quality = 0;
-		res_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		res_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	// Copy vertex and index data into the upload buffers
+	std::memcpy(upload_verts.map(), verts.data(), upload_verts.size());
+	upload_verts.unmap();
 
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr, IID_PPV_ARGS(&upload_verts)));
+	std::memcpy(upload_indices.map(), indices.data(), upload_indices.size());
+	upload_indices.unmap();
 
-		res_desc.Width = indices.size() * sizeof(uint32_t);
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr, IID_PPV_ARGS(&upload_indices)));
-
-		// Allocate the vertex and index buffers in the default heap (GPU memory)
-		props.Type = D3D12_HEAP_TYPE_DEFAULT;
-		res_desc.Width = verts.size() * sizeof(float);
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_COPY_DEST,
-			nullptr, IID_PPV_ARGS(&vertex_buf)));
-
-		res_desc.Width = indices.size() * sizeof(uint32_t);
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_COPY_DEST,
-			nullptr, IID_PPV_ARGS(&index_buf)));
-	}
-	{
-		// Copy over the vertex data
-		void *mapping = nullptr;
-		D3D12_RANGE range = { 0 };
-		CHECK_ERR(upload_verts->Map(0, &range, &mapping));
-		std::memcpy(mapping, verts.data(), sizeof(float) * verts.size());
-		upload_verts->Unmap(0, nullptr);
-	}
-	{
-		// Copy over the index data
-		void *mapping = nullptr;
-		D3D12_RANGE range = { 0 };
-		CHECK_ERR(upload_indices->Map(0, &range, &mapping));
-		std::memcpy(mapping, indices.data(), sizeof(uint32_t) * indices.size());
-		upload_indices->Unmap(0, nullptr);
-	}
+	// Allocate GPU side buffers for the data so we can have it resident in VRAM
+	vertex_buf = Buffer::default(device.Get(), verts.size() * sizeof(float),
+		D3D12_RESOURCE_STATE_COPY_DEST);
+	index_buf = Buffer::default(device.Get(), indices.size() * sizeof(uint32_t),
+		D3D12_RESOURCE_STATE_COPY_DEST);
 
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 
 	// Enqueue the copy into GPU memory
-	cmd_list->CopyResource(vertex_buf.Get(), upload_verts.Get());
-	cmd_list->CopyResource(index_buf.Get(), upload_indices.Get());
+	cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
+	cmd_list->CopyResource(index_buf.get(), upload_indices.get());
 
 	// Barriers to wait for the copies to finish before building the accel. structs
 	{
-		std::array<D3D12_RESOURCE_BARRIER, 2> barriers;
-		for (auto &b : barriers) {
-			b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-			b.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-			b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-			b.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-			b.Transition.StateAfter = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-		}
-		barriers[0].Transition.pResource = vertex_buf.Get();
-		barriers[1].Transition.pResource = index_buf.Get();
+		std::array<D3D12_RESOURCE_BARRIER, 2> barriers = {
+			barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
+			barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+		};
 		cmd_list->ResourceBarrier(barriers.size(), barriers.data());
 	}
 
@@ -267,7 +154,7 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 	rt_geom_desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
 
 	// Build the bottom level acceleration structure
-	ComPtr<ID3D12Resource> bottom_scratch;
+	Buffer bottom_scratch;
 	{
 		// Determine bound of much memory the accel builder may need and allocate it
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS as_inputs = { 0 };
@@ -283,39 +170,16 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		// The buffer sizes must be aligned to 256 bytes
 		prebuild_info.ResultDataMaxSizeInBytes =
 			align_to(prebuild_info.ResultDataMaxSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-			
-			
 		prebuild_info.ScratchDataSizeInBytes =
 			align_to(prebuild_info.ScratchDataSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-
 		std::cout << "Bottom level AS will use at most " << pretty_print_count(prebuild_info.ResultDataMaxSizeInBytes)
 			<< "b, and scratch of " << pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
 
-		D3D12_HEAP_PROPERTIES props = { 0 };
-		props.Type = D3D12_HEAP_TYPE_DEFAULT;
-		props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-
-		D3D12_RESOURCE_DESC res_desc = { 0 };
-		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		res_desc.Width = prebuild_info.ResultDataMaxSizeInBytes;
-		res_desc.Height = 1;
-		res_desc.DepthOrArraySize = 1;
-		res_desc.MipLevels = 1;
-		res_desc.Format = DXGI_FORMAT_UNKNOWN;
-		res_desc.SampleDesc.Count = 1;
-		res_desc.SampleDesc.Quality = 0;
-		res_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		res_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-			nullptr, IID_PPV_ARGS(&bottom_level_as)));
-
-		res_desc.Width = prebuild_info.ScratchDataSizeInBytes;
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-			nullptr, IID_PPV_ARGS(&bottom_scratch)));
+		bottom_level_as = Buffer::default(device.Get(), prebuild_info.ResultDataMaxSizeInBytes,
+			D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+		bottom_scratch = Buffer::default(device.Get(), prebuild_info.ScratchDataSizeInBytes,
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build_desc = { 0 };
 		build_desc.Inputs = as_inputs;
@@ -325,45 +189,22 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 
 		// Insert a barrier to wait for the bottom level AS to complete before
 		// we start the top level build
-		D3D12_RESOURCE_BARRIER build_barrier = { 0 };
-		build_barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-		build_barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		build_barrier.UAV.pResource = bottom_level_as.Get();
+		D3D12_RESOURCE_BARRIER build_barrier = barrier_uav(bottom_level_as);
 		cmd_list->ResourceBarrier(1, &build_barrier);
 	}
 
 	// The top-level AS is built over the instances of our bottom level AS
 	// in the scene. For now we just have 1, with an identity transform
+	instance_buf = Buffer::upload(device.Get(),
+		align_to(sizeof(D3D12_RAYTRACING_INSTANCE_DESC), D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT),
+		D3D12_RESOURCE_STATE_GENERIC_READ);
 	{
-		D3D12_HEAP_PROPERTIES props = { 0 };
-		props.Type = D3D12_HEAP_TYPE_UPLOAD;
-		props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-
-		D3D12_RESOURCE_DESC res_desc = { 0 };
-		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		res_desc.Width = sizeof(D3D12_RAYTRACING_INSTANCE_DESC);
-		// Align it to the required size
-		res_desc.Width = align_to(res_desc.Width, D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT);
-		res_desc.Height = 1;
-		res_desc.DepthOrArraySize = 1;
-		res_desc.MipLevels = 1;
-		res_desc.Format = DXGI_FORMAT_UNKNOWN;
-		res_desc.SampleDesc.Count = 1;
-		res_desc.SampleDesc.Quality = 0;
-		res_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		res_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr, IID_PPV_ARGS(&instance_buf)));
-
 		// Write the data about our instance
-		D3D12_RAYTRACING_INSTANCE_DESC *buf;
-		instance_buf->Map(0, nullptr, reinterpret_cast<void**>(&buf));
+		D3D12_RAYTRACING_INSTANCE_DESC *buf =
+			static_cast<D3D12_RAYTRACING_INSTANCE_DESC*>(instance_buf.map());
 
 		buf->InstanceID = 0;
-		// TODO: does this mean you can do per-instance hit shaders? (yes I think so)
+		// TODO: does this mean you can do per-instance hit groups? I think so
 		buf->InstanceContributionToHitGroupIndex = 0;
 		buf->Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
 		buf->AccelerationStructure = bottom_level_as->GetGPUVirtualAddress();
@@ -375,11 +216,11 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		buf->Transform[1][1] = 1.f;
 		buf->Transform[2][2] = 1.f;
 
-		instance_buf->Unmap(0, nullptr);
+		instance_buf.unmap();
 	}
 
 	// Now build the top level acceleration structure on our instance
-	ComPtr<ID3D12Resource> top_scratch;
+	Buffer top_scratch;
 	{
 		// Determine bound of much memory the accel builder may need and allocate it
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS as_inputs = { 0 };
@@ -395,38 +236,16 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		// The buffer sizes must be aligned to 256 bytes
 		prebuild_info.ResultDataMaxSizeInBytes =
 			align_to(prebuild_info.ResultDataMaxSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-
 		prebuild_info.ScratchDataSizeInBytes =
 			align_to(prebuild_info.ScratchDataSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-
 		std::cout << "Top level AS will use at most " << pretty_print_count(prebuild_info.ResultDataMaxSizeInBytes)
 			<< "b, and scratch of " << pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
 
-		D3D12_HEAP_PROPERTIES props = { 0 };
-		props.Type = D3D12_HEAP_TYPE_DEFAULT;
-		props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-		props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-
-		D3D12_RESOURCE_DESC res_desc = { 0 };
-		res_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		res_desc.Width = prebuild_info.ResultDataMaxSizeInBytes;
-		res_desc.Height = 1;
-		res_desc.DepthOrArraySize = 1;
-		res_desc.MipLevels = 1;
-		res_desc.Format = DXGI_FORMAT_UNKNOWN;
-		res_desc.SampleDesc.Count = 1;
-		res_desc.SampleDesc.Quality = 0;
-		res_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		res_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-			nullptr, IID_PPV_ARGS(&top_level_as)));
-
-		res_desc.Width = prebuild_info.ScratchDataSizeInBytes;
-		CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-			&res_desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-			nullptr, IID_PPV_ARGS(&top_scratch)));
+		top_level_as = Buffer::default(device.Get(), prebuild_info.ResultDataMaxSizeInBytes,
+			D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+		top_scratch = Buffer::default(device.Get(), prebuild_info.ScratchDataSizeInBytes,
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build_desc = { 0 };
 		build_desc.Inputs = as_inputs;
@@ -435,10 +254,7 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		cmd_list->BuildRaytracingAccelerationStructure(&build_desc, 0, NULL);
 
 		// Insert a barrier to wait for the top level AS to complete
-		D3D12_RESOURCE_BARRIER build_barrier = { 0 };
-		build_barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-		build_barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		build_barrier.UAV.pResource = top_level_as.Get();
+		D3D12_RESOURCE_BARRIER build_barrier = barrier_uav(top_level_as);
 		cmd_list->ResourceBarrier(1, &build_barrier);
 	}
 
@@ -510,20 +326,15 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	{
 		// Render target from UA -> Copy Source
-		D3D12_RESOURCE_BARRIER res_barrier;
-		res_barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		res_barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		res_barrier.Transition.pResource = render_target.Get();
-		res_barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		res_barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
-		res_barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-		cmd_list->ResourceBarrier(1, &res_barrier);
+		D3D12_RESOURCE_BARRIER b = barrier_transition(render_target,
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		cmd_list->ResourceBarrier(1, &b);
 	}
 
 	{
 		// Copy the rendered image to the readback buf so we can access it on the CPU
 		D3D12_TEXTURE_COPY_LOCATION dst_desc = { 0 };
-		dst_desc.pResource = img_readback_buf.Get();
+		dst_desc.pResource = img_readback_buf.get();
 		dst_desc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
 		dst_desc.PlacedFootprint.Offset = 0;
 		dst_desc.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -549,14 +360,9 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	// Transition the render target back to UA so we can write to it in the next frame
 	{
-		D3D12_RESOURCE_BARRIER res_barrier;
-		res_barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		res_barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		res_barrier.Transition.pResource = render_target.Get();
-		res_barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
-		res_barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-		res_barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-		cmd_list->ResourceBarrier(1, &res_barrier);
+		D3D12_RESOURCE_BARRIER b = barrier_transition(render_target,
+			D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		cmd_list->ResourceBarrier(1, &b);
 	}
 
 	// Run the copy and wait for it to finish
@@ -566,15 +372,8 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	sync_gpu();
 
 	// Map the readback buf and copy out the rendered image
-	{
-		void *buf = nullptr;
-		D3D12_RANGE range = { 0 };
-		// Explicitly note we want the whole range to silence debug layer warnings
-		range.End = img.size() * sizeof(uint32_t);
-		img_readback_buf->Map(0, &range, &buf);
-		std::memcpy(img.data(), buf, img.size() * sizeof(uint32_t));
-		img_readback_buf->Unmap(0, nullptr);
-	}
+	std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
+	img_readback_buf.unmap();
 
 	return img.size() / render_time;
 }
@@ -906,9 +705,10 @@ void RenderDXR::build_shader_binding_table() {
 	// and use a 32byte stride. So pad these out to meet those requirements by making each
 	// entry 64 bytes
 	shader_table_entry_size = 2 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-	uint32_t sbt_table_size = 3 * shader_table_entry_size;
-
-	sbt_table_size = align_to(sbt_table_size, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+	const uint32_t sbt_table_size = align_to(3 * shader_table_entry_size,
+		D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+	shader_table = Buffer::upload(device.Get(), sbt_table_size,
+		D3D12_RESOURCE_STATE_GENERIC_READ);
 		
 	std::cout << "Shader table entry size: " << shader_table_entry_size << "\n"
 		<< "SBT is " << sbt_table_size << " bytes\n";
@@ -916,32 +716,8 @@ void RenderDXR::build_shader_binding_table() {
 	ID3D12StateObjectProperties *rt_pipeline_props = nullptr;
 	rt_state_object->QueryInterface(&rt_pipeline_props);
 
-	D3D12_HEAP_PROPERTIES props = { 0 };
-	props.Type = D3D12_HEAP_TYPE_UPLOAD;
-	props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-
-	D3D12_RESOURCE_DESC res_desc = { 0 };
-	res_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	res_desc.Width = sbt_table_size;
-	res_desc.Height = 1;
-	res_desc.DepthOrArraySize = 1;
-	res_desc.MipLevels = 1;
-	res_desc.Format = DXGI_FORMAT_UNKNOWN;
-	res_desc.SampleDesc.Count = 1;
-	res_desc.SampleDesc.Quality = 0;
-	res_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	res_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-	// Place the vertex data in an upload heap first, then do a GPU-side copy
-	// into a default heap (resident in VRAM)
-	CHECK_ERR(device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE,
-		&res_desc, D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr, IID_PPV_ARGS(&shader_table)));
-
 	// Map the SBT and write our shader data and param info to it
-	uint8_t *sbt_map = nullptr;
-	CHECK_ERR(shader_table->Map(0, nullptr, reinterpret_cast<void**>(&sbt_map)));
+	uint8_t *sbt_map = static_cast<uint8_t*>(shader_table.map());
 
 	// First we write the ray-gen shader identifier, followed by the ptr to its descriptor heap
 	std::memcpy(sbt_map, rt_pipeline_props->GetShaderIdentifier(L"RayGen"),
@@ -972,8 +748,7 @@ void RenderDXR::build_shader_binding_table() {
 		std::memcpy(sbt_map + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + sizeof(D3D12_GPU_VIRTUAL_ADDRESS),
 			&gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 	}
-
-	shader_table->Unmap(0, nullptr);
+	shader_table.unmap();
 }
 
 void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -989,14 +764,12 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &di
 	const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
 	const glm::vec3 dir_top_left = dir - 0.5f * dir_du - 0.5f * dir_dv;
 
-	glm::vec4 *buf = nullptr;
-	D3D12_RANGE range = { 0 };
-	CHECK_ERR(view_param_buf->Map(0, &range, reinterpret_cast<void**>(&buf)));
+	glm::vec4 *buf = static_cast<glm::vec4*>(view_param_buf.map());
 	buf[0] = glm::vec4(pos, 0.f);
 	buf[1] = glm::vec4(dir_du, 0.f);
 	buf[2] = glm::vec4(dir_dv, 0.f);
 	buf[3] = glm::vec4(dir_top_left, 0.f);
-	view_param_buf->Unmap(0, nullptr);
+	view_param_buf.unmap();
 }
 
 void RenderDXR::update_descriptor_heap() {
@@ -1021,9 +794,7 @@ void RenderDXR::update_descriptor_heap() {
 		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = { 0 };
 		cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
-		cbv_desc.SizeInBytes = 4 * sizeof(glm::vec4);
-		// Align size
-		cbv_desc.SizeInBytes = align_to(cbv_desc.SizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+		cbv_desc.SizeInBytes = view_param_buf.size();
 		device->CreateConstantBufferView(&cbv_desc, heap_handle);
 		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}

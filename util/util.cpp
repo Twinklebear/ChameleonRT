@@ -15,5 +15,5 @@ std::string pretty_print_count(const double count) {
 }
 
 uint64_t align_to(uint64_t val, uint64_t align) {
-	return val + align - val % align;
+	return ((val + align - 1) / align) * align;
 }
