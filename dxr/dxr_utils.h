@@ -50,10 +50,7 @@ public:
 	ID3D12RootSignature* get();
 };
 
-
-// TODO Will: Split this class up some more, this object is more of a "builder"
-// while the RootSignature class should really be the "compiled" root signature
-// with the final parameter order mapping. The table doesn't need a name since
+// The table doesn't need a name since
 // I think there should only ever be one, since you can specify a bunch of ranges
 // to reference the single pointer you get, right?
 // Actually since it refers into the global descriptor heap we don't need to write
@@ -91,4 +88,25 @@ public:
 		uint32_t table_offset);
 
 	RootSignature create(ID3D12Device *device);
+};
+
+
+struct ShaderLibrary {
+	D3D12_SHADER_BYTECODE bytecode = { 0 };
+	D3D12_DXIL_LIBRARY_DESC library = { 0 };
+
+	std::vector<std::wstring> export_functions;
+	std::vector<LPCWSTR> export_fcn_ptrs;
+	std::vector<D3D12_EXPORT_DESC> exports;
+
+	ShaderLibrary(const void *bytecode, const size_t bytecode_size,
+		const std::vector<std::wstring> &exports);
+	ShaderLibrary(const ShaderLibrary &other);
+	ShaderLibrary& operator=(const ShaderLibrary &other);
+
+	size_t num_exports() const;
+	LPCWSTR* export_names();
+
+private:
+	void build_library_desc();
 };

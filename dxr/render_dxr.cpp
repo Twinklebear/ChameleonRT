@@ -361,28 +361,8 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 }
 
 void RenderDXR::build_raytracing_pipeline() {
-	D3D12_SHADER_BYTECODE bytecode = { 0 };
-	bytecode.pShaderBytecode = render_dxr_dxil;
-	bytecode.BytecodeLength = sizeof(render_dxr_dxil);
-
-	// Setup the exports for the shader library
-	D3D12_DXIL_LIBRARY_DESC shader_lib = { 0 };
-	std::vector<D3D12_EXPORT_DESC> exports;
-	std::vector<LPCWSTR> shader_exported_fcns;
-	const std::vector<std::wstring> export_fcn_names = {
-		L"RayGen", L"Miss", L"ClosestHit"
-	};
-	for (const auto &fn : export_fcn_names) {
-		D3D12_EXPORT_DESC shader_export = { 0 };
-		shader_export.ExportToRename = nullptr;
-		shader_export.Flags = D3D12_EXPORT_FLAG_NONE;
-		shader_export.Name = fn.c_str();
-		exports.push_back(shader_export);
-		shader_exported_fcns.push_back(fn.c_str());
-	}
-	shader_lib.DXILLibrary = bytecode;
-	shader_lib.NumExports = exports.size();
-	shader_lib.pExports = exports.data();
+	ShaderLibrary shader_library(render_dxr_dxil, sizeof(render_dxr_dxil),
+		{ L"RayGen", L"Miss", L"ClosestHit" });
 
 	// Build the hit group which uses our shader library
 	D3D12_HIT_GROUP_DESC hit_group = { 0 };
@@ -426,7 +406,7 @@ void RenderDXR::build_raytracing_pipeline() {
 	{
 		D3D12_STATE_SUBOBJECT dxil_libs = { 0 };
 		dxil_libs.Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
-		dxil_libs.pDesc = &shader_lib;
+		dxil_libs.pDesc = &shader_library.library;
 		// 0: DXIL library
 		subobjects[current_subobj++] = dxil_libs;
 	}
@@ -447,8 +427,8 @@ void RenderDXR::build_raytracing_pipeline() {
 
 	// Associate shader payload cfg with the programs
 	D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION shader_paylod_assoc = { 0 };
-	shader_paylod_assoc.NumExports = shader_exported_fcns.size();
-	shader_paylod_assoc.pExports = shader_exported_fcns.data();
+	shader_paylod_assoc.NumExports = shader_library.num_exports();
+	shader_paylod_assoc.pExports = shader_library.export_names();
 	// Associate the raytracing shader config subobject with the shader exports
 	shader_paylod_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
 	{
@@ -473,7 +453,7 @@ void RenderDXR::build_raytracing_pipeline() {
 		subobjects[current_subobj++] = root_sig_obj;
 
 		rg_root_sig_assoc.NumExports = 1;
-		rg_root_sig_assoc.pExports = &shader_exported_fcns[0];
+		rg_root_sig_assoc.pExports = shader_library.export_names();
 		rg_root_sig_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
 
 		// Associate it with the symbols
@@ -498,7 +478,7 @@ void RenderDXR::build_raytracing_pipeline() {
 		subobjects[current_subobj++] = root_sig_obj;
 
 		root_sig_assoc.NumExports = 1;
-		root_sig_assoc.pExports = &shader_exported_fcns[2];
+		root_sig_assoc.pExports = &shader_library.export_names()[2];
 		root_sig_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
 
 		// Associate it with the symbols

@@ -216,3 +216,43 @@ RootSignature RootSignatureBuilder::create(ID3D12Device *device) {
 	return RootSignature(flags, signature, params);
 }
 
+ShaderLibrary::ShaderLibrary(const void *code, const size_t code_size,
+	const std::vector<std::wstring> &export_fns)
+	: export_functions(export_fns)
+{
+	bytecode.pShaderBytecode = code;
+	bytecode.BytecodeLength = code_size;
+	build_library_desc();
+}
+ShaderLibrary::ShaderLibrary(const ShaderLibrary &other)
+	: bytecode(other.bytecode), export_functions(other.export_functions)
+{
+	build_library_desc();
+}
+ShaderLibrary& ShaderLibrary::operator=(const ShaderLibrary &other) {
+	bytecode = other.bytecode;
+	export_functions = other.export_functions;
+	build_library_desc();
+	return *this;
+}
+
+size_t ShaderLibrary::num_exports() const {
+	return export_fcn_ptrs.size();
+}
+LPCWSTR* ShaderLibrary::export_names() {
+	return export_fcn_ptrs.data();
+}
+
+void ShaderLibrary::build_library_desc() {
+	for (const auto &fn : export_functions) {
+		D3D12_EXPORT_DESC shader_export = { 0 };
+		shader_export.ExportToRename = nullptr;
+		shader_export.Flags = D3D12_EXPORT_FLAG_NONE;
+		shader_export.Name = fn.c_str();
+		exports.push_back(shader_export);
+		export_fcn_ptrs.push_back(fn.c_str());
+	}
+	library.DXILLibrary = bytecode;
+	library.NumExports = exports.size();
+	library.pExports = exports.data();
+}
