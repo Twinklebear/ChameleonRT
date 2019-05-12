@@ -11,7 +11,13 @@ bool dxr_available(Microsoft::WRL::ComPtr<ID3D12Device5> &device);
 
 // TODO Will: Split this class up some more, this object is more of a "builder"
 // while the RootSignature class should really be the "compiled" root signature
-// with the final parameter order mapping
+// with the final parameter order mapping. The table doesn't need a name since
+// I think there should only ever be one, since you can specify a bunch of ranges
+// to reference the single pointer you get, right?
+// Actually since it refers into the global descriptor heap we don't need to write
+// anything into the actual shader table. I wonder why the RT gems book and other
+// resources seem to imply this? Because it seems like you can't read from a different
+// heap than the one which is bound.
 class RootSignature {
 	D3D12_ROOT_SIGNATURE_FLAGS flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> sig;
