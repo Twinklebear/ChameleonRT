@@ -368,7 +368,7 @@ void RenderDXR::build_raytracing_pipeline() {
 	D3D12_HIT_GROUP_DESC hit_group = { 0 };
 	hit_group.HitGroupExport = L"HitGroup";
 	hit_group.Type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
-	hit_group.ClosestHitShaderImport = L"ClosestHit";
+	hit_group.ClosestHitShaderImport = *shader_library.find_export(L"ClosestHit");
 
 	// Make the shader config which defines the maximum size in bytes for the ray
 	// payload and attribute structures
@@ -406,7 +406,7 @@ void RenderDXR::build_raytracing_pipeline() {
 	{
 		D3D12_STATE_SUBOBJECT dxil_libs = { 0 };
 		dxil_libs.Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
-		dxil_libs.pDesc = &shader_library.library;
+		dxil_libs.pDesc = shader_library.library();
 		// 0: DXIL library
 		subobjects[current_subobj++] = dxil_libs;
 	}
@@ -453,7 +453,7 @@ void RenderDXR::build_raytracing_pipeline() {
 		subobjects[current_subobj++] = root_sig_obj;
 
 		rg_root_sig_assoc.NumExports = 1;
-		rg_root_sig_assoc.pExports = shader_library.export_names();
+		rg_root_sig_assoc.pExports = shader_library.find_export(L"RayGen");
 		rg_root_sig_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
 
 		// Associate it with the symbols
@@ -478,7 +478,7 @@ void RenderDXR::build_raytracing_pipeline() {
 		subobjects[current_subobj++] = root_sig_obj;
 
 		root_sig_assoc.NumExports = 1;
-		root_sig_assoc.pExports = &shader_library.export_names()[2];
+		root_sig_assoc.pExports = shader_library.find_export(L"ClosestHit");
 		root_sig_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
 
 		// Associate it with the symbols
