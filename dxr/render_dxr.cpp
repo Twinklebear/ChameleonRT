@@ -287,7 +287,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	dispatch_rays.Depth = 1;
 
 	cmd_list->SetDescriptorHeaps(1, raygen_shader_desc_heap.GetAddressOf());
-	cmd_list->SetComputeRootSignature(global_root_sig.Get());
+	cmd_list->SetComputeRootSignature(global_root_sig.get());
 	cmd_list->SetPipelineState1(rt_state_object.Get());
 	cmd_list->DispatchRays(&dispatch_rays);
 	
@@ -463,7 +463,7 @@ void RenderDXR::build_raytracing_pipeline() {
 	// with a set of symbols
 	D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION rg_root_sig_assoc = { 0 };
 	D3D12_LOCAL_ROOT_SIGNATURE rg_local_root_sig = { 0 };
-	rg_local_root_sig.pLocalRootSignature = raygen_root_sig.Get();
+	rg_local_root_sig.pLocalRootSignature = raygen_root_sig.get();
 	{
 		// Declare the root signature
 		D3D12_STATE_SUBOBJECT root_sig_obj = { 0 };
@@ -487,7 +487,7 @@ void RenderDXR::build_raytracing_pipeline() {
 	// Setup the local root signature for the hit group program as well
 	D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION root_sig_assoc = { 0 };
 	D3D12_LOCAL_ROOT_SIGNATURE ch_local_root_sig = { 0 };
-	ch_local_root_sig.pLocalRootSignature = hitgroup_root_sig.Get();
+	ch_local_root_sig.pLocalRootSignature = hitgroup_root_sig.get();
 	{
 		
 		// Declare the root signature
@@ -525,7 +525,7 @@ void RenderDXR::build_raytracing_pipeline() {
 	// Empty global root signature. Note that since we have no global
 	// parameters we don't actually need to specify this global signature
 	D3D12_GLOBAL_ROOT_SIGNATURE global_root_sig_obj = { 0 };
-	global_root_sig_obj.pGlobalRootSignature = global_root_sig.Get();
+	global_root_sig_obj.pGlobalRootSignature = global_root_sig.get();
 	{
 		// Declare the root signature
 		D3D12_STATE_SUBOBJECT root_sig_obj = { 0 };
@@ -545,118 +545,30 @@ void RenderDXR::build_raytracing_pipeline() {
 
 void RenderDXR::build_raygen_root_signature() {
 	// Create the root signature for our ray gen shader
-	std::vector<D3D12_ROOT_PARAMETER> rt_params;
-	// The raygen program takes two parameters:
-	// the UAV representing the output image buffer
-	// the SRV representing the top-level acceleration structure
-	D3D12_ROOT_PARAMETER param = { 0 };
-	param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	raygen_root_sig = RootSignature::local();
 
-	// UAV param for the output image buffer
-	D3D12_DESCRIPTOR_RANGE descrip_range_uav = { 0 };
-	descrip_range_uav.BaseShaderRegister = 0;
-	descrip_range_uav.NumDescriptors = 1;
-	descrip_range_uav.RegisterSpace = 0;
-	descrip_range_uav.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-	descrip_range_uav.OffsetInDescriptorsFromTableStart = 0;
-
-	// SRV for the top-level acceleration structure
-	D3D12_DESCRIPTOR_RANGE descrip_range_srv = { 0 };
-	descrip_range_srv.BaseShaderRegister = 0;
-	descrip_range_srv.NumDescriptors = 1;
-	descrip_range_srv.RegisterSpace = 0;
-	descrip_range_srv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	// Second entry in our heap
-	descrip_range_srv.OffsetInDescriptorsFromTableStart = 1;
-
-	// Constants buffer param for the view parameters
-	D3D12_DESCRIPTOR_RANGE descrip_range_cbv = { 0 };
-	descrip_range_cbv.BaseShaderRegister = 0;
-	descrip_range_cbv.NumDescriptors = 1;
-	descrip_range_cbv.RegisterSpace = 0;
-	descrip_range_cbv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-	descrip_range_cbv.OffsetInDescriptorsFromTableStart = 2;
-
-	std::vector<D3D12_DESCRIPTOR_RANGE> ranges = {
-		descrip_range_uav, descrip_range_srv, descrip_range_cbv
-	};
-	param.DescriptorTable.NumDescriptorRanges = ranges.size();
-	param.DescriptorTable.pDescriptorRanges = ranges.data();
-	rt_params.push_back(param);
-
-	D3D12_ROOT_SIGNATURE_DESC root_desc = { 0 };
-	root_desc.NumParameters = rt_params.size();
-	root_desc.pParameters = rt_params.data();
-	// RT root signatures are local (TODO WILL to what? the hit group?)
-	root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-
-	// Create the root signature from the descriptor
-	ComPtr<ID3DBlob> signature_blob;
-	ComPtr<ID3DBlob> err_blob;
-	auto res = D3D12SerializeRootSignature(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1,
-		&signature_blob, &err_blob);
-	if (FAILED(res)) {
-		std::cout << "Failed to serialize root signature: " << err_blob->GetBufferPointer() << "\n";
-		throw std::runtime_error("Failed to serialize root signature");
-	}
-
-	CHECK_ERR(device->CreateRootSignature(0, signature_blob->GetBufferPointer(),
-		signature_blob->GetBufferSize(), IID_PPV_ARGS(&raygen_root_sig)));
+	// The raygen program takes three parameters:
+	// the UAV to the output image buffer
+	// the SRV holding the top-level acceleration structure
+	// the CBV holding the camera params
+	raygen_root_sig.add_uav_range(1, 0, 0, 0);
+	raygen_root_sig.add_srv_range(1, 0, 0, 1);
+	raygen_root_sig.add_cbv_range(1, 0, 0, 2);
+	raygen_root_sig.create(device.Get());
 }
 
 void RenderDXR::build_hitgroup_root_signature() {
 	// Create the root signature for our closest hit function
-	std::vector<D3D12_ROOT_PARAMETER> rt_params;
-	// SRV for the vertex buffer and index buffer.
-	D3D12_ROOT_PARAMETER param = { 0 };
-	param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
-	param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-	param.Descriptor.RegisterSpace = 1;
-	param.Descriptor.ShaderRegister = 0;
-	rt_params.push_back(param);
-	
-	param.Descriptor.ShaderRegister = 1;
-	rt_params.push_back(param);
-
-	D3D12_ROOT_SIGNATURE_DESC root_desc = { 0 };
-	root_desc.NumParameters = rt_params.size();
-	root_desc.pParameters = rt_params.data();
-	root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-
-	// Create the root signature from the descriptor
-	ComPtr<ID3DBlob> signature_blob;
-	ComPtr<ID3DBlob> err_blob;
-	auto res = D3D12SerializeRootSignature(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1,
-		&signature_blob, &err_blob);
-	if (FAILED(res)) {
-		std::cout << "Failed to serialize root signature: " << err_blob->GetBufferPointer() << "\n";
-		throw std::runtime_error("Failed to serialize root signature");
-	}
-
-	CHECK_ERR(device->CreateRootSignature(0, signature_blob->GetBufferPointer(),
-		signature_blob->GetBufferSize(), IID_PPV_ARGS(&hitgroup_root_sig)));
+	hitgroup_root_sig = RootSignature::local();
+	hitgroup_root_sig.add_srv(0, 1);
+	hitgroup_root_sig.add_srv(1, 1);
+	hitgroup_root_sig.create(device.Get());
 }
 
 void RenderDXR::build_empty_global_sig() {
 	// Create the empty global root
-	std::vector<D3D12_ROOT_PARAMETER> rt_params;
-
-	D3D12_ROOT_SIGNATURE_DESC root_desc = { 0 };
-	root_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-
-	// Create the root signature from the descriptor
-	ComPtr<ID3DBlob> signature_blob;
-	ComPtr<ID3DBlob> err_blob;
-	auto res = D3D12SerializeRootSignature(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1,
-		&signature_blob, &err_blob);
-	if (FAILED(res)) {
-		std::cout << "Failed to serialize root signature: " << err_blob->GetBufferPointer() << "\n";
-		throw std::runtime_error("Failed to serialize root signature");
-	}
-
-	CHECK_ERR(device->CreateRootSignature(0, signature_blob->GetBufferPointer(),
-		signature_blob->GetBufferSize(), IID_PPV_ARGS(&global_root_sig)));
+	global_root_sig = RootSignature::global();
+	global_root_sig.create(device.Get());
 }
 
 void RenderDXR::build_shader_resource_heap() {

@@ -17,12 +17,12 @@ struct RenderDXR : RenderBackend {
 		bottom_level_as, instance_buf, top_level_as, shader_table;
 
 	Texture2D render_target;
+
+	RootSignature raygen_root_sig, hitgroup_root_sig, global_root_sig;
 	
 	Microsoft::WRL::ComPtr<ID3D12StateObject> rt_state_object;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> raygen_shader_desc_heap,
 		hitgroup_shader_desc_heap;
-	Microsoft::WRL::ComPtr<ID3D12RootSignature> raygen_root_sig,
-		hitgroup_root_sig, global_root_sig;
 
 	uint64_t shader_table_entry_size = 0;
 	
