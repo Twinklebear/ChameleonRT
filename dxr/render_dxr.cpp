@@ -545,30 +545,28 @@ void RenderDXR::build_raytracing_pipeline() {
 
 void RenderDXR::build_raygen_root_signature() {
 	// Create the root signature for our ray gen shader
-	raygen_root_sig = RootSignature::local();
-
 	// The raygen program takes three parameters:
 	// the UAV to the output image buffer
 	// the SRV holding the top-level acceleration structure
 	// the CBV holding the camera params
-	raygen_root_sig.add_uav_range(1, 0, 0, 0);
-	raygen_root_sig.add_srv_range(1, 0, 0, 1);
-	raygen_root_sig.add_cbv_range(1, 0, 0, 2);
-	raygen_root_sig.create(device.Get());
+	raygen_root_sig = RootSignatureBuilder::local()
+		.add_uav_range(1, 0, 0, 0)
+		.add_srv_range(1, 0, 0, 1)
+		.add_cbv_range(1, 0, 0, 2)
+		.create(device.Get());
 }
 
 void RenderDXR::build_hitgroup_root_signature() {
 	// Create the root signature for our closest hit function
-	hitgroup_root_sig = RootSignature::local();
-	hitgroup_root_sig.add_srv(0, 1);
-	hitgroup_root_sig.add_srv(1, 1);
-	hitgroup_root_sig.create(device.Get());
+	hitgroup_root_sig = RootSignatureBuilder::local()
+		.add_srv("vertex_buf", 0, 1)
+		.add_srv("index_buf", 1, 1)
+		.create(device.Get());
 }
 
 void RenderDXR::build_empty_global_sig() {
 	// Create the empty global root
-	global_root_sig = RootSignature::global();
-	global_root_sig.create(device.Get());
+	global_root_sig = RootSignatureBuilder::global().create(device.Get());
 }
 
 void RenderDXR::build_shader_resource_heap() {
@@ -617,7 +615,7 @@ void RenderDXR::build_shader_binding_table() {
 		D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle =
 			raygen_shader_desc_heap->GetGPUDescriptorHandleForHeapStart();
 		// It seems like writing this for the ray gen shader in the table isn't needed?
-		std::memcpy(sbt_map + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
+		std::memcpy(sbt_map + raygen_root_sig.descriptor_table_offset(),
 			&desc_heap_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 	}
 	// Each entry must start at an alignment of 32bytes, so offset by the required alignment
@@ -632,11 +630,11 @@ void RenderDXR::build_shader_binding_table() {
 		D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 	{
 		D3D12_GPU_VIRTUAL_ADDRESS gpu_handle = vertex_buf->GetGPUVirtualAddress();
-		std::memcpy(sbt_map + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES,
+		std::memcpy(sbt_map + hitgroup_root_sig.offset("vertex_buf"),
 			&gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 
 		gpu_handle = index_buf->GetGPUVirtualAddress();
-		std::memcpy(sbt_map + D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES + sizeof(D3D12_GPU_VIRTUAL_ADDRESS),
+		std::memcpy(sbt_map + hitgroup_root_sig.offset("index_buf"),
 			&gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 	}
 	shader_table.unmap();
