@@ -287,8 +287,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	dispatch_rays.Depth = 1;
 
 	cmd_list->SetDescriptorHeaps(1, raygen_shader_desc_heap.GetAddressOf());
-	cmd_list->SetComputeRootSignature(global_root_sig.get());
-	cmd_list->SetPipelineState1(rt_state_object.Get());
+	cmd_list->SetPipelineState1(rt_pipeline.get());
 	cmd_list->DispatchRays(&dispatch_rays);
 	
 	// We want to just time the raytracing work
@@ -364,166 +363,6 @@ void RenderDXR::build_raytracing_pipeline() {
 	ShaderLibrary shader_library(render_dxr_dxil, sizeof(render_dxr_dxil),
 		{ L"RayGen", L"Miss", L"ClosestHit" });
 
-	// Build the hit group which uses our shader library
-	D3D12_HIT_GROUP_DESC hit_group = { 0 };
-	hit_group.HitGroupExport = L"HitGroup";
-	hit_group.Type = D3D12_HIT_GROUP_TYPE_TRIANGLES;
-	hit_group.ClosestHitShaderImport = *shader_library.find_export(L"ClosestHit");
-
-	// Make the shader config which defines the maximum size in bytes for the ray
-	// payload and attribute structures
-	D3D12_RAYTRACING_SHADER_CONFIG shader_desc = { 0 };
-	// Payload will just be a float4 color + z
-	shader_desc.MaxPayloadSizeInBytes = 4 * sizeof(float);
-	// Attribute size is just the float2 barycentrics
-	shader_desc.MaxAttributeSizeInBytes = 2 * sizeof(float);
-
-	build_raygen_root_signature();
-	build_hitgroup_root_signature();
-	build_empty_global_sig();
-
-	// TODO WILL: In a utility library the ray tracing shader and pipeline object
-	// should be handled separately
-
-	// Now we can build the raytracing pipeline. It's made of a bunch of subobjects that
-	// describe the shader code libraries, hit groups, root signature associations and
-	// some other config stuff
-	// Our pipeline:
-	// 0: DXIL library
-	// 1: Hit Group
-	// 2: Shader config
-	// 3: Shader config association
-	// 4: Raygen local root signature
-	// 5: Raygen local root signature association
-	// 6: Hitgroup local root signature
-	// 7: Hitgroup local root sign. association
-	// 8: Pipeline config
-	// 9: Empty global root sig.
-	
-	std::vector<D3D12_STATE_SUBOBJECT> subobjects;
-	subobjects.resize(10);
-	size_t current_subobj = 0;
-	{
-		D3D12_STATE_SUBOBJECT dxil_libs = { 0 };
-		dxil_libs.Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
-		dxil_libs.pDesc = shader_library.library();
-		// 0: DXIL library
-		subobjects[current_subobj++] = dxil_libs;
-	}
-	{
-		D3D12_STATE_SUBOBJECT hit_grp_obj = { 0 };
-		hit_grp_obj.Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
-		hit_grp_obj.pDesc = &hit_group;
-		// 1: Hit Group
-		subobjects[current_subobj++] = hit_grp_obj;
-	}
-	{
-		D3D12_STATE_SUBOBJECT shader_cfg = { 0 };
-		shader_cfg.Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
-		shader_cfg.pDesc = &shader_desc;
-		// 2: Shader config
-		subobjects[current_subobj++] = shader_cfg;
-	}
-
-	// Associate shader payload cfg with the programs
-	D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION shader_paylod_assoc = { 0 };
-	shader_paylod_assoc.NumExports = shader_library.num_exports();
-	shader_paylod_assoc.pExports = shader_library.export_names();
-	// Associate the raytracing shader config subobject with the shader exports
-	shader_paylod_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
-	{
-		D3D12_STATE_SUBOBJECT payload_subobj = { 0 };
-		payload_subobj.Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-		payload_subobj.pDesc = &shader_paylod_assoc;
-		// 3: Shader config association
-		subobjects[current_subobj++] = payload_subobj;
-	}
-
-	// The root signature needs two subobjects: one to declare it, and one to associate it
-	// with a set of symbols
-	D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION rg_root_sig_assoc = { 0 };
-	D3D12_LOCAL_ROOT_SIGNATURE rg_local_root_sig = { 0 };
-	rg_local_root_sig.pLocalRootSignature = raygen_root_sig.get();
-	{
-		// Declare the root signature
-		D3D12_STATE_SUBOBJECT root_sig_obj = { 0 };
-		root_sig_obj.Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-		root_sig_obj.pDesc = &rg_local_root_sig;
-		// 4: Raygen local root signature
-		subobjects[current_subobj++] = root_sig_obj;
-
-		rg_root_sig_assoc.NumExports = 1;
-		rg_root_sig_assoc.pExports = shader_library.find_export(L"RayGen");
-		rg_root_sig_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
-
-		// Associate it with the symbols
-		D3D12_STATE_SUBOBJECT root_assoc = { 0 };
-		root_assoc.Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-		root_assoc.pDesc = &rg_root_sig_assoc;
-		// 5: Raygen local root signature association
-		subobjects[current_subobj++] = root_assoc;
-	}
-
-	// Setup the local root signature for the hit group program as well
-	D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION root_sig_assoc = { 0 };
-	D3D12_LOCAL_ROOT_SIGNATURE ch_local_root_sig = { 0 };
-	ch_local_root_sig.pLocalRootSignature = hitgroup_root_sig.get();
-	{
-		
-		// Declare the root signature
-		D3D12_STATE_SUBOBJECT root_sig_obj = { 0 };
-		root_sig_obj.Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-		root_sig_obj.pDesc = &ch_local_root_sig;
-		// 6: Hitgroup local root signature
-		subobjects[current_subobj++] = root_sig_obj;
-
-		root_sig_assoc.NumExports = 1;
-		root_sig_assoc.pExports = shader_library.find_export(L"ClosestHit");
-		root_sig_assoc.pSubobjectToAssociate = &subobjects[current_subobj - 1];
-
-		// Associate it with the symbols
-		D3D12_STATE_SUBOBJECT root_assoc = { 0 };
-		root_assoc.Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-		root_assoc.pDesc = &root_sig_assoc;
-		// 7: Hitgroup local root sign. association
-		subobjects[current_subobj++] = root_assoc;
-	}
-
-	// Add a subobject for the ray tracing pipeline configuration
-	D3D12_RAYTRACING_PIPELINE_CONFIG pipeline_cfg = { 0 };
-	pipeline_cfg.MaxTraceRecursionDepth = 1;
-
-	// Add to the subobjects
-	{
-		D3D12_STATE_SUBOBJECT pipeline_subobj = { 0 };
-		pipeline_subobj.Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
-		pipeline_subobj.pDesc = &pipeline_cfg;
-		// 8: Pipeline config
-		subobjects[current_subobj++] = pipeline_subobj;
-	}
-
-	// Empty global root signature. Note that since we have no global
-	// parameters we don't actually need to specify this global signature
-	D3D12_GLOBAL_ROOT_SIGNATURE global_root_sig_obj = { 0 };
-	global_root_sig_obj.pGlobalRootSignature = global_root_sig.get();
-	{
-		// Declare the root signature
-		D3D12_STATE_SUBOBJECT root_sig_obj = { 0 };
-		root_sig_obj.Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
-		root_sig_obj.pDesc = &global_root_sig_obj;
-		// 9: Empty global root sig.
-		subobjects[current_subobj++] = root_sig_obj;
-	}
-
-	// Describe the set of subobjects in our raytracing pipeline
-	D3D12_STATE_OBJECT_DESC pipeline_desc = { 0 };
-	pipeline_desc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
-	pipeline_desc.NumSubobjects = current_subobj;
-	pipeline_desc.pSubobjects = subobjects.data();
-	CHECK_ERR(device->CreateStateObject(&pipeline_desc, IID_PPV_ARGS(&rt_state_object)));
-}
-
-void RenderDXR::build_raygen_root_signature() {
 	// Create the root signature for our ray gen shader
 	// The raygen program takes three parameters:
 	// the UAV to the output image buffer
@@ -534,19 +373,23 @@ void RenderDXR::build_raygen_root_signature() {
 		.add_srv_range(1, 0, 0, 1)
 		.add_cbv_range(1, 0, 0, 2)
 		.create(device.Get());
-}
 
-void RenderDXR::build_hitgroup_root_signature() {
 	// Create the root signature for our closest hit function
 	hitgroup_root_sig = RootSignatureBuilder::local()
 		.add_srv("vertex_buf", 0, 1)
 		.add_srv("index_buf", 1, 1)
 		.create(device.Get());
-}
 
-void RenderDXR::build_empty_global_sig() {
-	// Create the empty global root
-	global_root_sig = RootSignatureBuilder::global().create(device.Get());
+	rt_pipeline = RTPipelineBuilder()
+		.add_shader_library(shader_library)
+		.set_ray_gen(L"RayGen")
+		.add_miss_shader(L"Miss")
+		.add_hit_group(HitGroup(L"HitGroup", D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit"))
+		.set_shader_root_sig({ L"RayGen" }, raygen_root_sig)
+		.set_shader_root_sig({ L"ClosestHit" }, hitgroup_root_sig)
+		.configure_shader_payload(shader_library.export_names(), 4 * sizeof(float), 2 * sizeof(float))
+		.set_max_recursion(1)
+		.create(device.Get());
 }
 
 void RenderDXR::build_shader_resource_heap() {
@@ -583,7 +426,7 @@ void RenderDXR::build_shader_binding_table() {
 		<< "SBT is " << sbt_table_size << " bytes\n";
 
 	ID3D12StateObjectProperties *rt_pipeline_props = nullptr;
-	rt_state_object->QueryInterface(&rt_pipeline_props);
+	rt_pipeline->QueryInterface(&rt_pipeline_props);
 
 	// Map the SBT and write our shader data and param info to it
 	uint8_t *sbt_map = static_cast<uint8_t*>(shader_table.map());

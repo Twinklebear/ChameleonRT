@@ -32,6 +32,8 @@ class RootSignature {
 	std::unordered_map<std::string, RootParam> param_offsets;
 
 	friend class RootSignatureBuilder;
+	friend class RTPipelineBuilder;
+	friend class RTPipeline;
 
 	RootSignature(D3D12_ROOT_SIGNATURE_FLAGS flags, Microsoft::WRL::ComPtr<ID3D12RootSignature> sig,
 		const std::vector<RootParam> &params);
@@ -97,6 +99,7 @@ class ShaderLibrary {
 	std::vector<std::wstring> export_functions;
 	// A bit annoying but we keep this around too b/c we need a contiguous
 	// array of pointers for now to build the exports association in the pipeline
+	// TODO: We don't need to keep this
 	std::vector<LPCWSTR> export_fcn_ptrs;
 	std::vector<D3D12_EXPORT_DESC> exports;
 
@@ -106,12 +109,103 @@ public:
 	ShaderLibrary(const ShaderLibrary &other);
 	ShaderLibrary& operator=(const ShaderLibrary &other);
 
+	const std::vector<std::wstring>& export_names() const;
 	size_t num_exports() const;
-	LPCWSTR* export_names();
+	LPCWSTR* export_names_ptr();
 	LPCWSTR* find_export(const std::wstring &name);
 
 	const D3D12_DXIL_LIBRARY_DESC* library() const;
 
 private:
 	void build_library_desc();
+};
+
+struct RootSignatureAssociation {
+	const std::vector<std::wstring> functions;
+	RootSignature signature;
+
+	RootSignatureAssociation() = default;
+	RootSignatureAssociation(const std::vector<std::wstring> &functions, const RootSignature &signature);
+};
+
+struct HitGroup {
+	std::wstring name, closest_hit, any_hit, intersection;
+	D3D12_HIT_GROUP_TYPE type;
+
+	HitGroup() = default;
+	HitGroup(const std::wstring &name, D3D12_HIT_GROUP_TYPE type,
+		const std::wstring &closest_hit, const std::wstring &any_hit = L"",
+		const std::wstring &intersection = L"");
+
+	bool has_any_hit() const;
+	bool has_intersection() const;
+};
+
+struct ShaderPayloadConfig {
+	std::vector<std::wstring> functions;
+	D3D12_RAYTRACING_SHADER_CONFIG desc;
+
+	ShaderPayloadConfig() = default;
+	ShaderPayloadConfig(const std::vector<std::wstring> &functions,
+		uint32_t max_payload_size, uint32_t max_attrib_size);
+};
+
+class RTPipeline;
+
+class RTPipelineBuilder {
+	std::vector<ShaderLibrary> shader_libs;
+	std::wstring ray_gen;
+	std::vector<std::wstring> miss_shaders;
+	std::vector<std::vector<HitGroup>> hit_groups;
+	std::vector<ShaderPayloadConfig> payload_configs;
+	std::vector<RootSignatureAssociation> signature_associations;
+	RootSignature global_sig;
+	uint32_t recursion_depth = 1;
+
+	bool has_global_root_sig() const;
+	size_t compute_num_subobjects(size_t &num_export_associations, size_t &num_associated_fcns) const;
+
+public:
+	RTPipelineBuilder& add_shader_library(const ShaderLibrary &library);
+
+	RTPipelineBuilder& set_ray_gen(const std::wstring &ray_gen);
+
+	// Set the miss shader if you only have one ray type
+	RTPipelineBuilder& add_miss_shader(const std::wstring &miss_fn);
+	// Set the miss shaders for each ray type
+	RTPipelineBuilder& add_miss_shader(const std::vector<std::wstring> &miss_fn);
+	
+	// Set a single hit-group if there's only one ray type
+	RTPipelineBuilder& add_hit_group(const HitGroup &hg);
+	// Specify the hit-group for each ray type, and/or each instance
+	RTPipelineBuilder& add_hit_group(const std::vector<HitGroup> &hg);
+
+	RTPipelineBuilder& configure_shader_payload(const std::vector<std::wstring> &functions,
+		uint32_t max_payload_size, uint32_t max_attrib_size);
+
+	RTPipelineBuilder& set_max_recursion(uint32_t depth);
+
+	RTPipelineBuilder& set_shader_root_sig(const std::vector<std::wstring> &functions, const RootSignature &sig);
+
+	RTPipelineBuilder& set_global_root_sig(const RootSignature &sig);
+
+	RTPipeline create(ID3D12Device5 *device);
+};
+
+class RTPipeline {
+	Microsoft::WRL::ComPtr<ID3D12StateObject> state;
+	RootSignature global_sig;
+
+	friend class RTPipelineBuilder;
+
+	bool has_global_root_sig() const;
+
+public:
+
+	// RTPipeline should know:
+	// - ShaderTable layout/buffer
+	// - Offsets to the different shaders in this table (build the dispatch rays struct)
+
+	ID3D12StateObject* operator->();
+	ID3D12StateObject* get();
 };
