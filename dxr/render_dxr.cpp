@@ -561,21 +561,14 @@ void RenderDXR::build_raygen_root_signature() {
 	descrip_range_uav.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
 	descrip_range_uav.OffsetInDescriptorsFromTableStart = 0;
 
-	param.DescriptorTable.NumDescriptorRanges = 1;
-	param.DescriptorTable.pDescriptorRanges = &descrip_range_uav;
-	rt_params.push_back(param);
-
 	// SRV for the top-level acceleration structure
 	D3D12_DESCRIPTOR_RANGE descrip_range_srv = { 0 };
 	descrip_range_srv.BaseShaderRegister = 0;
 	descrip_range_srv.NumDescriptors = 1;
 	descrip_range_srv.RegisterSpace = 0;
 	descrip_range_srv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	// Second entry in our table
+	// Second entry in our heap
 	descrip_range_srv.OffsetInDescriptorsFromTableStart = 1;
-
-	param.DescriptorTable.pDescriptorRanges = &descrip_range_srv;
-	rt_params.push_back(param);
 
 	// Constants buffer param for the view parameters
 	D3D12_DESCRIPTOR_RANGE descrip_range_cbv = { 0 };
@@ -585,7 +578,11 @@ void RenderDXR::build_raygen_root_signature() {
 	descrip_range_cbv.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
 	descrip_range_cbv.OffsetInDescriptorsFromTableStart = 2;
 
-	param.DescriptorTable.pDescriptorRanges = &descrip_range_cbv;
+	std::vector<D3D12_DESCRIPTOR_RANGE> ranges = {
+		descrip_range_uav, descrip_range_srv, descrip_range_cbv
+	};
+	param.DescriptorTable.NumDescriptorRanges = ranges.size();
+	param.DescriptorTable.pDescriptorRanges = ranges.data();
 	rt_params.push_back(param);
 
 	D3D12_ROOT_SIGNATURE_DESC root_desc = { 0 };
