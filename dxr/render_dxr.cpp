@@ -265,29 +265,10 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	CHECK_ERR(cmd_allocator->Reset());
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 
-	// Tell the dispatch rays how we built our shader binding table
-	D3D12_DISPATCH_RAYS_DESC dispatch_rays = { 0 };
-	// RayGen is first, and has a shader identifier and one param
-	dispatch_rays.RayGenerationShaderRecord.StartAddress = shader_table->GetGPUVirtualAddress();
-	dispatch_rays.RayGenerationShaderRecord.SizeInBytes = shader_table_entry_size;
-
-	// Miss is next, followed by hit, each is just a shader identifier
-	dispatch_rays.MissShaderTable.StartAddress =
-		shader_table->GetGPUVirtualAddress() + shader_table_entry_size;
-	dispatch_rays.MissShaderTable.SizeInBytes = shader_table_entry_size;
-	dispatch_rays.MissShaderTable.StrideInBytes = shader_table_entry_size;
-
-	dispatch_rays.HitGroupTable.StartAddress =
-		shader_table->GetGPUVirtualAddress() + 2 * shader_table_entry_size;
-	dispatch_rays.HitGroupTable.SizeInBytes = shader_table_entry_size;
-	dispatch_rays.HitGroupTable.StrideInBytes = shader_table_entry_size;
-
-	dispatch_rays.Width = render_target.dims().x;
-	dispatch_rays.Height = render_target.dims().y;
-	dispatch_rays.Depth = 1;
-
 	cmd_list->SetDescriptorHeaps(1, raygen_shader_desc_heap.GetAddressOf());
 	cmd_list->SetPipelineState1(rt_pipeline.get());
+
+	D3D12_DISPATCH_RAYS_DESC dispatch_rays = rt_pipeline.dispatch_rays(render_target.dims());
 	cmd_list->DispatchRays(&dispatch_rays);
 	
 	// We want to just time the raytracing work
@@ -368,14 +349,14 @@ void RenderDXR::build_raytracing_pipeline() {
 	// the UAV to the output image buffer
 	// the SRV holding the top-level acceleration structure
 	// the CBV holding the camera params
-	raygen_root_sig = RootSignatureBuilder::local()
+	RootSignature raygen_root_sig = RootSignatureBuilder::local()
 		.add_uav_range(1, 0, 0, 0)
 		.add_srv_range(1, 0, 0, 1)
 		.add_cbv_range(1, 0, 0, 2)
 		.create(device.Get());
 
 	// Create the root signature for our closest hit function
-	hitgroup_root_sig = RootSignatureBuilder::local()
+	RootSignature hitgroup_root_sig = RootSignatureBuilder::local()
 		.add_srv("vertex_buf", 0, 1)
 		.add_srv("index_buf", 1, 1)
 		.create(device.Get());
@@ -386,7 +367,7 @@ void RenderDXR::build_raytracing_pipeline() {
 		.add_miss_shader(L"Miss")
 		.add_hit_group(HitGroup(L"HitGroup", D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit"))
 		.set_shader_root_sig({ L"RayGen" }, raygen_root_sig)
-		.set_shader_root_sig({ L"ClosestHit" }, hitgroup_root_sig)
+		.set_shader_root_sig({ L"HitGroup" }, hitgroup_root_sig)
 		.configure_shader_payload(shader_library.export_names(), 4 * sizeof(float), 2 * sizeof(float))
 		.set_max_recursion(1)
 		.create(device.Get());
@@ -403,64 +384,30 @@ void RenderDXR::build_shader_resource_heap() {
 }
 
 void RenderDXR::build_shader_binding_table() {
-	// The shader binding table is a table of pointers to the shader code
-	// and their respective descriptor heaps
-	// An SBT entry is the program ID along with a set of params for the program.
-	// the params are either 8 byte pointers (or the example mentions 4 byte constants, how to set or use those?)
-	// Furthermore, the stride between elements is specified per-group (ray gen, hit, miss, etc) so it
-	// must be padded to the largest size required by any individual entry. Note the order also matters for
-	// and should match the instance contribution to hit group index.
-	// In this example it's simple: our ray gen program takes a single ptr arg to the rt_shader_res_heap,
-	// and our others don't take arguments at all
-	// 3 shaders and one that takes a single pointer param (ray-gen). However, each shader
-	// binding table in the dispatch rays must have its address start at a 64byte alignment,
-	// and use a 32byte stride. So pad these out to meet those requirements by making each
-	// entry 64 bytes
-	shader_table_entry_size = 2 * D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-	const uint32_t sbt_table_size = align_to(3 * shader_table_entry_size,
-		D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
-	shader_table = Buffer::upload(device.Get(), sbt_table_size,
-		D3D12_RESOURCE_STATE_GENERIC_READ);
-		
-	std::cout << "Shader table entry size: " << shader_table_entry_size << "\n"
-		<< "SBT is " << sbt_table_size << " bytes\n";
-
-	ID3D12StateObjectProperties *rt_pipeline_props = nullptr;
-	rt_pipeline->QueryInterface(&rt_pipeline_props);
-
-	// Map the SBT and write our shader data and param info to it
-	uint8_t *sbt_map = static_cast<uint8_t*>(shader_table.map());
-
-	// First we write the ray-gen shader identifier, followed by the ptr to its descriptor heap
-	std::memcpy(sbt_map, rt_pipeline_props->GetShaderIdentifier(L"RayGen"),
-		D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+	rt_pipeline.map_shader_table();
 	{
 		D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle =
 			raygen_shader_desc_heap->GetGPUDescriptorHandleForHeapStart();
-		// It seems like writing this for the ray gen shader in the table isn't needed?
-		std::memcpy(sbt_map + raygen_root_sig.descriptor_table_offset(),
-			&desc_heap_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+
+		uint8_t *map = rt_pipeline.shader_record(L"RayGen");
+		const RootSignature *sig = rt_pipeline.shader_signature(L"RayGen");
+
+		// Is writing the descriptor heap handle actually needed? It seems to not matter
+		// if this is written or not
+		std::memcpy(map + sig->descriptor_table_offset(), &desc_heap_handle,
+			sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 	}
-	// Each entry must start at an alignment of 32bytes, so offset by the required alignment
-	sbt_map += shader_table_entry_size;
-
-	std::memcpy(sbt_map, rt_pipeline_props->GetShaderIdentifier(L"Miss"),
-		D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-	// Nothing after for the miss shader, but must pad to alignment
-	sbt_map += shader_table_entry_size;
-
-	std::memcpy(sbt_map, rt_pipeline_props->GetShaderIdentifier(L"HitGroup"),
-		D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 	{
+		uint8_t *map = rt_pipeline.shader_record(L"HitGroup");
+		const RootSignature *sig = rt_pipeline.shader_signature(L"HitGroup");
 		D3D12_GPU_VIRTUAL_ADDRESS gpu_handle = vertex_buf->GetGPUVirtualAddress();
-		std::memcpy(sbt_map + hitgroup_root_sig.offset("vertex_buf"),
-			&gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+		std::memcpy(map + sig->offset("vertex_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 
 		gpu_handle = index_buf->GetGPUVirtualAddress();
-		std::memcpy(sbt_map + hitgroup_root_sig.offset("index_buf"),
-			&gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+		std::memcpy(map + sig->offset("index_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 	}
-	shader_table.unmap();
+
+	rt_pipeline.unmap_shader_table();
 }
 
 void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,

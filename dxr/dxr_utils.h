@@ -48,6 +48,9 @@ public:
 	size_t descriptor_table_offset() const;
 	size_t descriptor_table_size() const;
 
+	// Return the total size of the root signature arguments
+	size_t total_size() const;
+
 	ID3D12RootSignature* operator->();
 	ID3D12RootSignature* get();
 };
@@ -121,11 +124,11 @@ private:
 };
 
 struct RootSignatureAssociation {
-	const std::vector<std::wstring> functions;
+	std::vector<std::wstring> shaders;
 	RootSignature signature;
 
 	RootSignatureAssociation() = default;
-	RootSignatureAssociation(const std::vector<std::wstring> &functions, const RootSignature &signature);
+	RootSignatureAssociation(const std::vector<std::wstring> &shaders, const RootSignature &signature);
 };
 
 struct HitGroup {
@@ -162,9 +165,6 @@ class RTPipelineBuilder {
 	RootSignature global_sig;
 	uint32_t recursion_depth = 1;
 
-	bool has_global_root_sig() const;
-	size_t compute_num_subobjects(size_t &num_export_associations, size_t &num_associated_fcns) const;
-
 public:
 	RTPipelineBuilder& add_shader_library(const ShaderLibrary &library);
 
@@ -190,22 +190,59 @@ public:
 	RTPipelineBuilder& set_global_root_sig(const RootSignature &sig);
 
 	RTPipeline create(ID3D12Device5 *device);
+
+private:
+	bool has_global_root_sig() const;
+	size_t compute_num_subobjects(size_t &num_export_associations, size_t &num_associated_fcns) const;
 };
 
 class RTPipeline {
+	RootSignature rt_global_sig;
 	Microsoft::WRL::ComPtr<ID3D12StateObject> state;
-	RootSignature global_sig;
+	ID3D12StateObjectProperties *pipeline_props = nullptr;
+
+	std::wstring ray_gen;
+	std::vector<std::wstring> miss_shaders;
+	std::vector<std::wstring> hit_groups;
+	std::vector<RootSignatureAssociation> signature_associations;
+
+	size_t shader_record_size = 0,
+		miss_table_offset = 0,
+		hit_group_table_offset = 0;
+	Buffer shader_table;
+	std::unordered_map<std::wstring, size_t> record_offsets;
+	uint8_t *sbt_mapping = nullptr;
 
 	friend class RTPipelineBuilder;
 
-	bool has_global_root_sig() const;
+	RTPipeline(D3D12_STATE_OBJECT_DESC &desc, RootSignature &global_sig,
+		const std::wstring &ray_gen, const std::vector<std::wstring> &miss_shaders,
+		const std::vector<std::wstring> &hit_groups,
+		const std::vector<RootSignatureAssociation> &signature_associations,
+		ID3D12Device5 *device);
 
 public:
+	RTPipeline() = default;
 
-	// RTPipeline should know:
-	// - ShaderTable layout/buffer
-	// - Offsets to the different shaders in this table (build the dispatch rays struct)
+	void map_shader_table();
+	void unmap_shader_table();
+
+	// Get the pointer in the table to a specific shader record. The table must be mapped
+	uint8_t* shader_record(const std::wstring &shader);
+
+	/* Get the local root signature assigned to the shader, if any. Returns null
+	 * if no local root signature was set for the shader
+	 */
+	const RootSignature* shader_signature(const std::wstring &shader) const;
+
+	D3D12_DISPATCH_RAYS_DESC dispatch_rays(const glm::uvec2 &img_dims);
+
+	bool has_global_root_sig() const;
+	ID3D12RootSignature* global_sig();
 
 	ID3D12StateObject* operator->();
 	ID3D12StateObject* get();
+
+private:
+	size_t compute_shader_record_size() const;
 };

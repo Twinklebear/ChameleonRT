@@ -14,16 +14,13 @@ struct RenderDXR : RenderBackend {
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
 	
 	Buffer vertex_buf, index_buf, view_param_buf, img_readback_buf,
-		bottom_level_as, instance_buf, top_level_as, shader_table;
+		bottom_level_as, instance_buf, top_level_as;
 
 	Texture2D render_target;
 
-	RootSignature raygen_root_sig, hitgroup_root_sig;
-
 	RTPipeline rt_pipeline;
 	
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> raygen_shader_desc_heap,
-		hitgroup_shader_desc_heap;
+	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> raygen_shader_desc_heap;
 
 	uint64_t shader_table_entry_size = 0;
 	

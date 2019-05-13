@@ -67,6 +67,16 @@ size_t RootSignature::descriptor_table_size() const {
 	return 8;
 }
 
+size_t RootSignature::total_size() const {
+	size_t total = 0;
+	for (const auto &p : param_offsets) {
+		total += p.second.size;
+	}
+	if (param_offsets.find("dxr_helper_desc_table") != param_offsets.end()) {
+		total += descriptor_table_size();
+	}
+	return total;
+}
 
 ID3D12RootSignature* RootSignature::operator->() {
 	return get();
@@ -278,9 +288,9 @@ void ShaderLibrary::build_library_desc() {
 	slibrary.pExports = exports.data();
 }
 
-RootSignatureAssociation::RootSignatureAssociation(const std::vector<std::wstring> &functions,
+RootSignatureAssociation::RootSignatureAssociation(const std::vector<std::wstring> &shaders,
 	const RootSignature &signature)
-	: functions(functions), signature(signature)
+	: shaders(shaders), signature(signature)
 {}
 
 HitGroup::HitGroup(const std::wstring &name, D3D12_HIT_GROUP_TYPE type,
@@ -302,10 +312,6 @@ ShaderPayloadConfig::ShaderPayloadConfig(const std::vector<std::wstring> &functi
 {
 	desc.MaxPayloadSizeInBytes = max_payload_size;
 	desc.MaxAttributeSizeInBytes = max_attrib_size;
-}
-
-bool RTPipelineBuilder::has_global_root_sig() const {
-	return global_sig.sig.Get() != nullptr;
 }
 
 RTPipelineBuilder& RTPipelineBuilder::add_shader_library(const ShaderLibrary &library) {
@@ -414,11 +420,15 @@ RTPipeline RTPipelineBuilder::create(ID3D12Device5 *device) {
 
 	// Make the hit group descriptors for each hit group and ray type and add them
 	std::vector<D3D12_HIT_GROUP_DESC> hg_descs;
+	// Names for the RTPipeline to setup the shader table with
+	std::vector<std::wstring> hit_group_names;
 	if (!hit_groups.empty()) {
 		hg_descs.resize(hit_groups.size() * num_ray_types);
 		size_t current_hg = 0;
 		for (const auto &hg : hit_groups) {
 			for (const auto &g : hg) {
+				hit_group_names.push_back(g.name);
+
 				D3D12_HIT_GROUP_DESC &desc = hg_descs[current_hg++];
 				desc.HitGroupExport = g.name.c_str();
 				desc.Type = g.type;
@@ -476,12 +486,12 @@ RTPipeline RTPipelineBuilder::create(ID3D12Device5 *device) {
 
 			// Associate it with the exports
 			D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION &assoc = associations[current_assoc++];
-			assoc.NumExports = sig.functions.size();
+			assoc.NumExports = sig.shaders.size();
 			assoc.pExports = &associated_fcns[current_assoc_fcn];
 			assoc.pSubobjectToAssociate = &subobjects[current_obj - 1];
 
 			// Copy over the names referenced by this association
-			for (const auto &name : sig.functions) {
+			for (const auto &name : sig.shaders) {
 				associated_fcns[current_assoc_fcn++] = name.c_str();
 			}
 
@@ -518,10 +528,12 @@ RTPipeline RTPipelineBuilder::create(ID3D12Device5 *device) {
 	pipeline_desc.NumSubobjects = current_obj;
 	pipeline_desc.pSubobjects = subobjects.data();
 
-	RTPipeline pipeline;
-	pipeline.global_sig = global_sig;
-	CHECK_ERR(device->CreateStateObject(&pipeline_desc, IID_PPV_ARGS(&pipeline.state)));
-	return pipeline;
+	return RTPipeline(pipeline_desc, global_sig, ray_gen, miss_shaders,
+		hit_group_names, signature_associations, device);
+}
+
+bool RTPipelineBuilder::has_global_root_sig() const {
+	return global_sig.sig.Get() != nullptr;
 }
 
 size_t RTPipelineBuilder::compute_num_subobjects(size_t &num_export_associations, size_t &num_associated_fcns) const {
@@ -548,7 +560,7 @@ size_t RTPipelineBuilder::compute_num_subobjects(size_t &num_export_associations
 	num_subobjs += signature_associations.size() * 2;
 	num_export_associations += signature_associations.size();
 	for (const auto &a : signature_associations) {
-		num_associated_fcns += a.functions.size();
+		num_associated_fcns += a.shaders.size();
 	}
 
 	// Specifying the max trace recursion depth takes 1 subobject
@@ -564,9 +576,124 @@ size_t RTPipelineBuilder::compute_num_subobjects(size_t &num_export_associations
 	return num_subobjs;
 }
 
+RTPipeline::RTPipeline(D3D12_STATE_OBJECT_DESC &desc, RootSignature &global_sig,
+	const std::wstring &ray_gen, const std::vector<std::wstring> &miss_shaders,
+	const std::vector<std::wstring> &hit_groups,
+	const std::vector<RootSignatureAssociation> &signature_associations,
+	ID3D12Device5 *device)
+	: rt_global_sig(global_sig), ray_gen(ray_gen), miss_shaders(miss_shaders),
+	hit_groups(hit_groups), signature_associations(signature_associations),
+	shader_record_size(compute_shader_record_size())
+{
+	CHECK_ERR(device->CreateStateObject(&desc, IID_PPV_ARGS(&state)));
+	CHECK_ERR(state->QueryInterface(&pipeline_props));
+
+	std::cout << "Shader table for pipeline will need "
+		<< shader_record_size * (1 + miss_shaders.size() + hit_groups.size())
+		<< " bytes\n";
+
+	const size_t sbt_size = shader_record_size * (1 + miss_shaders.size() + hit_groups.size());
+	shader_table = Buffer::upload(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
+
+	// Build the list of offsets into the shader table for each shader record
+	// and write the identifiers into the table. The actual arguments are left to the user
+
+	map_shader_table();
+	size_t offset = 0;
+	record_offsets[ray_gen] = offset;
+	std::memcpy(sbt_mapping, pipeline_props->GetShaderIdentifier(ray_gen.c_str()),
+		D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+
+	offset += shader_record_size;
+	miss_table_offset = offset;
+
+	for (const auto &m : miss_shaders) {
+		record_offsets[m] = offset;
+		std::memcpy(sbt_mapping + offset, pipeline_props->GetShaderIdentifier(m.c_str()),
+			D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+
+		offset += shader_record_size;
+	}
+
+	hit_group_table_offset = offset;
+	for (const auto &hg : hit_groups) {
+		record_offsets[hg] = offset;
+		std::memcpy(sbt_mapping + offset, pipeline_props->GetShaderIdentifier(hg.c_str()),
+			D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+
+		offset += shader_record_size;
+	}
+
+	unmap_shader_table();
+}
+
+void RTPipeline::map_shader_table() {
+	assert(sbt_mapping == nullptr);
+	sbt_mapping = static_cast<uint8_t*>(shader_table.map());
+}
+
+void RTPipeline::unmap_shader_table() {
+	assert(sbt_mapping);
+	shader_table.unmap();
+	sbt_mapping = nullptr;
+}
+
+uint8_t* RTPipeline::shader_record(const std::wstring &shader) {
+	assert(sbt_mapping);
+	auto fnd = record_offsets.find(shader);
+	if (fnd != record_offsets.end()) {
+		return sbt_mapping + fnd->second;
+	} else {
+		throw std::runtime_error("Request for shader record not in table!");
+	}
+}
+
+const RootSignature* RTPipeline::shader_signature(const std::wstring &shader) const {
+	// Note: The numbers of shaders and root signatures should be relatively small,
+	// but this is O(n^2). For a massive scene update this to use a faster unordered map
+	// (like the sparsepp one). However, for a big scene the number of signatures shouldn't be
+	// too high still right? Just the number of shaders they're associated with
+	auto fnd = std::find_if(signature_associations.begin(), signature_associations.end(),
+		[&](const RootSignatureAssociation &s) {
+			return std::find(s.shaders.begin(), s.shaders.end(), shader) != s.shaders.end();
+		});
+	if (fnd != signature_associations.end()) {
+		return &fnd->signature;
+	} else {
+		return nullptr;
+	}
+}
+
+D3D12_DISPATCH_RAYS_DESC RTPipeline::dispatch_rays(const glm::uvec2 &img_dims) {
+	// Tell the dispatch rays command how we built our shader binding table
+	D3D12_DISPATCH_RAYS_DESC dispatch_rays = { 0 };
+	dispatch_rays.RayGenerationShaderRecord.StartAddress = shader_table->GetGPUVirtualAddress();
+	dispatch_rays.RayGenerationShaderRecord.SizeInBytes = shader_record_size;
+
+	dispatch_rays.MissShaderTable.StartAddress =
+		shader_table->GetGPUVirtualAddress() + miss_table_offset;
+	dispatch_rays.MissShaderTable.SizeInBytes = shader_record_size;
+	dispatch_rays.MissShaderTable.StrideInBytes = shader_record_size;
+
+	dispatch_rays.HitGroupTable.StartAddress =
+		shader_table->GetGPUVirtualAddress() + hit_group_table_offset;
+	dispatch_rays.HitGroupTable.SizeInBytes = shader_record_size;
+	dispatch_rays.HitGroupTable.StrideInBytes = shader_record_size;
+
+	dispatch_rays.Width = img_dims.x;
+	dispatch_rays.Height = img_dims.y;
+	dispatch_rays.Depth = 1;
+
+	return dispatch_rays;
+}
+
 
 bool RTPipeline::has_global_root_sig() const {
-	return global_sig.sig.Get() != nullptr;
+	return rt_global_sig.sig.Get() != nullptr;
+}
+
+ID3D12RootSignature* RTPipeline::global_sig() {
+	return rt_global_sig.get();
 }
 
 ID3D12StateObject* RTPipeline::operator->() {
@@ -574,4 +701,41 @@ ID3D12StateObject* RTPipeline::operator->() {
 }
 ID3D12StateObject* RTPipeline::get() {
 	return state.Get();
+}
+
+size_t RTPipeline::compute_shader_record_size() const {
+	size_t record_size = 0;
+
+	// TODO: In the future it might be good to determine if it's best
+	// to split up the raygen and miss shader records into other buffers,
+	// if the hit group ones are large and would force a lot of padding.
+	// I doubt this would really be the case though.
+
+	// A shader record is the identifier followed by the params for its local root signature
+	// Since we store all shader records in one table the record size should be as big
+	// as the largest shader record
+	auto add_shader_record = [&](const std::wstring &shader) {
+		size_t shader_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+
+		// Size of the shader's local root sig, if any
+		auto *sig = shader_signature(ray_gen);
+		if (sig) {
+			shader_size += sig->total_size();
+		}
+		shader_size = align_to(shader_size, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+		record_size = std::max(shader_size, record_size);
+
+	};
+
+	add_shader_record(ray_gen);
+	
+	for (const auto &m : miss_shaders) {
+		add_shader_record(m);
+	}
+
+	for (const auto &hg : hit_groups) {
+		add_shader_record(hg);
+	}
+	std::cout << "Shader record size is: " << record_size << " bytes\n";
+	return record_size;
 }
