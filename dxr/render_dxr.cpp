@@ -123,59 +123,22 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		cmd_list->ResourceBarrier(barriers.size(), barriers.data());
 	}
 
-	// Now we cam build the bottom level acceleration structure on our triangles
-	D3D12_RAYTRACING_GEOMETRY_DESC rt_geom_desc = { 0 };
-	rt_geom_desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-	rt_geom_desc.Triangles.VertexBuffer.StartAddress = vertex_buf->GetGPUVirtualAddress();
-	rt_geom_desc.Triangles.VertexBuffer.StrideInBytes = sizeof(float) * 3;
-	rt_geom_desc.Triangles.VertexCount = verts.size() / 3;
-	rt_geom_desc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+	mesh = TriangleMesh(vertex_buf, index_buf);
+	mesh.enqeue_build(device.Get(), cmd_list.Get());
 
-	rt_geom_desc.Triangles.IndexBuffer = index_buf->GetGPUVirtualAddress();
-	rt_geom_desc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
-	rt_geom_desc.Triangles.IndexCount = indices.size();
-	rt_geom_desc.Triangles.Transform3x4 = 0;
-	rt_geom_desc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+	CHECK_ERR(cmd_list->Close());
+	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
+	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+	sync_gpu();
 
-	// Build the bottom level acceleration structure
-	Buffer bottom_scratch;
-	{
-		// Determine bound of much memory the accel builder may need and allocate it
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS as_inputs = { 0 };
-		as_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
-		as_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-		as_inputs.NumDescs = 1;
-		as_inputs.pGeometryDescs = &rt_geom_desc;
-		as_inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+	mesh.enqueue_compaction(device.Get(), cmd_list.Get());
+	CHECK_ERR(cmd_list->Close());
+	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+	sync_gpu();
 
-		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuild_info = { 0 };
-		device->GetRaytracingAccelerationStructurePrebuildInfo(&as_inputs, &prebuild_info);
 
-		// The buffer sizes must be aligned to 256 bytes
-		prebuild_info.ResultDataMaxSizeInBytes =
-			align_to(prebuild_info.ResultDataMaxSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-		prebuild_info.ScratchDataSizeInBytes =
-			align_to(prebuild_info.ScratchDataSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-		std::cout << "Bottom level AS will use at most " << pretty_print_count(prebuild_info.ResultDataMaxSizeInBytes)
-			<< "b, and scratch of " << pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
-
-		bottom_level_as = Buffer::default(device.Get(), prebuild_info.ResultDataMaxSizeInBytes,
-			D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-		bottom_scratch = Buffer::default(device.Get(), prebuild_info.ScratchDataSizeInBytes,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build_desc = { 0 };
-		build_desc.Inputs = as_inputs;
-		build_desc.DestAccelerationStructureData = bottom_level_as->GetGPUVirtualAddress();
-		build_desc.ScratchAccelerationStructureData = bottom_scratch->GetGPUVirtualAddress();
-		cmd_list->BuildRaytracingAccelerationStructure(&build_desc, 0, NULL);
-
-		// Insert a barrier to wait for the bottom level AS to complete before
-		// we start the top level build
-		D3D12_RESOURCE_BARRIER build_barrier = barrier_uav(bottom_level_as);
-		cmd_list->ResourceBarrier(1, &build_barrier);
-	}
+	mesh.finalize();
 
 	// The top-level AS is built over the instances of our bottom level AS
 	// in the scene. For now we just have 1, with an identity transform
@@ -191,7 +154,7 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 		// TODO: does this mean you can do per-instance hit groups? I think so
 		buf->InstanceContributionToHitGroupIndex = 0;
 		buf->Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-		buf->AccelerationStructure = bottom_level_as->GetGPUVirtualAddress();
+		buf->AccelerationStructure = mesh->GetGPUVirtualAddress();
 		buf->InstanceMask = 0xff;
 
 		// Note: D3D matrices are row-major
@@ -204,50 +167,16 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 	}
 
 	// Now build the top level acceleration structure on our instance
-	Buffer top_scratch;
-	{
-		// Determine bound of much memory the accel builder may need and allocate it
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS as_inputs = { 0 };
-		as_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-		as_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-		as_inputs.NumDescs = 1;
-		as_inputs.InstanceDescs = instance_buf->GetGPUVirtualAddress();
-		as_inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+	scene_bvh = TopLevelBVH(instance_buf, 1);
 
-		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuild_info = { 0 };
-		device->GetRaytracingAccelerationStructurePrebuildInfo(&as_inputs, &prebuild_info);
-
-		// The buffer sizes must be aligned to 256 bytes
-		prebuild_info.ResultDataMaxSizeInBytes =
-			align_to(prebuild_info.ResultDataMaxSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-		prebuild_info.ScratchDataSizeInBytes =
-			align_to(prebuild_info.ScratchDataSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-		std::cout << "Top level AS will use at most " << pretty_print_count(prebuild_info.ResultDataMaxSizeInBytes)
-			<< "b, and scratch of " << pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
-
-		top_level_as = Buffer::default(device.Get(), prebuild_info.ResultDataMaxSizeInBytes,
-			D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-		top_scratch = Buffer::default(device.Get(), prebuild_info.ScratchDataSizeInBytes,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-
-		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build_desc = { 0 };
-		build_desc.Inputs = as_inputs;
-		build_desc.DestAccelerationStructureData = top_level_as->GetGPUVirtualAddress();
-		build_desc.ScratchAccelerationStructureData = top_scratch->GetGPUVirtualAddress();
-		cmd_list->BuildRaytracingAccelerationStructure(&build_desc, 0, NULL);
-
-		// Insert a barrier to wait for the top level AS to complete
-		D3D12_RESOURCE_BARRIER build_barrier = barrier_uav(top_level_as);
-		cmd_list->ResourceBarrier(1, &build_barrier);
-	}
-
+	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+	scene_bvh.enqeue_build(device.Get(), cmd_list.Get());
 	CHECK_ERR(cmd_list->Close());
-	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
 	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
-
-	// Wait for the work to finish
 	sync_gpu();
+
+	scene_bvh.finalize();
+	
 	
 	build_shader_binding_table();
 }
@@ -446,7 +375,7 @@ void RenderDXR::update_descriptor_heap() {
 	tlas_desc.Format = DXGI_FORMAT_UNKNOWN;
 	tlas_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
 	tlas_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	tlas_desc.RaytracingAccelerationStructure.Location = top_level_as->GetGPUVirtualAddress();
+	tlas_desc.RaytracingAccelerationStructure.Location = scene_bvh->GetGPUVirtualAddress();
 	device->CreateShaderResourceView(nullptr, &tlas_desc, heap_handle);
 
 	// Write the view params constants buffer

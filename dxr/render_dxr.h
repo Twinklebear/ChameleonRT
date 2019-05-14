@@ -14,9 +14,12 @@ struct RenderDXR : RenderBackend {
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
 	
 	Buffer vertex_buf, index_buf, view_param_buf, img_readback_buf,
-		bottom_level_as, instance_buf, top_level_as;
+		bottom_level_as, instance_buf;
 
 	Texture2D render_target;
+
+	TriangleMesh mesh;
+	TopLevelBVH scene_bvh;
 
 	RTPipeline rt_pipeline;
 	
