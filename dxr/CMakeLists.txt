@@ -12,7 +12,7 @@ set_target_properties(render_dxr PROPERTIES
 	CXX_STANDARD_REQUIRED ON)
 
 target_include_directories(render_dxr PUBLIC
-	$<BUILD_INTERFACE:${D3D12_INCLUDE_PATH}>)
+	$<BUILD_INTERFACE:${D3D12_INCLUDE_DIRS}>)
 
 target_link_libraries(render_dxr PUBLIC
 	shaders util ${D3D12_LIBRARIES})
