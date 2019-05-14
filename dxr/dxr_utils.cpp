@@ -326,13 +326,13 @@ RTPipelineBuilder& RTPipelineBuilder::set_ray_gen(const std::wstring &rg) {
 	return *this;
 }
 
-RTPipelineBuilder& RTPipelineBuilder::add_miss_shader(const std::wstring &miss_fn) {
+RTPipelineBuilder& RTPipelineBuilder::set_miss_shader(const std::wstring &miss_fn) {
 	assert(miss_shaders.empty());
 	miss_shaders.push_back(miss_fn);
 	return *this;
 }
 
-RTPipelineBuilder& RTPipelineBuilder::add_miss_shader(const std::vector<std::wstring> &miss_fn) {
+RTPipelineBuilder& RTPipelineBuilder::add_miss_shaders(const std::vector<std::wstring> &miss_fn) {
 	assert(miss_shaders.empty());
 	miss_shaders = miss_fn;
 	return *this;
@@ -343,7 +343,7 @@ RTPipelineBuilder& RTPipelineBuilder::add_hit_group(const HitGroup &hg) {
 	return *this;
 }
 
-RTPipelineBuilder& RTPipelineBuilder::add_hit_group(const std::vector<HitGroup> &hg) {
+RTPipelineBuilder& RTPipelineBuilder::add_hit_groups(const std::vector<HitGroup> &hg) {
 	hit_groups.push_back(hg);
 	return *this;
 }

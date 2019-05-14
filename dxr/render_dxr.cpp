@@ -137,7 +137,6 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
 	sync_gpu();
 
-
 	mesh.finalize();
 
 	// The top-level AS is built over the instances of our bottom level AS
@@ -271,7 +270,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 void RenderDXR::build_raytracing_pipeline() {
 	ShaderLibrary shader_library(render_dxr_dxil, sizeof(render_dxr_dxil),
-		{ L"RayGen", L"Miss", L"ClosestHit" });
+		{ L"RayGen", L"Miss", L"ClosestHit", L"AOHit", L"AOMiss" });
 
 	// Create the root signature for our ray gen shader
 	// The raygen program takes three parameters:
@@ -293,8 +292,9 @@ void RenderDXR::build_raytracing_pipeline() {
 	rt_pipeline = RTPipelineBuilder()
 		.add_shader_library(shader_library)
 		.set_ray_gen(L"RayGen")
-		.add_miss_shader(L"Miss")
-		.add_hit_group(HitGroup(L"HitGroup", D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit"))
+		.add_miss_shaders({ L"Miss", L"AOMiss" })
+		.add_hit_groups({HitGroup(L"HitGroup", D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit"),
+						HitGroup(L"OcclusionGroup", D3D12_HIT_GROUP_TYPE_TRIANGLES, L"AOHit")})
 		.set_shader_root_sig({ L"RayGen" }, raygen_root_sig)
 		.set_shader_root_sig({ L"HitGroup" }, hitgroup_root_sig)
 		.configure_shader_payload(shader_library.export_names(), 4 * sizeof(float), 2 * sizeof(float))

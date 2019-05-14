@@ -48,8 +48,10 @@ void RayGen() {
 	ray.Direction = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
 	ray.TMin = 0;
 	ray.TMax = 1e20f;
-
-	TraceRay(scene, 0, 0xff, 0, 0, 0, ray, payload);
+	
+	const int ray_type = 0;
+	const int num_ray_types = 2;
+	TraceRay(scene, 0, 0xff, ray_type, 2, ray_type, ray, payload);
 
 	output[pixel] = float4(linear_to_srgb(payload.color_dist.r),
 		linear_to_srgb(payload.color_dist.g),
@@ -59,6 +61,11 @@ void RayGen() {
 [shader("miss")]
 void Miss(inout HitInfo payload : SV_RayPayload) {
 	payload.color_dist = float4(0, 0, 0, 0);
+}
+
+[shader("miss")]
+void AOMiss(inout HitInfo payload : SV_RayPayload) {
+	payload.color_dist = float4(1, 0, 0, 0);
 }
 
 StructuredBuffer<float3> vertices : register(t0, space1);
@@ -75,3 +82,7 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 	payload.color_dist = float4(c, RayTCurrent());
 }
 
+[shader("closesthit")]
+void AOHit(inout HitInfo payload, Attributes attrib) {
+	payload.color_dist = float4(0, 0, 1, RayTCurrent());
+}
