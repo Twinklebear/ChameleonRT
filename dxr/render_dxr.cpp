@@ -297,7 +297,7 @@ void RenderDXR::build_raytracing_pipeline() {
 						HitGroup(L"OcclusionGroup", D3D12_HIT_GROUP_TYPE_TRIANGLES, L"AOHit")})
 		.set_shader_root_sig({ L"RayGen" }, raygen_root_sig)
 		.set_shader_root_sig({ L"HitGroup" }, hitgroup_root_sig)
-		.configure_shader_payload(shader_library.export_names(), 4 * sizeof(float), 2 * sizeof(float))
+		.configure_shader_payload(shader_library.export_names(), 8 * sizeof(float), 2 * sizeof(float))
 		.set_max_recursion(1)
 		.create(device.Get());
 }
