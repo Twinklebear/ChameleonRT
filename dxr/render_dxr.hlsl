@@ -133,7 +133,6 @@ void RayGen() {
 				if (aohit.hit == 1) {
 					++num_occluded;
 				}
-
 			}
 		}
 		float total_ao_samples = ao_samples * ao_samples;
