@@ -11,7 +11,8 @@ RenderOSPRay::RenderOSPRay() : fb(nullptr) {
 
 	world = ospNewModel();
 	camera = ospNewCamera("perspective");
-	renderer = ospNewRenderer("ao1");
+	renderer = ospNewRenderer("ao");
+	ospSet1i(renderer, "aoSamples", 4);
 #if OSPRAY_VERSION_MAJOR == 1
 	ospSetObject(renderer, "model", world);
 	ospSetObject(renderer, "camera", camera);
