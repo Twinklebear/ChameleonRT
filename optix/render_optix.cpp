@@ -8,10 +8,13 @@ using namespace optix;
 
 RenderOptiX::RenderOptiX() {
 	context = Context::create();
-	context->setRayTypeCount(1);
+	context->setRayTypeCount(2);
 	context->setEntryPointCount(1);
 	Program prog = context->createProgramFromPTXString(render_optix_ptx, "perspective_camera");
 	context->setRayGenerationProgram(0, prog);
+
+	view_params = context->createBuffer(RT_BUFFER_INPUT, RT_FORMAT_FLOAT3, 4);
+	context["view_params"]->set(view_params);
 }
 
 void RenderOptiX::initialize(const int fb_width, const int fb_height) {
@@ -30,11 +33,11 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 	const size_t num_verts = verts.size() / 3;
 	const size_t num_tris = indices.size() / 3;
 	auto vertex_buffer = context->createBuffer(RT_BUFFER_INPUT, RT_FORMAT_FLOAT3, num_verts);
-	std::copy(verts.begin(), verts.end(), (float*)vertex_buffer->map());
+	std::copy(verts.begin(), verts.end(), static_cast<float*>(vertex_buffer->map()));
 	vertex_buffer->unmap();
 
 	auto index_buffer = context->createBuffer(RT_BUFFER_INPUT, RT_FORMAT_UNSIGNED_INT3, num_tris);
-	std::copy(indices.begin(), indices.end(), (uint32_t*)index_buffer->map());
+	std::copy(indices.begin(), indices.end(), static_cast<uint32_t*>(index_buffer->map()));
 	index_buffer->unmap();
 
 	auto geom_tri = context->createGeometryTriangles();
@@ -45,17 +48,19 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 	auto mat = context->createMaterial();
 	mat->setClosestHitProgram(0,
 			context->createProgramFromPTXString(render_optix_ptx, "closest_hit"));
+	mat->setClosestHitProgram(1,
+		context->createProgramFromPTXString(render_optix_ptx, "occlusion_hit"));
 
 	auto instance = context->createGeometryInstance(geom_tri, mat);
 	// We use these in the hit program to color by normal
 	instance["index_buffer"]->set(index_buffer);
 	instance["vertex_buffer"]->set(vertex_buffer);
 
-	auto model = context->createGeometryGroup();
-	model->addChild(instance);
-	model->setAcceleration(context->createAcceleration("Trbvh"));
+	auto scene = context->createGeometryGroup();
+	scene->addChild(instance);
+	scene->setAcceleration(context->createAcceleration("Trbvh"));
 
-	context["model"]->set(model);
+	context["scene"]->set(scene);
 }
 
 double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -71,10 +76,16 @@ double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
 	const glm::vec3 dir_top_left = dir - 0.5f * dir_du - 0.5f * dir_dv;
 
-	context["cam_pos"]->setFloat(pos.x, pos.y, pos.z);
-	context["cam_du"]->setFloat(dir_du.x, dir_du.y, dir_du.z);
-	context["cam_dv"]->setFloat(dir_dv.x, dir_dv.y, dir_dv.z);
-	context["cam_dir_top_left"]->setFloat(dir_top_left.x, dir_top_left.y, dir_top_left.z);
+	// Work around Optix re-upload bug by updating parameters which change each frame through
+	// a buffer instead of as direct parameters
+	{
+		glm::vec3 *map = static_cast<glm::vec3*>(view_params->map());
+		map[0] = pos;
+		map[1] = dir_du;
+		map[2] = dir_dv;
+		map[3] = dir_top_left;
+		view_params->unmap();
+	}
 
 	auto start = high_resolution_clock::now();
 

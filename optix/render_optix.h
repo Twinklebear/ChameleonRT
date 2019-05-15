@@ -6,7 +6,7 @@
 
 struct RenderOptiX : RenderBackend {
 	optix::Context context;
-	optix::Buffer fb;
+	optix::Buffer fb, view_params;
 	int width, height;
 
 	RenderOptiX();
