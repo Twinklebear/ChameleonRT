@@ -14,8 +14,5 @@ set_target_properties(render_ospray PROPERTIES
 	CXX_STANDARD 14
 	CXX_STANDARD_REQUIRED ON)
 
-target_include_directories(render_ospray PRIVATE
-	$<BUILD_INTERFACE:${OSPRAY_INCLUDE_DIR}>)
-
-target_link_libraries(render_ospray PUBLIC util ${OSPRAY_LIBRARIES})
+target_link_libraries(render_ospray util ospray::ospray)
 

@@ -11,7 +11,7 @@ RenderOSPRay::RenderOSPRay() : fb(nullptr) {
 
 	world = ospNewModel();
 	camera = ospNewCamera("perspective");
-	renderer = ospNewRenderer("raycast_Ng");
+	renderer = ospNewRenderer("ao1");
 #if OSPRAY_VERSION_MAJOR == 1
 	ospSetObject(renderer, "model", world);
 	ospSetObject(renderer, "camera", camera);
@@ -26,7 +26,7 @@ void RenderOSPRay::initialize(const int fb_width, const int fb_height) {
 	}
 
 	fb = ospNewFrameBuffer(osp::vec2i{fb_width, fb_height},
-			OSP_FB_SRGBA, OSP_FB_COLOR);
+			OSP_FB_SRGBA, OSP_FB_COLOR | OSP_FB_ACCUM);
 	img.resize(fb_width * fb_height);
 }
 
@@ -57,6 +57,7 @@ double RenderOSPRay::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	ospCommit(camera);
 
 #if OSPRAY_VERSION_MAJOR == 2
+	// TODO: Track when camera changes so we know if we need to reset accum
 	ospResetAccumulation(fb);
 	ospRenderFrame(fb, renderer, camera, world);
 #else
