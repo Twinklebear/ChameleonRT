@@ -1,13 +1,31 @@
-#include <embree3/rtcore_ray.isph>
+#include <embree3/rtcore.isph>
 
-typedef unsigned int8 uint8;
-typedef unsigned int uint32;
+typedef unsigned int8 uint8_t;
+typedef unsigned int uint32_t;
 
-float linear_to_srgb(float x) {
-	if (x <= 0.0031308f) {
-		return 12.92f * x;
-	}
-	return 1.055f * pow(x, 1.f/2.4f) - 0.055f;
+struct vec3 {
+	float x, y, z;
+};
+
+vec3 make_vec3(float x, float y, float z) {
+	vec3 v;
+	v.x = x;
+	v.y = y;
+	v.z = z;
+	return v;
+}
+
+vec3 make_vec3(float c) {
+	return make_vec3(c, c, c);
+}
+
+float length(const vec3 v) {
+	return sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+vec3 normalized(const vec3 v) {
+	const float c = 1.f / length(v);
+	return make_vec3(v.x * c, v.y * c, v.z * c);
 }
 
 void normalize(uniform float *x, uniform float *y, uniform float *z) {
@@ -17,89 +35,116 @@ void normalize(uniform float *x, uniform float *y, uniform float *z) {
 	*z /= len;
 }
 
-void normalize(float v[3]) {
-	const float len = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-	v[0] /= len;
-	v[1] /= len;
-	v[2] /= len;
+vec3 cross(const vec3 a, const vec3 b) {
+	vec3 c;
+	c.x = a.y * b.z - a.z * b.y;
+	c.y = a.z * b.x - a.x * b.z;
+	c.z = a.x * b.y - a.y * b.x;
+	return c;
 }
 
-void cross(float a[3], float b[3], float out[3]) {
-	out[0] = a[1] * b[2] - a[2] * b[1];
-	out[1] = a[2] * b[0] - a[0] * b[2];
-	out[2] = a[0] * b[1] - a[1] * b[0];
+vec3 operator-(const vec3 &a, const vec3 &b) {
+	return make_vec3(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
-export void generate_primary_rays(uniform RTCRayHitNp *uniform ray_hit,
-		const uniform uint32 tile_x, const uniform uint32 tile_y,
-		const uniform uint32 fb_width, const uniform uint32 fb_height,
-		const uniform uint32 tile_width, const uniform uint32 tile_height,
-		const uniform float *uniform pos,
-		const uniform float *uniform dir_du, const uniform float *uniform dir_dv,
-		const uniform float *uniform dir_top_left)
+vec3 operator+(const vec3 &a, const vec3 &b) {
+	return make_vec3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+vec3 operator*(const vec3 &a, const float s) {
+	return make_vec3(a.x * s, a.y * s, a.z * s);
+}
+
+struct ViewParams {
+	vec3 pos, dir_du, dir_dv, dir_top_left;
+};
+
+struct Scene {
+	RTCScene scene;
+	uniform RTCIntersectContext *uniform context;
+};
+
+struct Tile {
+	uint32_t x, y;
+	uint32_t width, height;
+	uint32_t fb_width, fb_height;
+	float *uniform data;
+};
+
+float linear_to_srgb(float x) {
+	if (x <= 0.0031308f) {
+		return 12.92f * x;
+	}
+	return 1.055f * pow(x, 1.f/2.4f) - 0.055f;
+}
+
+export void generate_primary_rays(void *uniform _scene, uniform RTCRayHitNp *uniform ray_hit,
+		void *uniform _tile, const void *uniform _view_params,
+		const uniform uint32_t *uniform indices, const uniform float *uniform verts)
 {
-	foreach (i = 0 ... tile_width, j = 0 ... tile_height) {
-		const uint32 ray = j * tile_width + i;
-		const float px_x = (i + tile_x + 0.5f) / fb_width;
-		const float px_y = (j + tile_y + 0.5f) / fb_height;
+	Scene *uniform scene = (Scene *uniform)_scene;
+	const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
+	Tile *uniform tile = (Tile *uniform)_tile;
 
-		ray_hit->ray.org_x[ray] = pos[0];
-		ray_hit->ray.org_y[ray] = pos[1];
-		ray_hit->ray.org_z[ray] = pos[2];
+	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
+		const uint32_t ray = j * tile->width + i;
+		const float px_x = (i + tile->x + 0.5f) / tile->fb_width;
+		const float px_y = (j + tile->y + 0.5f) / tile->fb_height;
 
-		ray_hit->ray.dir_x[ray] = dir_du[0] * px_x + dir_dv[0] * px_y + dir_top_left[0];
-		ray_hit->ray.dir_y[ray] = dir_du[1] * px_x + dir_dv[1] * px_y + dir_top_left[1];
-		ray_hit->ray.dir_z[ray] = dir_du[2] * px_x + dir_dv[2] * px_y + dir_top_left[2];
+		ray_hit->ray.org_x[ray] = view_params->pos.x;
+		ray_hit->ray.org_y[ray] = view_params->pos.y;
+		ray_hit->ray.org_z[ray] = view_params->pos.z;
+
+		ray_hit->ray.dir_x[ray] = view_params->dir_du.x * px_x
+			+ view_params->dir_dv.x * px_y + view_params->dir_top_left.x;
+
+		ray_hit->ray.dir_y[ray] = view_params->dir_du.y * px_x
+			+ view_params->dir_dv.y * px_y + view_params->dir_top_left.y;
+
+		ray_hit->ray.dir_z[ray] = view_params->dir_du.z * px_x
+			+ view_params->dir_dv.z * px_y + view_params->dir_top_left.z;
+
 		normalize(ray_hit->ray.dir_x + ray, ray_hit->ray.dir_y + ray,
 				ray_hit->ray.dir_z + ray);
 	}
-}
 
-export void shade_ray_stream(uniform RTCRayHitNp *uniform ray_hit,
-		const uniform uint32 tile_width, const uniform uint32 tile_height,
-		const uniform uint32 *uniform indices, const uniform float *uniform verts,
-		uniform float *uniform tile)
-{
-	foreach (i = 0 ... tile_width, j = 0 ... tile_height) {
-		const uint32 ray = j * tile_width + i;
-		const uint32 pixel = (j * tile_width + i) * 3;
+	rtcIntersectNp(scene->scene, scene->context, ray_hit, tile->width * tile->height);
+
+	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
+		const uint32_t ray = j * tile->width + i;
+		const uint32_t pixel = (j * tile->width + i) * 3;
 
 		// TODO: Here we could now flip and batch by geomID
-		if (ray_hit->hit.geomID[ray] != (uint32)-1) {
-			const uniform uint32 *tri = indices + ray_hit->hit.primID[ray] * 3;
+		if (ray_hit->hit.geomID[ray] != (uint32_t)-1) {
+			const uniform uint32_t *tri = indices + ray_hit->hit.primID[ray] * 3;
 
-			const uniform float *v0 = verts + tri[0] * 4;
-			const uniform float *v1 = verts + tri[1] * 4;
-			const uniform float *v2 = verts + tri[2] * 4;
+			const vec3 *vv0 = (vec3*)(verts + tri[0] * 4);
+			const vec3 *vv1 = (vec3*)(verts + tri[1] * 4);
+			const vec3 *vv2 = (vec3*)(verts + tri[2] * 4);
+			
+			const vec3 v0 = *vv0;
+			const vec3 v1 = *vv1;
+			const vec3 v2 = *vv2;
 
-			float normal[3] = {0.f};
-			float a[3] = { v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2] };
-			float b[3] = { v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2] };
-			cross(a, b, normal);
-			normalize(normal);
+			vec3 normal = normalized(cross(v1 - v0, v2 - v0));
+			normal = (normal + make_vec3(1.f)) * 0.5f;
 
-			normal[0] = (normal[0] + 1.f) * 0.5f;
-			normal[1] = (normal[1] + 1.f) * 0.5f;
-			normal[2] = (normal[2] + 1.f) * 0.5f;
-			tile[pixel] = normal[0];
-			tile[pixel + 1] = normal[1];
-			tile[pixel + 2] = normal[2];
+			tile->data[pixel] = normal.x;
+			tile->data[pixel + 1] = normal.y;
+			tile->data[pixel + 2] = normal.z;
 		}
 	}
 }
 
 // Convert the RGBF32 tile to sRGB and write it to the RGBA8 framebuffer
-export void tile_to_uint8(uniform float *uniform tile, uniform uint8 *uniform fb,
-		const uniform uint32 fb_width, const uniform uint32 fb_height,
-		const uniform uint32 tile_x, const uniform uint32 tile_y,
-		const uniform uint32 tile_width, const uniform uint32 tile_height)
-{
-	foreach (i = 0 ... tile_width, j = 0 ... tile_height) {
-		const uint32 tile_px = (j * tile_width + i) * 3;
-		const uint32 fb_px = ((j + tile_y) * fb_width + i + tile_x) * 4;
-		fb[fb_px] = linear_to_srgb(tile[tile_px]) * 255.f;
-		fb[fb_px + 1] = linear_to_srgb(tile[tile_px + 1]) * 255.f;
-		fb[fb_px + 2] = linear_to_srgb(tile[tile_px + 2]) * 255.f;
+export void tile_to_uint8(void *uniform _tile, uniform uint8_t *uniform fb) {
+	Tile *uniform tile = (Tile *uniform)_tile;
+	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
+		const uint32_t tile_px = (j * tile->width + i) * 3;
+		const uint32_t fb_px = ((j + tile->y) * tile->fb_width + i + tile->x) * 4;
+		fb[fb_px] = linear_to_srgb(tile->data[tile_px]) * 255.f;
+		fb[fb_px + 1] = linear_to_srgb(tile->data[tile_px + 1]) * 255.f;
+		fb[fb_px + 2] = linear_to_srgb(tile->data[tile_px + 2]) * 255.f;
 		fb[fb_px + 3] = 255;
 	}
 }

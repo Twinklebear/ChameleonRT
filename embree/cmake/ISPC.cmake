@@ -41,11 +41,12 @@ function(add_ispc_library)
 			${ISPC_PIC}
 			--quiet)
 
-		set(DEPS "")
+		set(DEPS "${CMAKE_CURRENT_LIST_DIR}/${SRC}")
 		if (EXISTS ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep)
 			file(READ ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep DEPS_CONTENT)
 			string(REPLACE "\n" ";" DEPS_CONTENT "${DEPS_CONTENT}")
 			foreach (d ${DEPS_CONTENT})
+				message("d: ${d}")
 				string(REPLACE "\\\\" "/" d "${d}")
 				if (EXISTS ${d})
 					list(APPEND DEPS ${d})

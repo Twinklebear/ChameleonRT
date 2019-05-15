@@ -130,6 +130,22 @@ RTCRayHitNp make_ray_hit_soa(RaySoA &rays, HitSoA &hits) {
 	return rh;
 }
 
+struct ViewParams {
+	glm::vec3 pos, dir_du, dir_dv, dir_top_left;
+};
+
+struct Scene {
+	RTCScene scene;
+	RTCIntersectContext *context;
+};
+
+struct Tile {
+	uint32_t x, y;
+	uint32_t width, height;
+	uint32_t fb_width, fb_height;
+	float *data;
+};
+
 double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy)
 {
@@ -139,13 +155,19 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
 	img_plane_size.x = img_plane_size.y * static_cast<float>(fb_dims.x) / fb_dims.y;
 
-	const glm::vec3 dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
-	const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
-	const glm::vec3 dir_top_left = dir - 0.5f * dir_du - 0.5f * dir_dv;
+	ViewParams view_params;
+	view_params.pos = pos;
+	view_params.dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
+	view_params.dir_dv = glm::normalize(glm::cross(view_params.dir_du, dir)) * img_plane_size.y;
+	view_params.dir_top_left = dir - 0.5f * view_params.dir_du - 0.5f * view_params.dir_dv;
 
 	RTCIntersectContext context;
 	rtcInitIntersectContext(&context);
 	context.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
+
+	Scene ispc_scene;
+	ispc_scene.scene = scene;
+	ispc_scene.context = &context;
 
 	uint8_t *color = reinterpret_cast<uint8_t*>(img.data());
 
@@ -166,25 +188,25 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const size_t npixels = actual_tile_dims.x * actual_tile_dims.y;
 		std::vector<float> tile_data(npixels * 3, 0.f);
 
+		Tile ispc_tile;
+		ispc_tile.x = tile_pos.x;
+		ispc_tile.y = tile_pos.y;
+		ispc_tile.width = actual_tile_dims.x;
+		ispc_tile.height = actual_tile_dims.y;
+		ispc_tile.fb_width = fb_dims.x;
+		ispc_tile.fb_height = fb_dims.y;
+		ispc_tile.data = tile_data.data();
+
 		RaySoA rays(npixels);
 		HitSoA hits(npixels);
 		RTCRayHitNp ray_hit = make_ray_hit_soa(rays, hits);
 
-		// TODO: Make some shared ISPC state to store these params
-		ispc::generate_primary_rays((ispc::RTCRayHitNp*)&ray_hit, tile_pos.x, tile_pos.y,
-				fb_dims.x, fb_dims.y,
-				actual_tile_dims.x, actual_tile_dims.y,
-				&pos.x, &dir_du.x, &dir_dv.x, &dir_top_left.x);
-
-		rtcIntersectNp(scene, &context, &ray_hit, npixels);
-
-		ispc::shade_ray_stream((ispc::RTCRayHitNp*)&ray_hit, actual_tile_dims.x, actual_tile_dims.y,
+		ispc::generate_primary_rays(&ispc_scene, (ispc::RTCRayHitNp*)&ray_hit,
+				&ispc_tile, &view_params,
 				reinterpret_cast<const uint32_t*>(indices.data()),
-				reinterpret_cast<const float*>(verts.data()),
-				tile_data.data());
+				reinterpret_cast<const float*>(verts.data()));
 
-		ispc::tile_to_uint8(tile_data.data(), color, fb_dims.x, fb_dims.y,
-				tile_pos.x, tile_pos.y, actual_tile_dims.x, actual_tile_dims.y);
+		ispc::tile_to_uint8(&ispc_tile, color);
 	});
 
 	auto end = high_resolution_clock::now();
