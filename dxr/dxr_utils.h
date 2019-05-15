@@ -21,8 +21,6 @@ struct RootParam {
 	RootParam(D3D12_ROOT_PARAMETER param, const std::string &name);
 };
 
-struct RootParamHash;
-
 class RootSignature {
 	D3D12_ROOT_SIGNATURE_FLAGS flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> sig;
