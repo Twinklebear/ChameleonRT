@@ -62,7 +62,7 @@ double RenderOSPRay::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	ospRenderFrame(fb, renderer, camera, world);
 #else
 	ospCommit(renderer);
-	ospFrameBufferClear(fb, OSP_FB_COLOR);
+	ospFrameBufferClear(fb, OSP_FB_COLOR | OSP_FB_ACCUM);
 	ospRenderFrame(fb, renderer, OSP_FB_COLOR);
 #endif
 
