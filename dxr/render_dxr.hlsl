@@ -128,7 +128,8 @@ void RayGen() {
 				ao_ray.TMax = 1e20f;
 		
 				AOHitInfo aohit;
-				TraceRay(scene, 0, 0xff, OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, ao_ray, aohit);
+				TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
+					OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, ao_ray, aohit);
 				if (aohit.hit == 1) {
 					++num_occluded;
 				}
