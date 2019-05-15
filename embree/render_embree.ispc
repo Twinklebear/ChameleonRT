@@ -2,6 +2,7 @@
 
 typedef unsigned int8 uint8_t;
 typedef unsigned int uint32_t;
+typedef unsigned int64 uint64_t;
 
 struct vec3 {
 	float x, y, z;
@@ -55,6 +56,50 @@ vec3 operator*(const vec3 &a, const float s) {
 	return make_vec3(a.x * s, a.y * s, a.z * s);
 }
 
+void ortho_basis(vec3 &v_x, vec3 &v_y, const vec3 &n) {
+	v_y = make_vec3(0, 0, 0);
+
+	if (n.x < 0.6f && n.x > -0.6f) {
+		v_y.x = 1.f;
+	} else if (n.y < 0.6f && n.y > -0.6f) {
+		v_y.y = 1.f;
+	} else if (n.z < 0.6f && n.z > -0.6f) {
+		v_y.z = 1.f;
+	} else {
+		v_y.x = 1.f;
+	}
+	v_x = normalized(cross(v_y, n));
+	v_y = normalized(cross(n, v_x));
+}
+
+// http://www.pcg-random.org/download.html
+struct PCGRand {
+	uint64_t state;
+	// Ignoring the stream selection and just using 1 always
+};
+
+PCGRand get_rng(uint32_t seed) {
+	PCGRand rng;
+	// TODO: These might only be available in the raygen program
+	//uint2 pixel = DispatchRaysIndex().xy;
+	//rng.state = pixel.x + pixel.y * DispatchRaysDimensions().x;
+	rng.state = seed;
+	return rng;
+}
+
+uint32_t pcg32_random(PCGRand &rng) {
+	uint64_t oldstate = rng.state;
+	rng.state = oldstate * 6364136223846793005ULL;
+	// Calculate output function (XSH RR), uses old state for max ILP
+	uint32_t xorshifted = ((oldstate >> 18u) ^ oldstate) >> 27u;
+	uint32_t rot = oldstate >> 59u;
+	return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
+}
+
+float pcg32_randomf(PCGRand &rng) {
+	return ldexp((float)pcg32_random(rng), -32);
+}
+
 struct ViewParams {
 	vec3 pos, dir_du, dir_dv, dir_top_left;
 };
@@ -86,6 +131,8 @@ export void generate_primary_rays(void *uniform _scene, uniform RTCRayHitNp *uni
 	const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
 	Tile *uniform tile = (Tile *uniform)_tile;
 
+	PCGRand rng = get_rng(tile->x + tile->y * tile->width);
+
 	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
 		const float px_x = (i + tile->x + 0.5f) / tile->fb_width;
@@ -110,6 +157,8 @@ export void generate_primary_rays(void *uniform _scene, uniform RTCRayHitNp *uni
 
 	rtcIntersectNp(scene->scene, scene->context, ray_hit, tile->width * tile->height);
 
+	// TODO: For the AO we'll need some scratch space to write our AO rays to, or to store at least
+	// store the hit information for the rays in the packet.
 	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
 		const uint32_t pixel = (j * tile->width + i) * 3;
