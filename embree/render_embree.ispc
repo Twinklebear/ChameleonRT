@@ -85,12 +85,12 @@ void ortho_basis(vec3 &v_x, vec3 &v_y, const vec3 &n) {
 // http://www.pcg-random.org/download.html
 struct PCGRand {
 	uint64_t state;
-	uint64_t inc;
+	// Just use stream 1
 };
 
 uint32_t pcg32_random(PCGRand &rng) {
 	uint64_t oldstate = rng.state;
-	rng.state = oldstate * 6364136223846793005ULL + rng.inc;
+	rng.state = oldstate * 6364136223846793005ULL + 1;
 	// Calculate output function (XSH RR), uses old state for max ILP
 	uint32_t xorshifted = ((oldstate >> 18u) ^ oldstate) >> 27u;
 	uint32_t rot = oldstate >> 59u;
@@ -101,10 +101,9 @@ float pcg32_randomf(PCGRand &rng) {
 	return ldexp((double)pcg32_random(rng), -32);
 }
 
-PCGRand get_rng(uint32_t seed, uint32_t seq) {
+PCGRand get_rng(uint32_t seed) {
 	PCGRand rng;
 	rng.state = 0;
-	rng.inc = (seq << 1) | 1;
 	pcg32_random(rng);
 	rng.state += seed;
 	pcg32_random(rng);
@@ -192,7 +191,7 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 
 	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
-		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->width) * (view_params->frame_id + 1), 0);
+		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->width) * (view_params->frame_id + 1));
 
 		const float px_x = (i + tile->x + pcg32_randomf(rng)) / tile->fb_width;
 		const float px_y = (j + tile->y + pcg32_randomf(rng)) / tile->fb_height;
@@ -236,7 +235,7 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	foreach_tiled (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
 		const uint32_t pixel = ray * 3;
-		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->width) * (view_params->frame_id + 1), 0);
+		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->width) * (view_params->frame_id + 1));
 
 		const vec3 color = shade_hit(scene, ray_hit, ray, indices, verts, rng);
 		
