@@ -181,7 +181,7 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 }
 
 double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
-		const glm::vec3 &up, const float fovy)
+		const glm::vec3 &up, const float fovy, const bool camera_changed)
 {
 	using namespace std::chrono;
 

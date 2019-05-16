@@ -230,6 +230,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	double avg_rays_per_sec = 0.f;
 	glm::vec2 prev_mouse(-2.f);
 	bool done = false;
+	bool camera_changed = true;
 	while (!done) {
 		// Poll and handle events (inputs, window resize, etc.)
 		// You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to
@@ -261,13 +262,16 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 					if (prev_mouse != glm::vec2(-2.f)) {
 						if (event.motion.state & SDL_BUTTON_LMASK) {
 							camera.rotate(prev_mouse, cur_mouse);
+							camera_changed = true;
 						} else if (event.motion.state & SDL_BUTTON_RMASK) {
 							camera.pan(cur_mouse - prev_mouse);
+							camera_changed = true;
 						}
 					}
 					prev_mouse = cur_mouse;
 				} else if (event.type == SDL_MOUSEWHEEL) {
 					camera.zoom(event.wheel.y * 0.1);
+					camera_changed = true;
 				}
 			}
 			if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED) {
@@ -291,7 +295,8 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 			}
 		}
 
-		const double rays_per_sec = renderer->render(camera.eye(), camera.dir(), camera.up(), 65.f);
+		const double rays_per_sec =
+			renderer->render(camera.eye(), camera.dir(), camera.up(), 65.f, camera_changed);
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplSDL2_NewFrame(window);
@@ -327,7 +332,9 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		SDL_GL_SwapWindow(window);
+
 		++frame_id;
+		camera_changed = false;
 	}
 }
 

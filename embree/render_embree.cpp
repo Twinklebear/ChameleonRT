@@ -136,6 +136,7 @@ RTCRayHitNp make_ray_hit_soa(RaySoA &rays, HitSoA &hits) {
 
 struct ViewParams {
 	glm::vec3 pos, dir_du, dir_dv, dir_top_left;
+	uint32_t frame_id;
 };
 
 struct Scene {
@@ -152,9 +153,13 @@ struct Tile {
 };
 
 double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
-		const glm::vec3 &up, const float fovy)
+		const glm::vec3 &up, const float fovy, const bool camera_changed)
 {
 	using namespace std::chrono;
+
+	if (camera_changed) {
+		frame_id = 0;
+	}
 
 	glm::vec2 img_plane_size;
 	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
@@ -165,6 +170,7 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	view_params.dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
 	view_params.dir_dv = glm::normalize(glm::cross(view_params.dir_du, dir)) * img_plane_size.y;
 	view_params.dir_top_left = dir - 0.5f * view_params.dir_du - 0.5f * view_params.dir_dv;
+	view_params.frame_id = frame_id;
 
 	RTCIntersectContext coherent, incoherent;
 	rtcInitIntersectContext(&coherent);
@@ -215,6 +221,8 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	auto end = high_resolution_clock::now();
 	const double render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-9;
+
+	++frame_id;
 
 	return fb_dims.x * fb_dims.y / render_time;
 }

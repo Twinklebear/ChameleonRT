@@ -21,11 +21,13 @@ struct PCGRand {
 	// Ignoring the stream selection and just using 1 always
 };
 
+// TODO: udpate to match ISPC
+
 PCGRand get_rng() {
 	PCGRand rng;
 	// TODO: These might only be available in the raygen program
 	uint2 pixel = DispatchRaysIndex().xy;
-	rng.state = pixel.x + pixel.y * DispatchRaysDimensions().x;
+	rng.state = (pixel.x + pixel.y * DispatchRaysDimensions().x) * 6364136223846793005ULL;
 	return rng;
 }
 

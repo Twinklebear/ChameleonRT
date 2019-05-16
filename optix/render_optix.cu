@@ -47,9 +47,11 @@ struct PCGRand {
 	// Ignoring the stream selection and just using 1 always
 };
 
+// TODO: udpate to match ISPC
+
 __device__ PCGRand get_rng() {
 	PCGRand rng;
-	rng.state = pixel.x + pixel.y * screen.x;
+	rng.state = (pixel.x + pixel.y * screen.x) * 6364136223846793005ULL;
 	return rng;
 }
 

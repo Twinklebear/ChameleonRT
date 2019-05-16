@@ -51,6 +51,7 @@ struct RenderEmbree : RenderBackend {
 	std::vector<glm::vec4> verts;
 	std::vector<glm::uvec3> indices;
 
+	uint32_t frame_id = 0;
 	glm::uvec2 tile_size = glm::uvec2(64);
 	std::vector<std::vector<float>> tiles;
 	std::vector<std::pair<RaySoA, HitSoA>> primary_rays;
@@ -61,6 +62,6 @@ struct RenderEmbree : RenderBackend {
 	void set_mesh(const std::vector<float> &verts,
 			const std::vector<uint32_t> &indices) override;
 	double render(const glm::vec3 &pos, const glm::vec3 &dir,
-			const glm::vec3 &up, const float fovy) override;
+			const glm::vec3 &up, const float fovy, const bool camera_changed) override;
 };
 

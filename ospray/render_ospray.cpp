@@ -49,7 +49,7 @@ void RenderOSPRay::set_mesh(const std::vector<float> &verts,
 }
 
 double RenderOSPRay::render(const glm::vec3 &pos, const glm::vec3 &dir,
-		const glm::vec3 &up, const float fovy)
+		const glm::vec3 &up, const float fovy, const bool camera_changed)
 {
 	ospSet3fv(camera, "pos", &pos.x);
 	ospSet3fv(camera, "dir", &dir.x);
@@ -58,12 +58,15 @@ double RenderOSPRay::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	ospCommit(camera);
 
 #if OSPRAY_VERSION_MAJOR == 2
-	// TODO: Track when camera changes so we know if we need to reset accum
-	ospResetAccumulation(fb);
+	if (camera_changed) {
+		ospResetAccumulation(fb);
+	}
 	ospRenderFrame(fb, renderer, camera, world);
 #else
-	ospCommit(renderer);
-	ospFrameBufferClear(fb, OSP_FB_COLOR | OSP_FB_ACCUM);
+	if (camera_changed) {
+		ospCommit(renderer);
+		ospFrameBufferClear(fb, OSP_FB_COLOR | OSP_FB_ACCUM);
+	}
 	ospRenderFrame(fb, renderer, OSP_FB_COLOR);
 #endif
 

@@ -38,7 +38,7 @@ struct RenderDXR : RenderBackend {
 	void set_mesh(const std::vector<float> &verts,
 			const std::vector<uint32_t> &indices) override;
 	double render(const glm::vec3 &pos, const glm::vec3 &dir,
-			const glm::vec3 &up, const float fovy) override;
+			const glm::vec3 &up, const float fovy, const bool camera_changed) override;
 
 private:
 	void build_raytracing_pipeline();

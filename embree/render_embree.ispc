@@ -27,6 +27,10 @@ float length(const vec3 v) {
 }
 
 vec3 normalized(const vec3 v) {
+	float l = length(v);
+	if (l < 0.0) {
+		l = 0.0001;
+	}
 	const float c = 1.f / length(v);
 	return make_vec3(v.x * c, v.y * c, v.z * c);
 }
@@ -44,6 +48,10 @@ vec3 cross(const vec3 a, const vec3 b) {
 	c.y = a.z * b.x - a.x * b.z;
 	c.z = a.x * b.y - a.y * b.x;
 	return c;
+}
+
+float dot(const vec3 a, const vec3 b) {
+	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 vec3 operator-(const vec3 &a, const vec3 &b) {
@@ -77,21 +85,12 @@ void ortho_basis(vec3 &v_x, vec3 &v_y, const vec3 &n) {
 // http://www.pcg-random.org/download.html
 struct PCGRand {
 	uint64_t state;
-	// Ignoring the stream selection and just using 1 always
+	uint64_t inc;
 };
-
-PCGRand get_rng(uint32_t seed) {
-	PCGRand rng;
-	// TODO: These might only be available in the raygen program
-	//uint2 pixel = DispatchRaysIndex().xy;
-	//rng.state = pixel.x + pixel.y * DispatchRaysDimensions().x;
-	rng.state = seed;
-	return rng;
-}
 
 uint32_t pcg32_random(PCGRand &rng) {
 	uint64_t oldstate = rng.state;
-	rng.state = oldstate * 6364136223846793005ULL;
+	rng.state = oldstate * 6364136223846793005ULL + rng.inc;
 	// Calculate output function (XSH RR), uses old state for max ILP
 	uint32_t xorshifted = ((oldstate >> 18u) ^ oldstate) >> 27u;
 	uint32_t rot = oldstate >> 59u;
@@ -99,11 +98,22 @@ uint32_t pcg32_random(PCGRand &rng) {
 }
 
 float pcg32_randomf(PCGRand &rng) {
-	return ldexp((float)pcg32_random(rng), -32);
+	return ldexp((double)pcg32_random(rng), -32);
+}
+
+PCGRand get_rng(uint32_t seed, uint32_t seq) {
+	PCGRand rng;
+	rng.state = 0;
+	rng.inc = (seq << 1) | 1;
+	pcg32_random(rng);
+	rng.state += seed;
+	pcg32_random(rng);
+	return rng;
 }
 
 struct ViewParams {
 	vec3 pos, dir_du, dir_dv, dir_top_left;
+	uint32_t frame_id;
 };
 
 struct Scene {
@@ -182,8 +192,10 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 
 	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
-		const float px_x = (i + tile->x + 0.5f) / tile->fb_width;
-		const float px_y = (j + tile->y + 0.5f) / tile->fb_height;
+		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->width) * (view_params->frame_id + 1), 0);
+
+		const float px_x = (i + tile->x + pcg32_randomf(rng)) / tile->fb_width;
+		const float px_y = (j + tile->y + pcg32_randomf(rng)) / tile->fb_height;
 
 		ray_hit->ray.org_x[ray] = view_params->pos.x;
 		ray_hit->ray.org_y[ray] = view_params->pos.y;
@@ -201,6 +213,12 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 
 		ray_hit->ray.tfar[ray] = 1e20f;
 
+		ray_hit->hit.Ng_x[ray] = 0.f;
+		ray_hit->hit.Ng_y[ray] = 0.f;
+		ray_hit->hit.Ng_z[ray] = 0.f;
+		ray_hit->hit.u[ray] = 0.f;
+		ray_hit->hit.v[ray] = 0.f;
+
 		ray_hit->hit.primID[ray] = -1;
 		ray_hit->hit.geomID[ray] = -1;
 		ray_hit->hit.instID[0][ray] = -1;
@@ -215,25 +233,24 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	// Since the AO (or path tracing rays) will now be pretty incoherent tracing
 	// a huge stream may not really be worth it, so we switch to just doing packets of
 	// SIMD-width rays
-	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
+	foreach_tiled (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
 		const uint32_t pixel = ray * 3;
-		PCGRand rng = get_rng(tile->x + i + (tile->y + j) * tile->width);
+		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->width) * (view_params->frame_id + 1), 0);
 
 		const vec3 color = shade_hit(scene, ray_hit, ray, indices, verts, rng);
-
-		tile->data[pixel] = color.x;
-		tile->data[pixel + 1] = color.y;
-		tile->data[pixel + 2] = color.z;
+		
+		tile->data[pixel] = (color.x + view_params->frame_id * tile->data[pixel]) / (view_params->frame_id + 1);
+		tile->data[pixel + 1] = (color.y + view_params->frame_id * tile->data[pixel + 1]) / (view_params->frame_id + 1);
+		tile->data[pixel + 2] = (color.z + view_params->frame_id * tile->data[pixel + 2]) / (view_params->frame_id + 1);
 	}
 }
 
 vec3 shade_hit(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, varying uint32_t ray,
 		const uint32_t *uniform indices, const float *uniform verts, varying PCGRand &rng)
 {
-	vec3 color = make_vec3(0.f);
 	if (ray_hits->hit.geomID[ray] == (uint32_t)-1) {
-		return color;
+		return make_vec3(0.f);
 	}
 	const uniform uint32_t *tri = indices + ray_hits->hit.primID[ray] * 3;
 
@@ -251,8 +268,6 @@ vec3 shade_hit(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, 
 	normal.z = ray_hits->hit.Ng_z[ray];
 	normal = normalized(normal);
 
-	color = (normal + make_vec3(1.f)) * 0.5f;
-
 	vec3 v_x, v_y;
 	ortho_basis(v_x, v_y, normal);
 
@@ -261,33 +276,27 @@ vec3 shade_hit(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, 
 	hit_p.y = ray_hits->ray.org_y[ray] + ray_hits->ray.tfar[ray] * ray_hits->ray.dir_y[ray];
 	hit_p.z = ray_hits->ray.org_z[ray] + ray_hits->ray.tfar[ray] * ray_hits->ray.dir_z[ray];
 
-	uniform int ao_samples = 4;
-	int num_occluded = 0;
-	for (uniform int ao_x = 0; ao_x < ao_samples; ++ao_x) {
-		for (uniform int ao_y = 0; ao_y < ao_samples; ++ao_y) {
-			const float theta = sqrt(pcg32_randomf(rng));
-			const float phi = 2.0f * M_PI * pcg32_randomf(rng);
+	const float theta = sqrt(pcg32_randomf(rng));
+	const float phi = 2.0f * M_PI * pcg32_randomf(rng);
 
-			const float x = cos(phi) * theta;
-			const float y = sin(phi) * theta;
-			const float z = sqrt(1.0 - theta * theta);
+	const float x = cos(phi) * theta;
+	const float y = sin(phi) * theta;
+	const float z = sqrt(1.0 - theta * theta);
 
-			vec3 ao_dir;
-			ao_dir.x = x * v_x.x + y * v_y.x + z * normal.x;
-			ao_dir.y = x * v_x.y + y * v_y.y + z * normal.y;
-			ao_dir.z = x * v_x.z + y * v_y.z + z * normal.z;
+	// TODO: Why do see some black spots (nans? but isnan says nothing?)
+	// when letting it accumulate for a longer period?
 
-			RTCRay ao_ray = make_ray(hit_p, ao_dir, 0.0001);
-			rtcOccludedV(scene->scene, scene->incoherent_context, &ao_ray);
+	vec3 ao_dir;
+	ao_dir.x = x * v_x.x + y * v_y.x + z * normal.x;
+	ao_dir.y = x * v_x.y + y * v_y.y + z * normal.y;
+	ao_dir.z = x * v_x.z + y * v_y.z + z * normal.z;
 
-			if (ao_ray.tfar < 0) {
-				num_occluded++;
-			}
-		}
+	RTCRay ao_ray = make_ray(hit_p, ao_dir, 0.0001);
+	rtcOccludedV(scene->scene, scene->incoherent_context, &ao_ray);
+	if (ao_ray.tfar < 0) {
+		return make_vec3(0.f);
 	}
-	uniform float total_ao_samples = ao_samples * ao_samples;
-	const float occlusion = (total_ao_samples - num_occluded) / total_ao_samples;
-	return color * occlusion;
+	return (normal + make_vec3(1.f)) * 0.5f;
 }
 
 // Convert the RGBF32 tile to sRGB and write it to the RGBA8 framebuffer
@@ -297,9 +306,9 @@ export void tile_to_uint8(void *uniform _tile, uniform uint8_t *uniform fb) {
 		const uint32_t tile_px = (j * tile->width + i) * 3;
 		const uint32_t fb_px = ((j + tile->y) * tile->fb_width + i + tile->x) * 4;
 
-		fb[fb_px] = linear_to_srgb(tile->data[tile_px]) * 255.f;
-		fb[fb_px + 1] = linear_to_srgb(tile->data[tile_px + 1]) * 255.f;
-		fb[fb_px + 2] = linear_to_srgb(tile->data[tile_px + 2]) * 255.f;
+		fb[fb_px] = float_to_srgb8(tile->data[tile_px]);
+		fb[fb_px + 1] = float_to_srgb8(tile->data[tile_px + 1]);
+		fb[fb_px + 2] = float_to_srgb8(tile->data[tile_px + 2]);
 		fb[fb_px + 3] = 255;
 	}
 }

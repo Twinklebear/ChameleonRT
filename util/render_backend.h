@@ -11,6 +11,6 @@ struct RenderBackend {
 			const std::vector<uint32_t> &indices) = 0;
 	// Returns the rays per-second achieved, or -1 if this is not tracked
 	virtual double render(const glm::vec3 &pos, const glm::vec3 &dir,
-			const glm::vec3 &up, const float fovy) = 0;
+			const glm::vec3 &up, const float fovy, const bool camera_changed) = 0;
 };
 
