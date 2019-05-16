@@ -191,7 +191,7 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 
 	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
-		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->width) * (view_params->frame_id + 1));
+		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 1));
 
 		const float px_x = (i + tile->x + pcg32_randomf(rng)) / tile->fb_width;
 		const float px_y = (j + tile->y + pcg32_randomf(rng)) / tile->fb_height;
@@ -235,7 +235,7 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	foreach_tiled (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
 		const uint32_t pixel = ray * 3;
-		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->width) * (view_params->frame_id + 2));
+		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 2));
 
 		const vec3 color = shade_hit(scene, ray_hit, ray, indices, verts, rng);
 		
