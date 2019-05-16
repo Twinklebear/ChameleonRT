@@ -4,6 +4,50 @@
 #include "render_embree.h"
 #include "render_embree_ispc.h"
 
+RaySoA::RaySoA(const size_t nrays)
+	: org_x(nrays, 0.f), org_y(nrays, 0.f), org_z(nrays, 0.f), tnear(nrays, 0.f),
+	dir_x(nrays, 0.f), dir_y(nrays, 0.f), dir_z(nrays, 0.f), time(nrays, 0.f),
+	tfar(nrays, std::numeric_limits<float>::infinity()),
+	mask(nrays, std::numeric_limits<uint32_t>::max()),
+	id(nrays, 0),
+	flags(nrays, 0)
+{}
+
+void RaySoA::resize(const size_t nrays) {
+	org_x.resize(nrays, 0.f);
+	org_y.resize(nrays, 0.f);
+	org_z.resize(nrays, 0.f);
+	tnear.resize(nrays, 0.f);
+	dir_x.resize(nrays, 0.f);
+	dir_y.resize(nrays, 0.f);
+	dir_z.resize(nrays, 0.f);
+	time.resize(nrays, 0.f);
+	tfar.resize(nrays, std::numeric_limits<float>::infinity());
+	mask.resize(nrays, std::numeric_limits<uint32_t>::max());
+	id.resize(nrays, 0);
+	flags.resize(nrays, 0);
+
+}
+
+HitSoA::HitSoA(const size_t nrays)
+	: ng_x(nrays, 0.f), ng_y(nrays, 0.f), ng_z(nrays, 0.f),
+	u(nrays, 0.f), v(nrays, 0.f),
+	prim_id(nrays, std::numeric_limits<uint32_t>::max()),
+	geom_id(nrays, std::numeric_limits<uint32_t>::max()),
+	inst_id(nrays, std::numeric_limits<uint32_t>::max())
+{}
+
+void HitSoA::resize(const size_t nrays) {
+	ng_x.resize(nrays, 0.f);
+	ng_y.resize(nrays, 0.f);
+	ng_z.resize(nrays, 0.f);
+	u.resize(nrays, 0.f);
+	v.resize(nrays, 0.f);
+	prim_id.resize(nrays, std::numeric_limits<uint32_t>::max());
+	geom_id.resize(nrays, std::numeric_limits<uint32_t>::max());
+	inst_id.resize(nrays, std::numeric_limits<uint32_t>::max());
+}
+
 RenderEmbree::RenderEmbree()
 	: device(rtcNewDevice(NULL)), scene(rtcNewScene(device))
 {}
@@ -11,6 +55,16 @@ RenderEmbree::RenderEmbree()
 void RenderEmbree::initialize(const int fb_width, const int fb_height) {
 	fb_dims = glm::ivec2(fb_width, fb_height);
 	img.resize(fb_width * fb_height);
+
+	const glm::uvec2 ntiles(fb_dims.x / tile_size.x + (fb_dims.x % tile_size.x != 0 ? 1 : 0),
+			fb_dims.y / tile_size.y + (fb_dims.y % tile_size.y != 0 ? 1 : 0));
+	tiles.resize(ntiles.x * ntiles.y);
+	primary_rays.resize(tiles.size());
+	for (size_t i = 0; i < tiles.size(); ++i) {
+		tiles[i].resize(tile_size.x * tile_size.y * 3, 0.f);
+		primary_rays[i].first.resize(tile_size.x * tile_size.y);
+		primary_rays[i].second.resize(tile_size.x * tile_size.y);
+	}
 }
 
 void RenderEmbree::set_mesh(const std::vector<float> &verts_unaligned,
@@ -50,56 +104,6 @@ void RenderEmbree::set_mesh(const std::vector<float> &verts_unaligned,
 	rtcCommitScene(scene);
 }
 
-// TODO WILL: We might need to be careful of the alignment
-// of the vector data
-struct RaySoA {
-	std::vector<float> org_x;
-	std::vector<float> org_y;
-	std::vector<float> org_z;
-	std::vector<float> tnear;
-
-	std::vector<float> dir_x;
-	std::vector<float> dir_y;
-	std::vector<float> dir_z;
-	std::vector<float> time;
-
-	std::vector<float> tfar;
-
-	std::vector<unsigned int> mask;
-	std::vector<unsigned int> id;
-	std::vector<unsigned int> flags;
-
-	RaySoA(const size_t nrays)
-		: org_x(nrays, 0.f), org_y(nrays, 0.f), org_z(nrays, 0.f), tnear(nrays, 0.f),
-		dir_x(nrays, 0.f), dir_y(nrays, 0.f), dir_z(nrays, 0.f), time(nrays, 0.f),
-		tfar(nrays, std::numeric_limits<float>::infinity()),
-		mask(nrays, std::numeric_limits<uint32_t>::max()),
-		id(nrays, 0),
-		flags(nrays, 0)
-	{}
-};
-
-struct HitSoA {
-	std::vector<float> ng_x;
-	std::vector<float> ng_y;
-	std::vector<float> ng_z;
-
-	std::vector<float> u;
-	std::vector<float> v;
-
-	std::vector<unsigned int> prim_id;
-	std::vector<unsigned int> geom_id;
-	std::vector<unsigned int> inst_id;
-
-	HitSoA(const size_t nrays)
-		: ng_x(nrays, 0.f), ng_y(nrays, 0.f), ng_z(nrays, 0.f),
-		u(nrays, 0.f), v(nrays, 0.f),
-		prim_id(nrays, std::numeric_limits<uint32_t>::max()),
-		geom_id(nrays, std::numeric_limits<uint32_t>::max()),
-		inst_id(nrays, std::numeric_limits<uint32_t>::max())
-	{}
-};
-
 RTCRayHitNp make_ray_hit_soa(RaySoA &rays, HitSoA &hits) {
 	RTCRayHitNp rh;
 	rh.ray.org_x = rays.org_x.data();
@@ -136,7 +140,8 @@ struct ViewParams {
 
 struct Scene {
 	RTCScene scene;
-	RTCIntersectContext *context;
+	RTCIntersectContext *coherent_context;
+	RTCIntersectContext *incoherent_context;
 };
 
 struct Tile {
@@ -161,17 +166,21 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	view_params.dir_dv = glm::normalize(glm::cross(view_params.dir_du, dir)) * img_plane_size.y;
 	view_params.dir_top_left = dir - 0.5f * view_params.dir_du - 0.5f * view_params.dir_dv;
 
-	RTCIntersectContext context;
-	rtcInitIntersectContext(&context);
-	context.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
+	RTCIntersectContext coherent, incoherent;
+	rtcInitIntersectContext(&coherent);
+	coherent.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
+
+	rtcInitIntersectContext(&incoherent);
+	incoherent.flags = RTC_INTERSECT_CONTEXT_FLAG_INCOHERENT;
 
 	Scene ispc_scene;
 	ispc_scene.scene = scene;
-	ispc_scene.context = &context;
+	ispc_scene.coherent_context = &coherent;
+	ispc_scene.incoherent_context = &incoherent;
 
 	uint8_t *color = reinterpret_cast<uint8_t*>(img.data());
+	std::fill(img.begin(), img.end(), 0);
 
-	const glm::uvec2 tile_size(64);
 	// Round up the number of tiles we need to run in case the
 	// framebuffer is not an even multiple of tile size
 	const glm::uvec2 ntiles(fb_dims.x / tile_size.x + (fb_dims.x % tile_size.x != 0 ? 1 : 0),
@@ -185,9 +194,6 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::uvec2 tile_end = glm::min(tile_pos + tile_size, fb_dims);
 		const glm::uvec2 actual_tile_dims = tile_end - tile_pos;
 
-		const size_t npixels = actual_tile_dims.x * actual_tile_dims.y;
-		std::vector<float> tile_data(npixels * 3, 0.f);
-
 		Tile ispc_tile;
 		ispc_tile.x = tile_pos.x;
 		ispc_tile.y = tile_pos.y;
@@ -195,13 +201,11 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		ispc_tile.height = actual_tile_dims.y;
 		ispc_tile.fb_width = fb_dims.x;
 		ispc_tile.fb_height = fb_dims.y;
-		ispc_tile.data = tile_data.data();
+		ispc_tile.data = tiles[tile_id].data();
 
-		RaySoA rays(npixels);
-		HitSoA hits(npixels);
-		RTCRayHitNp ray_hit = make_ray_hit_soa(rays, hits);
+		RTCRayHitNp ray_hit = make_ray_hit_soa(primary_rays[tile_id].first, primary_rays[tile_id].second);
 
-		ispc::generate_primary_rays(&ispc_scene, (ispc::RTCRayHitNp*)&ray_hit,
+		ispc::trace_rays(&ispc_scene, (ispc::RTCRayHitNp*)&ray_hit,
 				&ispc_tile, &view_params,
 				reinterpret_cast<const uint32_t*>(indices.data()),
 				reinterpret_cast<const float*>(verts.data()));
