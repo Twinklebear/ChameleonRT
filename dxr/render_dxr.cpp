@@ -58,8 +58,9 @@ RenderDXR::RenderDXR() {
 	// vec4 cam_du
 	// vec4 cam_dv
 	// vec4 cam_dir_top_left
+	// uint32_t frame_id
 	view_param_buf = Buffer::upload(device.Get(),
-		align_to(4 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+		align_to(4 * sizeof(glm::vec4) + sizeof(uint32_t), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
 	build_raytracing_pipeline();
 	build_shader_resource_heap();
@@ -77,6 +78,10 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 
 	render_target = Texture2D::default(device.Get(), glm::uvec2(fb_width, fb_height),
 		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, DXGI_FORMAT_R8G8B8A8_UNORM,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+
+	accum_buffer = Texture2D::default(device.Get(), glm::uvec2(fb_width, fb_height),
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, DXGI_FORMAT_R32G32B32A32_FLOAT,
 		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 	
 	// Allocate the readback buffer so we can read the image back to the CPU
@@ -185,6 +190,11 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 {
 	using namespace std::chrono;
 
+	// TODO: probably just pass frame_id directly
+	if (camera_changed) {
+		frame_id = 0;
+	}
+
 	update_view_parameters(pos, dir, up, fovy);
 	// Set the render target and TLAS pointers in the descriptor heap
 	update_descriptor_heap();
@@ -264,6 +274,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	// Map the readback buf and copy out the rendered image
 	std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
 	img_readback_buf.unmap();
+	++frame_id;
 
 	return img.size() / render_time;
 }
@@ -278,9 +289,9 @@ void RenderDXR::build_raytracing_pipeline() {
 	// the SRV holding the top-level acceleration structure
 	// the CBV holding the camera params
 	RootSignature raygen_root_sig = RootSignatureBuilder::local()
-		.add_uav_range(1, 0, 0, 0)
-		.add_srv_range(1, 0, 0, 1)
-		.add_cbv_range(1, 0, 0, 2)
+		.add_uav_range(2, 0, 0, 0)
+		.add_srv_range(1, 0, 0, 2)
+		.add_cbv_range(1, 0, 0, 3)
 		.create(device.Get());
 
 	// Create the root signature for our closest hit function
@@ -306,7 +317,7 @@ void RenderDXR::build_shader_resource_heap() {
 	// The resource heap has the pointers/views things to our output image buffer
 	// and the top level acceleration structure
 	D3D12_DESCRIPTOR_HEAP_DESC heap_desc = { 0 };
-	heap_desc.NumDescriptors = 3;
+	heap_desc.NumDescriptors = 4;
 	heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	CHECK_ERR(device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&raygen_shader_desc_heap)));
@@ -353,11 +364,19 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &di
 	const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
 	const glm::vec3 dir_top_left = dir - 0.5f * dir_du - 0.5f * dir_dv;
 
-	glm::vec4 *buf = static_cast<glm::vec4*>(view_param_buf.map());
-	buf[0] = glm::vec4(pos, 0.f);
-	buf[1] = glm::vec4(dir_du, 0.f);
-	buf[2] = glm::vec4(dir_dv, 0.f);
-	buf[3] = glm::vec4(dir_top_left, 0.f);
+	uint8_t *buf = static_cast<uint8_t*>(view_param_buf.map());
+	{
+		glm::vec4 *vecs = reinterpret_cast<glm::vec4*>(buf);
+		vecs[0] = glm::vec4(pos, 0.f);
+		vecs[1] = glm::vec4(dir_du, 0.f);
+		vecs[2] = glm::vec4(dir_dv, 0.f);
+		vecs[3] = glm::vec4(dir_top_left, 0.f);
+	}
+	{
+		uint32_t *fid = reinterpret_cast<uint32_t*>(buf + 4 * sizeof(glm::vec4));
+		*fid = frame_id;
+	}
+
 	view_param_buf.unmap();
 }
 
@@ -366,8 +385,13 @@ void RenderDXR::update_descriptor_heap() {
 		raygen_shader_desc_heap->GetCPUDescriptorHandleForHeapStart();
 
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = { 0 };
+	// Render target
 	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 	device->CreateUnorderedAccessView(render_target.get(), nullptr, &uav_desc, heap_handle);
+
+	// Accum buffer
+	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	device->CreateUnorderedAccessView(accum_buffer.get(), nullptr, &uav_desc, heap_handle);
 
 	// Write the TLAS after the output image in the heap
 	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);

@@ -16,7 +16,7 @@ struct RenderDXR : RenderBackend {
 	Buffer vertex_buf, index_buf, view_param_buf, img_readback_buf,
 		bottom_level_as, instance_buf;
 
-	Texture2D render_target;
+	Texture2D render_target, accum_buffer;
 
 	TriangleMesh mesh;
 	TopLevelBVH scene_bvh;
@@ -30,6 +30,8 @@ struct RenderDXR : RenderBackend {
 	uint64_t fence_value = 1;
 	Microsoft::WRL::ComPtr<ID3D12Fence> fence;
 	HANDLE fence_evt;
+
+	uint32_t frame_id = 0;
 
 	RenderDXR();
 	virtual ~RenderDXR();

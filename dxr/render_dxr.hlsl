@@ -18,34 +18,14 @@ struct Attributes {
 // http://www.pcg-random.org/download.html
 struct PCGRand {
 	uint64_t state;
-	// Ignoring the stream selection and just using 1 always
+	// Just use stream 1
 };
-
-// TODO: udpate to match ISPC
-
-PCGRand get_rng() {
-	PCGRand rng;
-	// TODO: These might only be available in the raygen program
-	uint2 pixel = DispatchRaysIndex().xy;
-	rng.state = (pixel.x + pixel.y * DispatchRaysDimensions().x) * 6364136223846793005ULL;
-	return rng;
-}
-
-uint pcg32_random(inout PCGRand rng) {
-	uint64_t oldstate = rng.state;
-	rng.state = oldstate * 6364136223846793005ULL;
-	// Calculate output function (XSH RR), uses old state for max ILP
-	uint xorshifted = uint(((oldstate >> 18u) ^ oldstate) >> 27u);
-	uint rot = uint(oldstate >> 59u);
-	return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
-}
-
-float pcg32_randomf(inout PCGRand rng) {
-	return ldexp(pcg32_random(rng), -32);
-}
 
 // Raytracing output texture, accessed as a UAV
 RWTexture2D<float4> output : register(u0);
+
+// Accumulation buffer for progressive refinement
+RWTexture2D<float4> accum_buffer : register(u1);
 
 // Raytracing acceleration structure, accessed as a SRV
 RaytracingAccelerationStructure scene : register(t0);
@@ -56,6 +36,32 @@ cbuffer ViewParams : register(b0) {
 	float4 cam_du;
 	float4 cam_dv;
 	float4 cam_dir_top_left;
+	uint32_t frame_id;
+}
+
+uint32_t pcg32_random(inout PCGRand rng) {
+	uint64_t oldstate = rng.state;
+	rng.state = oldstate * 6364136223846793005ULL + 1;
+	// Calculate output function (XSH RR), uses old state for max ILP
+	uint32_t xorshifted = ((oldstate >> 18u) ^ oldstate) >> 27u;
+	uint32_t rot = oldstate >> 59u;
+	return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
+}
+
+float pcg32_randomf(inout PCGRand rng) {
+	return ldexp((double)pcg32_random(rng), -32);
+}
+
+PCGRand get_rng() {
+	uint2 pixel = DispatchRaysIndex().xy;
+	uint32_t seed = (pixel.x + pixel.y * DispatchRaysDimensions().x) * (frame_id + 1);
+
+	PCGRand rng;
+	rng.state = 0;
+	pcg32_random(rng);
+	rng.state += seed;
+	pcg32_random(rng);
+	return rng;
 }
 
 float linear_to_srgb(float x) {
@@ -89,8 +95,9 @@ void RayGen() {
 
 	uint2 pixel = DispatchRaysIndex().xy;
 	float2 dims = float2(DispatchRaysDimensions().xy);
+	PCGRand rng = get_rng();
 
-	float2 d = pixel / dims;
+	float2 d = (pixel + float2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
 	RayDesc ray;
 	ray.Origin = cam_pos.xyz;
 	ray.Direction = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
@@ -101,49 +108,42 @@ void RayGen() {
 	payload.color_dist = float4(0, 0, 0, -1);
 	TraceRay(scene, 0, 0xff, PRIMARY_RAY, NUM_RAY_TYPES, PRIMARY_RAY, ray, payload);
 
-	float occlusion = 1.f;
 	if (payload.color_dist.w > 0) {
 		const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
 		float3 v_x, v_y;
 		float3 v_z = payload.normal.xyz;
 		ortho_basis(v_x, v_y, v_z);
-		PCGRand rng = get_rng();
 
-		int ao_samples = 4;
-		int num_occluded = 0;
-		for (int i = 0; i < ao_samples; ++i) {
-			for (int j = 0; j < ao_samples; ++j) {
-				// Sample the hemisphere
-				const float theta = sqrt(pcg32_randomf(rng));
-				const float phi = 2.0f * M_PI * pcg32_randomf(rng);
+		// Sample the hemisphere
+		const float theta = sqrt(pcg32_randomf(rng));
+		const float phi = 2.0f * M_PI * pcg32_randomf(rng);
 
-				const float x = cos(phi) * theta;
-				const float y = sin(phi) * theta;
-				const float z = sqrt(1.0 - theta * theta);
-				
-				RayDesc ao_ray;
-				ao_ray.Origin = hit_p;
-				ao_ray.Direction.x = x * v_x.x + y * v_y.x + z * v_z.x;
-				ao_ray.Direction.y = x * v_x.y + y * v_y.y + z * v_z.y;
-				ao_ray.Direction.z = x * v_x.z + y * v_y.z + z * v_z.z;
-				ao_ray.TMin = 0.0001;
-				ao_ray.TMax = 1e20f;
-		
-				AOHitInfo aohit;
-				TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
-					OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, ao_ray, aohit);
-				if (aohit.hit == 1) {
-					++num_occluded;
-				}
-			}
+		const float x = cos(phi) * theta;
+		const float y = sin(phi) * theta;
+		const float z = sqrt(1.0 - theta * theta);
+
+		RayDesc ao_ray;
+		ao_ray.Origin = hit_p;
+		ao_ray.Direction.x = x * v_x.x + y * v_y.x + z * v_z.x;
+		ao_ray.Direction.y = x * v_x.y + y * v_y.y + z * v_z.y;
+		ao_ray.Direction.z = x * v_x.z + y * v_y.z + z * v_z.z;
+		ao_ray.TMin = 0.0001;
+		ao_ray.TMax = 1e20f;
+
+		AOHitInfo aohit;
+		TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
+				OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, ao_ray, aohit);
+		if (aohit.hit == 1) {
+			payload.color_dist.xyz = float3(0, 0, 0);
 		}
-		float total_ao_samples = ao_samples * ao_samples;
-		occlusion = (total_ao_samples - num_occluded) / total_ao_samples;
 	}
-	payload.color_dist.rbg *= occlusion;
-	output[pixel] = float4(linear_to_srgb(payload.color_dist.r),
-		linear_to_srgb(payload.color_dist.g),
-		linear_to_srgb(payload.color_dist.b), 1.f);
+
+	const float4 accum_color = (payload.color_dist + frame_id * accum_buffer[pixel]) / (frame_id + 1);
+	accum_buffer[pixel] = accum_color;
+
+	output[pixel] = float4(linear_to_srgb(accum_color.r),
+		linear_to_srgb(accum_color.g),
+		linear_to_srgb(accum_color.b), 1.f);
 }
 
 [shader("miss")]
