@@ -4,7 +4,7 @@ find_package(TBB REQUIRED)
 include(cmake/ISPC.cmake)
 add_ispc_library(ispc_kernels render_embree.ispc
 	INCLUDE_DIRECTORIES ${EMBREE_INCLUDE_DIRS}
-	COMPILE_DEFINITIONS --opt=fast-math -O2)
+	COMPILE_DEFINITIONS -O2)
 
 add_library(render_embree render_embree.cpp)
 
