@@ -6,8 +6,9 @@
 
 struct RenderOptiX : RenderBackend {
 	optix::Context context;
-	optix::Buffer fb, view_params;
+	optix::Buffer fb, accum_buffer, view_params;
 	int width, height;
+	uint32_t frame_id = 0;
 
 	RenderOptiX();
 

@@ -13,7 +13,10 @@ RenderOptiX::RenderOptiX() {
 	Program prog = context->createProgramFromPTXString(render_optix_ptx, "perspective_camera");
 	context->setRayGenerationProgram(0, prog);
 
-	view_params = context->createBuffer(RT_BUFFER_INPUT, RT_FORMAT_FLOAT3, 4);
+	view_params = context->createBuffer(RT_BUFFER_INPUT);
+	view_params->setFormat(RT_FORMAT_USER);
+	view_params->setElementSize(5 * sizeof(glm::vec4));
+	view_params->setSize(1);
 	context["view_params"]->set(view_params);
 }
 
@@ -24,6 +27,10 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 	fb = context->createBuffer(RT_BUFFER_OUTPUT, RT_FORMAT_UNSIGNED_BYTE4,
 			fb_width, fb_height);
 	context["framebuffer"]->setBuffer(fb);
+	accum_buffer = context->createBuffer(RT_BUFFER_INPUT_OUTPUT, RT_FORMAT_FLOAT4,
+		fb_width, fb_height);
+
+	context["accum_buffer"]->setBuffer(accum_buffer);
 	img.resize(fb_width * fb_height);
 }
 
@@ -68,6 +75,16 @@ double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 {
 	using namespace std::chrono;
 
+	if (camera_changed) {
+		frame_id = 0;
+		try {
+			context->validate();
+		} catch (const optix::Exception &e) {
+			std::cout << "OptiX Error: " << e.getErrorString() << "\n" << std::flush;
+			throw std::runtime_error(e.getErrorString());
+		}
+	}
+
 	glm::vec2 img_plane_size;
 	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
 	img_plane_size.x = img_plane_size.y * static_cast<float>(width) / height;
@@ -78,15 +95,20 @@ double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	// Work around Optix re-upload bug by updating parameters which change each frame through
 	// a buffer instead of as direct parameters
+	uint8_t *map = static_cast<uint8_t*>(view_params->map());
 	{
-		glm::vec3 *map = static_cast<glm::vec3*>(view_params->map());
-		map[0] = pos;
-		map[1] = dir_du;
-		map[2] = dir_dv;
-		map[3] = dir_top_left;
-		view_params->unmap();
+		glm::vec4 *vecs = reinterpret_cast<glm::vec4*>(map);
+		vecs[0] = glm::vec4(pos, 0);
+		vecs[1] = glm::vec4(dir_du, 0);
+		vecs[2] = glm::vec4(dir_dv, 0);
+		vecs[3] = glm::vec4(dir_top_left, 0);
 	}
-
+	{
+		uint32_t *fid = reinterpret_cast<uint32_t*>(map + 4 * sizeof(glm::vec4));
+		*fid = frame_id;
+	}
+	view_params->unmap();
+	
 	auto start = high_resolution_clock::now();
 
 	context->launch(0, width, height);
@@ -98,7 +120,7 @@ double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	const uint32_t *mapped = static_cast<const uint32_t*>(fb->map(0, RT_BUFFER_MAP_READ));
 	std::memcpy(img.data(), mapped, sizeof(uint32_t) * img.size());
 	fb->unmap();
-
+	++frame_id;
 	return img.size() / render_time;
 }
 

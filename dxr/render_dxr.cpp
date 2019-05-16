@@ -60,7 +60,7 @@ RenderDXR::RenderDXR() {
 	// vec4 cam_dir_top_left
 	// uint32_t frame_id
 	view_param_buf = Buffer::upload(device.Get(),
-		align_to(4 * sizeof(glm::vec4) + sizeof(uint32_t), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+		align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
 	build_raytracing_pipeline();
 	build_shader_resource_heap();
