@@ -298,7 +298,10 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		// We don't instrument inside OSPRay so we don't show these statistics for it
 		if (rays_per_sec > 0.0) {
 			avg_rays_per_sec = avg_rays_per_sec + (rays_per_sec - avg_rays_per_sec) / (frame_id + 1);
-			ImGui::Text("Avg. Rays/sec: %s/sec", pretty_print_count(avg_rays_per_sec).c_str());
+			// TODO: I need to compute the stats properly now that we send secondary rays.
+			// This will take some additional work since we basically need an additional buffer
+			// in each renderer to track the # rays launched for each pixel
+			//ImGui::Text("Avg. Rays/sec: %s/sec", pretty_print_count(avg_rays_per_sec).c_str());
 		}
 
 		ImGui::End();
