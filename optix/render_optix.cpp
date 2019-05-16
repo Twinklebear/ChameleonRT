@@ -21,6 +21,7 @@ RenderOptiX::RenderOptiX() {
 }
 
 void RenderOptiX::initialize(const int fb_width, const int fb_height) {
+	frame_id = 0;
 	width = fb_width;
 	height = fb_height;
 
@@ -37,6 +38,7 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 void RenderOptiX::set_mesh(const std::vector<float> &verts,
 		const std::vector<uint32_t> &indices)
 {
+	frame_id = 0;
 	const size_t num_verts = verts.size() / 3;
 	const size_t num_tris = indices.size() / 3;
 	auto vertex_buffer = context->createBuffer(RT_BUFFER_INPUT, RT_FORMAT_FLOAT3, num_verts);

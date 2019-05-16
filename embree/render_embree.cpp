@@ -53,6 +53,7 @@ RenderEmbree::RenderEmbree()
 {}
 
 void RenderEmbree::initialize(const int fb_width, const int fb_height) {
+	frame_id = 0;
 	fb_dims = glm::ivec2(fb_width, fb_height);
 	img.resize(fb_width * fb_height);
 
@@ -70,6 +71,7 @@ void RenderEmbree::initialize(const int fb_width, const int fb_height) {
 void RenderEmbree::set_mesh(const std::vector<float> &verts_unaligned,
 		const std::vector<uint32_t> &idx)
 {
+	frame_id = 0;
 	const size_t nverts = verts_unaligned.size() / 3;
 
 	for (size_t i = 0; i < idx.size() / 3; ++i) {

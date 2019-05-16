@@ -71,9 +71,7 @@ RenderDXR::~RenderDXR() {
 }
 
 void RenderDXR::initialize(const int fb_width, const int fb_height) {
-	if (render_target.dims().x == fb_width && render_target.dims().y == fb_height) {
-		return;
-	}
+	frame_id = 0;
 	img.resize(fb_width * fb_height);
 
 	render_target = Texture2D::default(device.Get(), glm::uvec2(fb_width, fb_height),
@@ -92,6 +90,7 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 void RenderDXR::set_mesh(const std::vector<float> &verts,
 		const std::vector<uint32_t> &indices)
 {
+	frame_id = 0;
 	// Upload the mesh to the vertex buffer, build accel structures
 	// Place the vertex data in an upload heap first, then do a GPU-side copy
 	// into a default heap (resident in VRAM)
