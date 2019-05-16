@@ -173,25 +173,31 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		}
 	}
 
+	std::string rt_backend;
+
 	std::unique_ptr<RenderBackend> renderer = nullptr;
 #if ENABLE_OSPRAY
 	if (std::strcmp(argv[1], "-ospray") == 0) {
 		renderer = std::make_unique<RenderOSPRay>();
+		rt_backend = "OSPRay";
 	}
 #endif
 #if ENABLE_OPTIX
 	if (std::strcmp(argv[1], "-optix") == 0) {
 		renderer = std::make_unique<RenderOptiX>();
+		rt_backend = "OptiX";
 	}
 #endif
 #if ENABLE_EMBREE
 	if (std::strcmp(argv[1], "-embree") == 0) {
 		renderer = std::make_unique<RenderEmbree>();
+		rt_backend = "Embree (w/ TBB & ISPC)";
 	}
 #endif
 #if ENABLE_DXR
 	if (std::strcmp(argv[1], "-dxr") == 0) {
 		renderer = std::make_unique<RenderDXR>();
+		rt_backend = "DirectX Ray Tracing";
 	}
 #endif
 	if (!renderer) {
@@ -294,6 +300,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		ImGui::Begin("Debug Panel");
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
 				1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+		ImGui::Text("RT Backend: %s", rt_backend.c_str());
 
 		// We don't instrument inside OSPRay so we don't show these statistics for it
 		if (rays_per_sec > 0.0) {
