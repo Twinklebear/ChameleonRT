@@ -1,3 +1,5 @@
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
+
 find_package(CUDA 10 REQUIRED)
 find_package(OptiX 6 REQUIRED)
 
