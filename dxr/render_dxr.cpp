@@ -83,7 +83,8 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 	
 	// Allocate the readback buffer so we can read the image back to the CPU
-	img_readback_buf = Buffer::readback(device.Get(), fb_width * fb_height * 4,
+	img_readback_buf = Buffer::readback(device.Get(),
+		align_to(fb_width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT) * fb_height,
 		D3D12_RESOURCE_STATE_COPY_DEST);
 }
 
@@ -230,7 +231,8 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		D3D12_RESOURCE_BARRIER b = barrier_transition(render_target, D3D12_RESOURCE_STATE_COPY_SOURCE);
 		cmd_list->ResourceBarrier(1, &b);
 	}
-
+	
+	const uint32_t readback_row_pitch = align_to(render_target.dims().x * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
 	{
 		// Copy the rendered image to the readback buf so we can access it on the CPU
 		D3D12_TEXTURE_COPY_LOCATION dst_desc = { 0 };
@@ -241,7 +243,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		dst_desc.PlacedFootprint.Footprint.Width = render_target.dims().x;
 		dst_desc.PlacedFootprint.Footprint.Height = render_target.dims().y;
 		dst_desc.PlacedFootprint.Footprint.Depth = 1;
-		dst_desc.PlacedFootprint.Footprint.RowPitch = render_target.dims().x * 4;
+		dst_desc.PlacedFootprint.Footprint.RowPitch = readback_row_pitch;
 
 		D3D12_TEXTURE_COPY_LOCATION src_desc = { 0 };
 		src_desc.pResource = render_target.get();
@@ -271,7 +273,17 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	sync_gpu();
 
 	// Map the readback buf and copy out the rendered image
-	std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
+	// We may have needed some padding for the readback buffer, so we might have to read
+	// row by row.
+	if (readback_row_pitch == render_target.dims().x * 4) {
+		std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
+	} else {
+		uint8_t *buf = static_cast<uint8_t*>(img_readback_buf.map());
+		for (uint32_t y = 0; y < render_target.dims().y; ++y) {
+			std::memcpy(img.data() + y * render_target.dims().x,
+				buf + y * readback_row_pitch, render_target.dims().x * 4);
+		}
+	}
 	img_readback_buf.unmap();
 	++frame_id;
 
