@@ -2,7 +2,9 @@
 #include <optix.h>
 #include <optix_math.h>
 
+#ifndef M_1_PI
 #define M_1_PI 0.318309886183790671538
+#endif
 
 typedef unsigned long long uint64_t;
 typedef unsigned int uint32_t;
