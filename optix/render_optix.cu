@@ -162,6 +162,7 @@ RT_PROGRAM void perspective_camera() {
 		w_i.x = x * v_x.x + y * v_y.x + z * v_z.x;
 		w_i.y = x * v_x.y + y * v_y.y + z * v_z.y;
 		w_i.z = x * v_x.z + y * v_y.z + z * v_z.z;
+		w_i = normalize(w_i);
 
 		// Update path throughput and continue the ray
 		// TODO: This is just a hard-coded Lambertian BRDF,
