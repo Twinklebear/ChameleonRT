@@ -1,11 +1,12 @@
 #define M_PI 3.14159265358979323846
+#define M_1_PI 0.318309886183790671538
 
 struct HitInfo {
 	float4 color_dist;
 	float4 normal;
 };
 
-struct AOHitInfo {
+struct OcclusionHitInfo {
 	int hit;
 };
 
@@ -92,29 +93,66 @@ void RayGen() {
 	const int PRIMARY_RAY = 0;
 	const int OCCLUSION_RAY = 1;
 	const int NUM_RAY_TYPES = 2;
+	const int MAX_PATH_DEPTH = 5;
 
 	uint2 pixel = DispatchRaysIndex().xy;
 	float2 dims = float2(DispatchRaysDimensions().xy);
 	PCGRand rng = get_rng();
-
 	float2 d = (pixel + float2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
+
 	RayDesc ray;
 	ray.Origin = cam_pos.xyz;
 	ray.Direction = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
 	ray.TMin = 0;
 	ray.TMax = 1e20f;
 
-	HitInfo payload;
-	payload.color_dist = float4(0, 0, 0, -1);
-	TraceRay(scene, 0, 0xff, PRIMARY_RAY, NUM_RAY_TYPES, PRIMARY_RAY, ray, payload);
+	const float3 light_emission = float3(1.0, 1.0, 1.0);
+	int bounce = 0;
+	float3 illum = float3(0, 0, 0);
+	float3 path_throughput = float3(1, 1, 1);
+	do {
+		HitInfo payload;
+		payload.color_dist = float4(0, 0, 0, -1);
+		TraceRay(scene, 0, 0xff, PRIMARY_RAY, NUM_RAY_TYPES, PRIMARY_RAY, ray, payload);
 
-	if (payload.color_dist.w > 0) {
+		if (payload.color_dist.w <= 0) {
+			break;
+		}
+
 		const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
 		float3 v_x, v_y;
-		float3 v_z = payload.normal.xyz;
+		float3 v_z = normalize(payload.normal.xyz);
 		ortho_basis(v_x, v_y, v_z);
 
-		// Sample the hemisphere
+		payload.color_dist.rgb = float3(0.9, 0.9, 0.9);
+		const float3 bsdf = payload.color_dist.rgb * M_1_PI;
+
+		// Direct light sampling.
+		// Note: we just treat the camera position as being the location of a point light
+		const float3 w_o = -ray.Direction;
+
+		//float3 light_dir = cam_pos.xyz - hit_p;
+		//float light_dist = length(light_dir);
+		float3 light_dir = float3(-0.5, 0.8, 0.5);
+		//float light_dist = 1.0;
+		light_dir = normalize(light_dir);
+
+		OcclusionHitInfo shadow_hit;
+		RayDesc shadow_ray;
+		shadow_ray.Origin = hit_p;
+		shadow_ray.Direction = light_dir;
+		shadow_ray.TMin = 0.0001;
+		shadow_ray.TMax = 1e20f;
+
+		TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
+				OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, shadow_ray, shadow_hit);
+		if (shadow_hit.hit == 0) {
+			// Light is a delta light, so pdf = 1.0
+			illum += path_throughput * bsdf * light_emission * abs(dot(light_dir, v_z));
+		}
+
+		// Sample the hemisphere to compute the outgoing direction
+		// TODO: Cosine weighted hemisphere sampling
 		const float theta = sqrt(pcg32_randomf(rng));
 		const float phi = 2.0f * M_PI * pcg32_randomf(rng);
 
@@ -122,23 +160,35 @@ void RayGen() {
 		const float y = sin(phi) * theta;
 		const float z = sqrt(1.0 - theta * theta);
 
-		RayDesc ao_ray;
-		ao_ray.Origin = hit_p;
-		ao_ray.Direction.x = x * v_x.x + y * v_y.x + z * v_z.x;
-		ao_ray.Direction.y = x * v_x.y + y * v_y.y + z * v_z.y;
-		ao_ray.Direction.z = x * v_x.z + y * v_y.z + z * v_z.z;
-		ao_ray.TMin = 0.0001;
-		ao_ray.TMax = 1e20f;
+		float3 w_i;
+		w_i.x = x * v_x.x + y * v_y.x + z * v_z.x;
+		w_i.y = x * v_x.y + y * v_y.y + z * v_z.y;
+		w_i.z = x * v_x.z + y * v_y.z + z * v_z.z;
+		w_i = normalize(w_i);
 
-		AOHitInfo aohit;
-		TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
-				OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, ao_ray, aohit);
-		if (aohit.hit == 1) {
-			payload.color_dist.xyz = float3(0, 0, 0);
+		// Update path throughput and continue the ray
+		// TODO: This is just a hard-coded Lambertian BRDF,
+		// using the object's normal color as its albedo
+		float pdf = abs(dot(w_i, v_z)) * M_1_PI;
+		if (pdf == 0.0) {
+			break;
 		}
-	}
+		// Note: same as just multiplying my M_PI b/c the cancellation,
+		// but left like this b/c I'll swap to Disney BRDF soon-ish
+		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
+		if (path_throughput.x == 0 && path_throughput.y == 0 && path_throughput.z == 0) {
+			break;
+		}
 
-	const float4 accum_color = (payload.color_dist + frame_id * accum_buffer[pixel]) / (frame_id + 1);
+		ray.Origin = hit_p;
+		ray.Direction = w_i;
+		ray.TMin = 0.0001;
+		ray.TMax = 1e20f;
+
+		++bounce;
+	} while (bounce < MAX_PATH_DEPTH);
+
+	const float4 accum_color = (float4(illum, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
 	accum_buffer[pixel] = accum_color;
 
 	output[pixel] = float4(linear_to_srgb(accum_color.r),
@@ -152,8 +202,8 @@ void Miss(inout HitInfo payload : SV_RayPayload) {
 }
 
 [shader("miss")]
-void AOMiss(inout AOHitInfo aohit : SV_RayPayload) {
-	aohit.hit = 0;
+void AOMiss(inout OcclusionHitInfo occlusion : SV_RayPayload) {
+	occlusion.hit = 0;
 }
 
 StructuredBuffer<float3> vertices : register(t0, space1);
@@ -172,6 +222,6 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 }
 
 [shader("closesthit")]
-void AOHit(inout AOHitInfo aohit, Attributes attrib) {
-	aohit.hit = 1;
+void AOHit(inout OcclusionHitInfo occlusion, Attributes attrib) {
+	occlusion.hit = 1;
 }
