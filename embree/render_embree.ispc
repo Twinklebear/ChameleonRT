@@ -1,6 +1,7 @@
 #include <embree3/rtcore.isph>
 
 #define M_PI 3.14159265358979323846
+#define M_1_PI 0.318309886183790671538
 
 typedef unsigned int8 uint8_t;
 typedef unsigned int uint32_t;
@@ -64,6 +65,14 @@ vec3 operator+(const vec3 &a, const vec3 &b) {
 
 vec3 operator*(const vec3 &a, const float s) {
 	return make_vec3(a.x * s, a.y * s, a.z * s);
+}
+
+vec3 operator*(const vec3 &a, const vec3 &b) {
+	return make_vec3(a.x * b.x, a.y * b.y, a.z * b.z);
+}
+
+vec3 operator/(const vec3 &a, const float s) {
+	return make_vec3(a.x / s, a.y / s, a.z / s);
 }
 
 void ortho_basis(vec3 &v_x, vec3 &v_y, const vec3 &n) {
@@ -177,9 +186,7 @@ RTCRayHit make_ray_hit(const vec3 &pos, const vec3 &dir, const float tnear) {
 	return ray_hit;
 };
 
-vec3 shade_hit(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, varying uint32_t ray,
-		const uint32_t *uniform indices, const float *uniform verts,
-		varying PCGRand &rng);
+vec3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng);
 
 export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		void *uniform _tile, const void *uniform _view_params,
@@ -237,7 +244,7 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		const uint32_t pixel = ray * 3;
 		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 2));
 
-		const vec3 color = shade_hit(scene, ray_hit, ray, indices, verts, rng);
+		const vec3 color = shade_path(scene, ray_hit, ray, rng);
 		
 		tile->data[pixel] = (color.x + view_params->frame_id * tile->data[pixel]) / (view_params->frame_id + 1);
 		tile->data[pixel + 1] = (color.y + view_params->frame_id * tile->data[pixel + 1]) / (view_params->frame_id + 1);
@@ -245,57 +252,100 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	}
 }
 
-vec3 shade_hit(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, varying uint32_t ray,
-		const uint32_t *uniform indices, const float *uniform verts, varying PCGRand &rng)
-{
-	if (ray_hits->hit.geomID[ray] == (uint32_t)-1) {
+vec3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng) {
+	if (ray_hits->hit.geomID[px] == (uint32_t)-1) {
 		return make_vec3(0.f);
 	}
-	const uniform uint32_t *tri = indices + ray_hits->hit.primID[ray] * 3;
+	const int MAX_PATH_DEPTH = 5;
 
-	const vec3 *vv0 = (vec3*)(verts + tri[0] * 4);
-	const vec3 *vv1 = (vec3*)(verts + tri[1] * 4);
-	const vec3 *vv2 = (vec3*)(verts + tri[2] * 4);
-
-	const vec3 v0 = *vv0;
-	const vec3 v1 = *vv1;
-	const vec3 v2 = *vv2;
+	// Initial hit data since we're coming from the stream of primary hits
+	vec3 hit_p;
+	hit_p.x = ray_hits->ray.org_x[px] + ray_hits->ray.tfar[px] * ray_hits->ray.dir_x[px];
+	hit_p.y = ray_hits->ray.org_y[px] + ray_hits->ray.tfar[px] * ray_hits->ray.dir_y[px];
+	hit_p.z = ray_hits->ray.org_z[px] + ray_hits->ray.tfar[px] * ray_hits->ray.dir_z[px];
 
 	vec3 normal;
-	normal.x = ray_hits->hit.Ng_x[ray];
-	normal.y = ray_hits->hit.Ng_y[ray];
-	normal.z = ray_hits->hit.Ng_z[ray];
+	normal.x = ray_hits->hit.Ng_x[px];
+	normal.y = ray_hits->hit.Ng_y[px];
+	normal.z = ray_hits->hit.Ng_z[px];
 	normal = normalized(normal);
 
-	vec3 v_x, v_y;
-	ortho_basis(v_x, v_y, normal);
+	vec3 w_o;
+	w_o.x = -ray_hits->ray.dir_x[px];
+	w_o.y = -ray_hits->ray.dir_y[px];
+	w_o.z = -ray_hits->ray.dir_z[px];
 
-	vec3 hit_p;
-	hit_p.x = ray_hits->ray.org_x[ray] + ray_hits->ray.tfar[ray] * ray_hits->ray.dir_x[ray];
-	hit_p.y = ray_hits->ray.org_y[ray] + ray_hits->ray.tfar[ray] * ray_hits->ray.dir_y[ray];
-	hit_p.z = ray_hits->ray.org_z[ray] + ray_hits->ray.tfar[ray] * ray_hits->ray.dir_z[ray];
+	const vec3 light_emission = make_vec3(1.0);
+	const vec3 light_dir = normalized(make_vec3(-0.5, 0.8, 0.5));
 
-	const float theta = sqrt(pcg32_randomf(rng));
-	const float phi = 2.0f * M_PI * pcg32_randomf(rng);
+	RTCRayHit path_ray;
+	int bounce = 0;
+	vec3 illum = make_vec3(0.0);
+	vec3 path_throughput = make_vec3(1.0);
+	vec3 w_i;
+	do {
+		const vec3 obj_color = make_vec3(0.9);
+		const vec3 bsdf = obj_color * M_1_PI;
 
-	const float x = cos(phi) * theta;
-	const float y = sin(phi) * theta;
-	const float z = sqrt(1.0 - theta * theta);
+		// Direct light sampling
+		RTCRay shadow_ray = make_ray(hit_p, light_dir, 0.0001);
+		rtcOccludedV(scene->scene, scene->incoherent_context, &shadow_ray);
+		if (shadow_ray.tfar > 0) {
+			illum = illum + path_throughput * bsdf * light_emission * abs(dot(light_dir, normal));
+		}
 
-	// TODO: Why do see some black spots (nans? but isnan says nothing?)
-	// when letting it accumulate for a longer period?
+		// Sample the hemisphere
+		// TODO: Cosine weighted hemisphere sampling
+		vec3 v_x, v_y;
+		ortho_basis(v_x, v_y, normal);
 
-	vec3 ao_dir;
-	ao_dir.x = x * v_x.x + y * v_y.x + z * normal.x;
-	ao_dir.y = x * v_x.y + y * v_y.y + z * normal.y;
-	ao_dir.z = x * v_x.z + y * v_y.z + z * normal.z;
+		const float theta = sqrt(pcg32_randomf(rng));
+		const float phi = 2.0f * M_PI * pcg32_randomf(rng);
 
-	RTCRay ao_ray = make_ray(hit_p, ao_dir, 0.0001);
-	rtcOccludedV(scene->scene, scene->incoherent_context, &ao_ray);
-	if (ao_ray.tfar < 0) {
-		return make_vec3(0.f);
-	}
-	return (normal + make_vec3(1.f)) * 0.5f;
+		const float x = cos(phi) * theta;
+		const float y = sin(phi) * theta;
+		const float z = sqrt(1.0 - theta * theta);
+
+		w_i.x = x * v_x.x + y * v_y.x + z * normal.x;
+		w_i.y = x * v_x.y + y * v_y.y + z * normal.y;
+		w_i.z = x * v_x.z + y * v_y.z + z * normal.z;
+		w_i = normalized(w_i);
+
+		float pdf = abs(dot(w_i, normal)) * M_1_PI;
+		if (pdf == 0.0) {
+			break;
+		}
+		// Note: same as just multiplying my M_PI b/c the cancellation,
+		// but left like this b/c I'll swap to Disney BRDF soon-ish
+		path_throughput = path_throughput * bsdf * abs(dot(w_i, normal)) / pdf;
+		if (path_throughput.x == 0 && path_throughput.y == 0 && path_throughput.z == 0) {
+			break;
+		}
+
+		path_ray = make_ray_hit(hit_p, w_i, 0.0001);
+
+		++bounce;
+		if (bounce < MAX_PATH_DEPTH) {
+			rtcIntersectV(scene->scene, scene->incoherent_context, &path_ray);
+			if (path_ray.hit.geomID == (uint32_t)-1) {
+				break;
+			}
+			hit_p.x = path_ray.ray.org_x + path_ray.ray.tfar * w_i.x;
+			hit_p.y = path_ray.ray.org_y + path_ray.ray.tfar * w_i.y;
+			hit_p.z = path_ray.ray.org_z + path_ray.ray.tfar * w_i.z;
+
+			normal.x = path_ray.hit.Ng_x;
+			normal.y = path_ray.hit.Ng_y;
+			normal.z = path_ray.hit.Ng_z;
+			normal = normalized(normal);
+
+			w_o.x = -w_i.x;
+			w_o.y = -w_i.y;
+			w_o.z = -w_i.z;
+		}
+	} while (bounce < MAX_PATH_DEPTH);
+
+	return illum;
 }
 
 // Convert the RGBF32 tile to sRGB and write it to the RGBA8 framebuffer
