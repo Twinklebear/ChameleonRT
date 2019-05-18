@@ -813,7 +813,7 @@ void TriangleMesh::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList
 void TriangleMesh::enqueue_compaction(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list) {
 	uint64_t *map = static_cast<uint64_t*>(post_build_info_readback.map());
 	const uint64_t compacted_size = align_to(*map, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-	std::cout << "Bottom level AS compacted size would be: " << pretty_print_count(compacted_size) << "b\n";
+	std::cout << "Bottom level AS compacted size will be: " << pretty_print_count(compacted_size) << "b\n";
 	post_build_info_readback.unmap();
 
 	if (build_flags & D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION) {
