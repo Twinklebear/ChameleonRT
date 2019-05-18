@@ -2,6 +2,8 @@
 #include <optix.h>
 #include <optix_math.h>
 
+#define M_1_PI 0.318309886183790671538
+
 typedef unsigned long long uint64_t;
 typedef unsigned int uint32_t;
 
@@ -105,6 +107,7 @@ __device__ void ortho_basis(float3 &v_x, float3 &v_y, const float3 &n) {
 RT_PROGRAM void perspective_camera() {
 	const int PRIMARY_RAY = 0;
 	const int OCCLUSION_RAY = 1;
+	const int MAX_PATH_DEPTH = 5;
 
 	const ViewParams view = view_params[0];
 	PCGRand rng = get_rng(view.frame_id);
@@ -112,19 +115,42 @@ RT_PROGRAM void perspective_camera() {
 	const float3 ray_dir = normalize(d.x * make_float3(view.cam_du)
 			+ d.y * make_float3(view.cam_dv) + make_float3(view.cam_dir_top_left));
 
-	optix::Ray ray(make_float3(view.cam_pos), ray_dir, PRIMARY_RAY, 0.0001);
+	optix::Ray ray(make_float3(view.cam_pos), ray_dir, PRIMARY_RAY, 0.0);
 
-	RayPayload payload = make_ray_payload();
-	rtTrace(scene, ray, payload, RT_VISIBILITY_ALL,
-			RTrayflags(RT_RAY_FLAG_DISABLE_ANYHIT));
+	const float3 light_emission = make_float3(1.0);
+	int bounce = 0;
+	float3 illum = make_float3(0.0);
+	float3 path_throughput = make_float3(1.0);
+	do {
+		RayPayload payload = make_ray_payload();
+		rtTrace(scene, ray, payload, RT_VISIBILITY_ALL,
+				RTrayflags(RT_RAY_FLAG_DISABLE_ANYHIT));
 
-	if (payload.color_dist.w > 0) {
+		if (payload.color_dist.w <= 0) {
+			break;
+		}
+
 		const float3 hit_p = ray.origin + payload.color_dist.w * ray.direction;
 		float3 v_x, v_y;
 		float3 v_z = make_float3(payload.normal_hit);
 		ortho_basis(v_x, v_y, v_z);
 
+		const float3 bsdf = make_float3(payload.color_dist) * M_1_PI;
+
+		// Direct light sampling.
+		const float3 w_o = -ray.direction;
+		const float3 light_dir = normalize(make_float3(-0.5, 0.8, 0.5));
+
+		optix::Ray shadow_ray(hit_p, light_dir, OCCLUSION_RAY, 0.0001);
+		RayPayload shadow_payload = make_ray_payload();
+		rtTrace(scene, shadow_ray, shadow_payload, RT_VISIBILITY_ALL,
+				RTrayflags(RT_RAY_FLAG_TERMINATE_ON_FIRST_HIT | RT_RAY_FLAG_DISABLE_ANYHIT));
+		if (shadow_payload.normal_hit.w == 0.f) {
+			illum += path_throughput * bsdf * light_emission * abs(dot(light_dir, v_z));
+		}
+
 		// Sample the hemisphere
+		// TODO: Cosine weighted hemisphere sampling
 		const float theta = sqrt(pcg32_randomf(rng));
 		const float phi = 2.0f * CUDART_PI_F * pcg32_randomf(rng);
 
@@ -132,22 +158,35 @@ RT_PROGRAM void perspective_camera() {
 		const float y = sin(phi) * theta;
 		const float z = sqrt(1.0 - theta * theta);
 
-		float3 ao_dir;
-		ao_dir.x = x * v_x.x + y * v_y.x + z * v_z.x;
-		ao_dir.y = x * v_x.y + y * v_y.y + z * v_z.y;
-		ao_dir.z = x * v_x.z + y * v_y.z + z * v_z.z;
+		float3 w_i;
+		w_i.x = x * v_x.x + y * v_y.x + z * v_z.x;
+		w_i.y = x * v_x.y + y * v_y.y + z * v_z.y;
+		w_i.z = x * v_x.z + y * v_y.z + z * v_z.z;
 
-		optix::Ray ao_ray(hit_p, ao_dir, OCCLUSION_RAY, 0.0001);
-		RayPayload ao_payload = make_ray_payload();
-		rtTrace(scene, ao_ray, ao_payload, RT_VISIBILITY_ALL,
-				RTrayflags(RT_RAY_FLAG_TERMINATE_ON_FIRST_HIT));
-		if (ao_payload.normal_hit.w != 0.f) {
-			payload.color_dist = make_float4(0.f);
+		// Update path throughput and continue the ray
+		// TODO: This is just a hard-coded Lambertian BRDF,
+		// using the object's normal color as its albedo
+		float pdf = abs(dot(w_i, v_z)) * M_1_PI;
+		if (pdf == 0.0) {
+			break;
 		}
-	}
-	// TODO: Math operations for the built in floatN types
+		// Note: same as just multiplying my M_PI b/c the cancellation,
+		// but left like this b/c I'll swap to Disney BRDF soon-ish
+		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
+		if (path_throughput.x == 0 && path_throughput.y == 0 && path_throughput.z == 0) {
+			break;
+		}
 
-	const float4 accum_color = (payload.color_dist + view.frame_id * accum_buffer[pixel]) / (view.frame_id + 1);
+		// Update ray
+		ray.origin = hit_p;
+		ray.direction = w_i;
+		ray.tmin = 0.0001;
+		ray.tmax = 1e20f;
+
+		++bounce;
+	} while (bounce < MAX_PATH_DEPTH);
+
+	const float4 accum_color = (make_float4(illum, 1.0) + view.frame_id * accum_buffer[pixel]) / (view.frame_id + 1);
 	accum_buffer[pixel] = accum_color;
 
 	framebuffer[pixel] = make_uchar4(linear_to_srgb(accum_color.x) * 255.f,
@@ -163,8 +202,7 @@ RT_PROGRAM void closest_hit() {
 	const float3 v1 = vertex_buffer[indices.y];
 	const float3 v2 = vertex_buffer[indices.z];
 	const float3 normal = normalize(cross(v1 - v0, v2 - v0));
-	const float3 color = (normal + make_float3(1.f)) * 0.5f;
-	ray_payload.color_dist = make_float4(color.x, color.y, color.z, t_hit);
+	ray_payload.color_dist = make_float4(0.9, 0.9, 0.9, t_hit);
 	ray_payload.normal_hit = make_float4(normal, 1.f);
 }
 
