@@ -121,21 +121,14 @@ void RayGen() {
 
 		const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
 		float3 v_x, v_y;
-		float3 v_z = normalize(payload.normal.xyz);
+		float3 v_z = payload.normal.xyz;
 		ortho_basis(v_x, v_y, v_z);
 
-		payload.color_dist.rgb = float3(0.9, 0.9, 0.9);
 		const float3 bsdf = payload.color_dist.rgb * M_1_PI;
 
 		// Direct light sampling.
-		// Note: we just treat the camera position as being the location of a point light
 		const float3 w_o = -ray.Direction;
-
-		//float3 light_dir = cam_pos.xyz - hit_p;
-		//float light_dist = length(light_dir);
-		float3 light_dir = float3(-0.5, 0.8, 0.5);
-		//float light_dist = 1.0;
-		light_dir = normalize(light_dir);
+		const float3 light_dir = normalize(float3(-0.5, 0.8, 0.5));
 
 		OcclusionHitInfo shadow_hit;
 		RayDesc shadow_ray;
@@ -216,8 +209,7 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 	float3 vb = vertices[idx.y];
 	float3 vc = vertices[idx.z];
 	float3 n = normalize(cross(vb - va, vc - va));
-	float3 c = (n + float3(1, 1, 1)) * 0.5;
-	payload.color_dist = float4(c, RayTCurrent());
+	payload.color_dist = float4(0.9, 0.9, 0.9, RayTCurrent());
 	payload.normal = float4(n, 0);
 }
 
