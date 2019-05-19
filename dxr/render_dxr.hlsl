@@ -374,7 +374,7 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 v_x, in const float3 v_y, inout PCGRand rng,
 	out float3 w_i, out float pdf)
 {
-	int component = pcg32_randomf(rng) * 3.f;
+	int component = pcg32_random(rng) % 3;
 	float2 samples = float2(pcg32_randomf(rng), pcg32_randomf(rng));
 	float3 w_h;
 	if (component == 0) {
