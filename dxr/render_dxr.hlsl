@@ -117,6 +117,28 @@ bool same_hemisphere(in const float3 w_o, in const float3 w_i, in const float3 n
 	return dot(w_o, n) * dot(w_i, n) > 0.f;
 }
 
+// Sample the hemisphere using a cosine weighted distribution,
+// returns a vector in a hemisphere oriented about (0, 0, 1)
+float3 cos_sample_hemisphere(float u, float v) {
+	float2 s = float2(2.f * u - 1.f, 2.f * v - 1.f);
+	float2 d;
+	float radius = 0;
+	float theta = 0;
+    if (s.x == 0.f && s.y == 0.f) {
+        d = s;
+    } else {
+		if (abs(u) > v) {
+			radius = s.x;
+			theta  = M_PI / 4.f * (u / v);
+		} else {
+			radius = s.y;
+			theta  = M_PI / 2.f - M_PI / 4.f * (u / v);
+		}
+	}
+	d = radius * float2(cos(theta), sin(theta));
+	return float3(d.x, d.y, sqrt(max(0.f, 1.f - d.x * d.x - d.y * d.y)));
+}
+
 float luminance(in const float3 c) {
 	// I wonder why they use this approximate luminance rather than the equation on wikipedia?
 	return 0.3f * c.r + 0.6f * c.g + 0.1f * c.b;
@@ -298,7 +320,7 @@ void RayGen() {
 	mat.base_color = 0.9;
 	mat.metallic = 0.0;
 	mat.specular = 0.0;
-	mat.roughness = 0.2;
+	mat.roughness = 0.4;
 	mat.specular_tint = 0;
 	mat.anisotropy = 0;
 	mat.sheen = 0;
@@ -352,25 +374,18 @@ void RayGen() {
 		}
 
 		// Sample the hemisphere to compute the outgoing direction
-		// TODO: Cosine weighted hemisphere sampling
-		const float theta = sqrt(pcg32_randomf(rng));
-		const float phi = 2.0f * M_PI * pcg32_randomf(rng);
-
-		const float x = cos(phi) * theta;
-		const float y = sin(phi) * theta;
-		const float z = sqrt(1.0 - theta * theta);
+		const float3 hemi_dir = normalize(cos_sample_hemisphere(pcg32_randomf(rng), pcg32_randomf(rng)));
 
 		float3 w_i;
-		w_i.x = x * v_x.x + y * v_y.x + z * v_z.x;
-		w_i.y = x * v_x.y + y * v_y.y + z * v_z.y;
-		w_i.z = x * v_x.z + y * v_y.z + z * v_z.z;
+		w_i.x = hemi_dir.x * v_x.x + hemi_dir.y * v_y.x + hemi_dir.z * v_z.x;
+		w_i.y = hemi_dir.x * v_x.y + hemi_dir.y * v_y.y + hemi_dir.z * v_z.y;
+		w_i.z = hemi_dir.x * v_x.z + hemi_dir.y * v_y.z + hemi_dir.z * v_z.z;
 		w_i = normalize(w_i);
 		w_h = normalize(w_o + w_i);
 
 		// Update path throughput and continue the ray
-		// TODO NOTE: The extra M_PI term is here b/c the hemisphere sampling
-		// is not a cosine weighted distribution
-		float pdf = disney_pdf(mat, v_z, w_o, w_i, w_h) * M_PI;
+		// TODO WILL: check that this weighting is right for the cos. weighted hemisphere sampling
+		float pdf = disney_pdf(mat, v_z, w_o, w_i, w_h) / (abs(dot(w_i, v_z)) * M_1_PI);
 		if (pdf < 0.0001) {
 			break;
 		}
