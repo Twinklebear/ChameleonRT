@@ -17,12 +17,6 @@ struct Attributes {
 	float2 bary;
 };
 
-// http://www.pcg-random.org/download.html
-struct PCGRand {
-	uint64_t state;
-	// Just use stream 1
-};
-
 // Raytracing output texture, accessed as a UAV
 RWTexture2D<float4> output : register(u0);
 
@@ -40,6 +34,12 @@ cbuffer ViewParams : register(b0) {
 	float4 cam_dir_top_left;
 	uint32_t frame_id;
 }
+
+// http://www.pcg-random.org/download.html
+struct PCGRand {
+	uint64_t state;
+	// Just use stream 1
+};
 
 uint32_t pcg32_random(inout PCGRand rng) {
 	uint64_t oldstate = rng.state;
@@ -151,10 +151,7 @@ float3 spherical_dir(float sin_theta, float cos_theta, float phi) {
 }
 
 float luminance(in const float3 c) {
-	// I wonder why they use this approximate luminance rather than the equation on wikipedia?
-	return 0.3f * c.r + 0.6f * c.g + 0.1f * c.b;
-	// Wikipedia luminance:
-	//return 0.2126f * mat.base_color.r + 0.7152f * mat.base_color.g + 0.0722f * mat.base_color.b;
+	return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
 }
 
 float schlick_weight(float cos_theta) {
@@ -366,6 +363,7 @@ float disney_pdf(in const DisneyMaterial mat, in const float3 n,
 	}
 	float clear_coat = gtr_1_pdf(w_o, w_h, w_i, n, clearcoat_alpha);
 	// TODO: Sampling the sheen component? Weight? Same as Lambertian?
+	// So would this be (2.f * diffuse ... ) / 4.f?
 	return (diffuse + microfacet + clear_coat) / 3.f;
 }
 
