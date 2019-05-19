@@ -113,6 +113,12 @@ struct DisneyMaterial {
 	float clearcoat_gloss;
 };
 
+cbuffer MaterialParams : register(b1) {
+	float4 basecolor_metallic;
+	float4 spec_rough_spectint_aniso;
+	float4 sheen_sheentint_clearc_ccgloss;
+}
+
 bool same_hemisphere(in const float3 w_o, in const float3 w_i, in const float3 n) {
 	return dot(w_o, n) * dot(w_i, n) > 0.f;
 }
@@ -237,8 +243,7 @@ float3 disney_microfacet_isotropic(in const DisneyMaterial mat, in const float3 
 {
 	float lum = luminance(mat.base_color);
 	float3 tint = lum > 0.f ? mat.base_color / lum : float3(1, 1, 1);
-	//float3 spec = lerp(mat.specular * 0.08 * lerp(float3(1, 1, 1), tint, mat.specular_tint), mat.base_color, mat.metallic);
-	float3 spec = mat.base_color;
+	float3 spec = lerp(mat.specular * 0.08 * lerp(float3(1, 1, 1), tint, mat.specular_tint), mat.base_color, mat.metallic);
 
 	float alpha = max(0.001, mat.roughness * mat.roughness);
 	float d = gtr_2(dot(n, w_h), alpha);
@@ -286,7 +291,7 @@ float disney_pdf(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 w_i, in const float3 w_h)
 {
 	if (!same_hemisphere(w_o, w_i, n)) {
-		return float3(0, 0, 0);
+		return 0;
 	}
 
 	float alpha = max(0.001, mat.roughness * mat.roughness);
@@ -317,16 +322,16 @@ void RayGen() {
 	ray.TMax = 1e20f;
 
 	DisneyMaterial mat;
-	mat.base_color = 0.9;
-	mat.metallic = 0.0;
-	mat.specular = 0.0;
-	mat.roughness = 0.4;
-	mat.specular_tint = 0;
-	mat.anisotropy = 0;
-	mat.sheen = 0;
-	mat.sheen_tint = 0;
-	mat.clearcoat = 0;
-	mat.clearcoat_gloss = 0;
+	mat.base_color = basecolor_metallic.rgb;
+	mat.metallic = basecolor_metallic.a;
+	mat.specular = spec_rough_spectint_aniso.r;
+	mat.roughness = spec_rough_spectint_aniso.g;
+	mat.specular_tint = spec_rough_spectint_aniso.b;
+	mat.anisotropy = spec_rough_spectint_aniso.a;
+	mat.sheen = sheen_sheentint_clearc_ccgloss.r;
+	mat.sheen_tint = sheen_sheentint_clearc_ccgloss.g;
+	mat.clearcoat = sheen_sheentint_clearc_ccgloss.b;
+	mat.clearcoat_gloss = sheen_sheentint_clearc_ccgloss.a;
 
 	const float3 light_emission = float3(1.0, 1.0, 1.0);
 	int bounce = 0;
@@ -350,7 +355,6 @@ void RayGen() {
 		}
 		ortho_basis(v_x, v_y, v_z);
 
-		//const float3 bsdf = payload.color_dist.rgb * M_1_PI;
 		const float roughness = 0.f;
 
 		// Direct light sampling.
@@ -374,6 +378,8 @@ void RayGen() {
 		}
 
 		// Sample the hemisphere to compute the outgoing direction
+		// TODO: We need to use the BRDF to do the sampling, otherwise for super smooth
+		// materials we do a terrible job
 		const float3 hemi_dir = normalize(cos_sample_hemisphere(pcg32_randomf(rng), pcg32_randomf(rng)));
 
 		float3 w_i;

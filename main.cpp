@@ -225,11 +225,14 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	glClearColor(0.0, 0.0, 0.0, 0.0);
 	glDisable(GL_DEPTH_TEST);
 
+	DisneyMaterial material;
+
 	size_t frame_id = 0;
 	double avg_rays_per_sec = 0.f;
 	glm::vec2 prev_mouse(-2.f);
 	bool done = false;
 	bool camera_changed = true;
+	bool material_changed = true;
 	while (!done) {
 		// Poll and handle events (inputs, window resize, etc.)
 		// You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to
@@ -294,6 +297,11 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 			}
 		}
 
+		if (material_changed) {
+			renderer->set_material(material);
+			material_changed = false;
+		}
+
 		const double rays_per_sec =
 			renderer->render(camera.eye(), camera.dir(), camera.up(), 65.f, camera_changed);
 
@@ -306,6 +314,18 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 				1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::Text("# Triangles: %s", num_tris.c_str());
 		ImGui::Text("RT Backend: %s", rt_backend.c_str());
+
+		ImGui::Text("Disney Material Params:");
+		material_changed = ImGui::ColorPicker3("Base Color", &material.base_color.x);
+		material_changed |= ImGui::SliderFloat("Metallic", &material.metallic, 0.f, 1.f);
+		material_changed |= ImGui::SliderFloat("Specular", &material.specular, 0.f, 1.f);
+		material_changed |= ImGui::SliderFloat("Roughness", &material.roughness, 0.f, 1.f);
+		material_changed |= ImGui::SliderFloat("Specular Tint", &material.specular_tint, 0.f, 1.f);
+		material_changed |= ImGui::SliderFloat("Anisotropy", &material.anisotropy, 0.f, 1.f);
+		material_changed |= ImGui::SliderFloat("Sheen", &material.sheen, 0.f, 1.f);
+		material_changed |= ImGui::SliderFloat("Sheen Tint", &material.sheen_tint, 0.f, 1.f);
+		material_changed |= ImGui::SliderFloat("Clearcoat", &material.clearcoat, 0.f, 1.f);
+		material_changed |= ImGui::SliderFloat("Clearcoat Gloss", &material.clearcoat_gloss, 0.f, 1.f);
 
 		// We don't instrument inside OSPRay so we don't show these statistics for it
 		if (rays_per_sec > 0.0) {

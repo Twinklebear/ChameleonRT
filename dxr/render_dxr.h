@@ -14,7 +14,7 @@ struct RenderDXR : RenderBackend {
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
 	
 	Buffer vertex_buf, index_buf, view_param_buf, img_readback_buf,
-		bottom_level_as, instance_buf;
+		bottom_level_as, instance_buf, material_param_buf;
 
 	Texture2D render_target, accum_buffer;
 
@@ -39,6 +39,7 @@ struct RenderDXR : RenderBackend {
 	void initialize(const int fb_width, const int fb_height) override;
 	void set_mesh(const std::vector<float> &verts,
 			const std::vector<uint32_t> &indices) override;
+	void set_material(const DisneyMaterial &m) override;
 	double render(const glm::vec3 &pos, const glm::vec3 &dir,
 			const glm::vec3 &up, const float fovy, const bool camera_changed) override;
 

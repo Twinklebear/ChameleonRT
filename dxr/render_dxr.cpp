@@ -62,6 +62,12 @@ RenderDXR::RenderDXR() {
 	view_param_buf = Buffer::upload(device.Get(),
 		align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
+
+	// The material is packed into 3 float4
+	material_param_buf = Buffer::upload(device.Get(),
+		align_to(sizeof(DisneyMaterial), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+		D3D12_RESOURCE_STATE_GENERIC_READ);
+
 	build_raytracing_pipeline();
 	build_shader_resource_heap();
 }
@@ -302,7 +308,7 @@ void RenderDXR::build_raytracing_pipeline() {
 	RootSignature raygen_root_sig = RootSignatureBuilder::local()
 		.add_uav_range(2, 0, 0, 0)
 		.add_srv_range(1, 0, 0, 2)
-		.add_cbv_range(1, 0, 0, 3)
+		.add_cbv_range(2, 0, 0, 3)
 		.create(device.Get());
 
 	// Create the root signature for our closest hit function
@@ -328,7 +334,7 @@ void RenderDXR::build_shader_resource_heap() {
 	// The resource heap has the pointers/views things to our output image buffer
 	// and the top level acceleration structure
 	D3D12_DESCRIPTOR_HEAP_DESC heap_desc = { 0 };
-	heap_desc.NumDescriptors = 4;
+	heap_desc.NumDescriptors = 5;
 	heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	CHECK_ERR(device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&raygen_shader_desc_heap)));
@@ -359,6 +365,12 @@ void RenderDXR::build_shader_binding_table() {
 	}
 
 	rt_pipeline.unmap_shader_table();
+}
+
+void RenderDXR::set_material(const DisneyMaterial &m) {
+	std::memcpy(material_param_buf.map(), &m, sizeof(DisneyMaterial));
+	material_param_buf.unmap();
+	frame_id = 0;
 }
 
 void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -419,7 +431,12 @@ void RenderDXR::update_descriptor_heap() {
 	cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
 	cbv_desc.SizeInBytes = view_param_buf.size();
 	device->CreateConstantBufferView(&cbv_desc, heap_handle);
+
+	// Write the material params constants buffer
 	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	cbv_desc.BufferLocation = material_param_buf->GetGPUVirtualAddress();
+	cbv_desc.SizeInBytes = material_param_buf.size();
+	device->CreateConstantBufferView(&cbv_desc, heap_handle);
 }
 
 void RenderDXR::sync_gpu() {
