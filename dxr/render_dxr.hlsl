@@ -409,11 +409,7 @@ void RayGen() {
 		// materials we do a terrible job
 		const float3 hemi_dir = normalize(cos_sample_hemisphere(pcg32_randomf(rng), pcg32_randomf(rng)));
 
-		float3 w_i;
-		w_i.x = hemi_dir.x * v_x.x + hemi_dir.y * v_y.x + hemi_dir.z * v_z.x;
-		w_i.y = hemi_dir.x * v_x.y + hemi_dir.y * v_y.y + hemi_dir.z * v_z.y;
-		w_i.z = hemi_dir.x * v_x.z + hemi_dir.y * v_y.z + hemi_dir.z * v_z.z;
-		w_i = normalize(w_i);
+		float3 w_i = normalize(hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * v_z);
 		w_h = normalize(w_o + w_i);
 
 		// Update path throughput and continue the ray
