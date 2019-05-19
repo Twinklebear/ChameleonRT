@@ -385,6 +385,8 @@ void RayGen() {
 
 		// Update path throughput and continue the ray
 		// TODO WILL: check that this weighting is right for the cos. weighted hemisphere sampling
+		// It may be the geom term for the cos. is not needed down there, but with both that
+		// and PI out I get pretty bad fireflies for more shiny objects
 		float pdf = disney_pdf(mat, v_z, w_o, w_i, w_h) / (abs(dot(w_i, v_z)) * M_1_PI);
 		if (pdf < 0.0001) {
 			break;
