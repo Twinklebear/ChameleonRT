@@ -88,6 +88,194 @@ void ortho_basis(out float3 v_x, out float3 v_y, const float3 n) {
 	v_y = normalize(cross(n, v_x));
 }
 
+/* Disney BRDF functions, for additional details and examples see:
+ * - https://blog.selfshadow.com/publications/s2012-shading-course/burley/s2012_pbs_disney_brdf_notes_v3.pdf
+ * - https://www.shadertoy.com/view/XdyyDd
+ * - https://github.com/wdas/brdf/blob/master/src/brdfs/disney.brdf
+ * - https://schuttejoe.github.io/post/disneybsdf/
+ *
+ * Variable naming conventions with the Burley course notes:
+ * V -> w_o
+ * L -> w_i
+ * H -> w_h
+ */
+
+struct DisneyMaterial {
+	float3 base_color;
+	float metallic;
+	float specular;
+	float roughness;
+	float specular_tint;
+	float anisotropy;
+	float sheen;
+	float sheen_tint;
+	float clearcoat;
+	float clearcoat_gloss;
+};
+
+bool same_hemisphere(in const float3 w_o, in const float3 w_i, in const float3 n) {
+	return dot(w_o, n) * dot(w_i, n) > 0.f;
+}
+
+float luminance(in const float3 c) {
+	// I wonder why they use this approximate luminance rather than the equation on wikipedia?
+	return 0.3f * c.r + 0.6f * c.g + 0.1f * c.b;
+	// Wikipedia luminance:
+	//return 0.2126f * mat.base_color.r + 0.7152f * mat.base_color.g + 0.0722f * mat.base_color.b;
+}
+
+float schlick_weight(float cos_theta) {
+	return pow(saturate(1.f - cos_theta), 5.f);
+}
+
+// D_GTR1: Generalized Trowbridge-Reitz with gamma=1
+// Burley notes eq. 4
+float gtr_1(float cos_theta_h, float alpha) {
+	if (alpha >= 1.f) {
+		return M_1_PI;
+	}
+	float alpha_sqr = alpha * alpha;
+	return M_1_PI * (alpha_sqr - 1.f) / (log(alpha_sqr) * (1.f + (alpha_sqr - 1.f) * cos_theta_h * cos_theta_h));
+}
+
+// D_GTR2: Generalized Trowbridge-Reitz with gamma=2
+// Burley notes eq. 8
+float gtr_2(float cos_theta_h, float alpha) {
+	float alpha_sqr = alpha * alpha;
+	return M_1_PI * alpha_sqr / pow(1.f + (alpha_sqr - 1.f) * cos_theta_h * cos_theta_h, 2.f);
+}
+
+// D_GTR2 Anisotropic: Anisotropic generalized Trowbridge-Reitz with gamma=2
+// Burley notes eq. 13
+float gtr_2_aniso(float h_dot_n, float h_dot_x, float h_dot_y, float2 alpha) {
+	return M_1_PI * 1.f / (alpha.x * alpha.y)
+		* 1.f / pow(pow(h_dot_x / alpha.x, 2.f) + pow(h_dot_y / alpha.y, 2.f) + h_dot_n * h_dot_n, 2.f);
+}
+
+float smith_shadowing_ggx(float n_dot_o, float alpha_g) {
+	float a = alpha_g * alpha_g;
+	float b = n_dot_o * n_dot_o;
+	return 1.f / (n_dot_o + sqrt(a + b - a * b));
+}
+
+float smith_shadowing_ggx_aniso(float n_dot_o, float v_dot_x, float v_dot_y, float2 alpha) {
+	return 1.f / (n_dot_o + sqrt(pow(v_dot_x * alpha.x, 2.f) + pow(v_dot_y * alpha.y, 2.f) + pow(n_dot_o, 2.f)));
+}
+
+float lambertian_pdf(in const float3 w_i, in const float3 n) {
+	float d = dot(w_i, n);
+	if (d > 0.f) {
+		return d * M_1_PI;
+	}
+	return 0.f;
+}
+
+float gtr_1_pdf(in const float3 w_o, in const float3 w_h, in const float3 w_i, in const float3 n, float alpha) {
+	if (!same_hemisphere(w_o, w_i, n)) {
+		return 0.f;
+	}
+	float cos_theta_h = dot(n, w_h);
+	float d = gtr_1(cos_theta_h, alpha);
+	return d * cos_theta_h / (4.f * dot(w_o, w_h));
+}
+
+float gtr_2_pdf(in const float3 w_o, in const float3 w_h, in const float3 w_i, in const float3 n, float alpha) {
+	if (!same_hemisphere(w_o, w_i, n)) {
+		return 0.f;
+	}
+	float cos_theta_h = dot(n, w_h);
+	float d = gtr_2(cos_theta_h, alpha);
+	return d * cos_theta_h / (4.f * dot(w_o, w_h));
+}
+
+float gtr_2_aniso_pdf(in const float3 w_o, in const float3 w_h, in const float3 w_i, in const float3 n,
+	in const float3 v_x, in const float3 v_y, const float2 alpha) 
+{
+	if (!same_hemisphere(w_o, w_i, n)) {
+		return 0.f;
+	}
+	float cos_theta_h = dot(n, w_h);
+	float d = gtr_2_aniso(cos_theta_h, dot(w_h, v_x), dot(w_h, v_y), alpha);
+	return d * cos_theta_h / (4.f * dot(w_o, w_h));
+}
+
+float3 disney_diffuse(in const DisneyMaterial mat, in const float3 n,
+	in const float3 w_o, in const float3 w_i, in const float3 w_h)
+{
+	float n_dot_o = abs(dot(w_o, n));
+	float n_dot_i = abs(dot(w_i, n));
+	float fd90 = 0.5f + 2.f * mat.roughness * pow(dot(w_i, w_h), 2.0);
+	float fi = schlick_weight(n_dot_i);
+	float fo = schlick_weight(n_dot_o);
+	return mat.base_color * M_1_PI * lerp(1.f, fd90, fi) * lerp(1.f, fd90, fo);
+}
+
+float3 disney_microfacet_isotropic(in const DisneyMaterial mat, in const float3 n,
+	in const float3 w_o, in const float3 w_i, in const float3 w_h)
+{
+	float lum = luminance(mat.base_color);
+	float3 tint = lum > 0.f ? mat.base_color / lum : float3(1, 1, 1);
+	//float3 spec = lerp(mat.specular * 0.08 * lerp(float3(1, 1, 1), tint, mat.specular_tint), mat.base_color, mat.metallic);
+	float3 spec = mat.base_color;
+
+	float alpha = max(0.001, mat.roughness * mat.roughness);
+	float d = gtr_2(dot(n, w_h), alpha);
+	float3 f = lerp(spec, float3(1, 1, 1), schlick_weight(dot(w_i, w_h)));
+	float g = smith_shadowing_ggx(dot(n, w_i), alpha) * smith_shadowing_ggx(dot(n, w_o), alpha);
+	return d * f * g;
+}
+
+// TODO: add in the anisotropic microfacet, similar to above
+
+float disney_clear_coat(in const DisneyMaterial mat, in const float3 n,
+	in const float3 w_o, in const float3 w_i, in const float3 w_h)
+{
+	float d = gtr_1(dot(n, w_h), lerp(0.1f, 0.001f, mat.clearcoat_gloss));
+	float f = lerp(0.04f, 1.f, schlick_weight(dot(w_i, w_h)));
+	float g = smith_shadowing_ggx(dot(n, w_i), 0.25f) * smith_shadowing_ggx(dot(n, w_o), 0.25f);
+	return 0.25 * mat.clearcoat * d * f * g;
+}
+
+float3 disney_sheen(in const DisneyMaterial mat, in const float3 n,
+	in const float3 w_o, in const float3 w_i, in const float3 w_h)
+{
+	float lum = luminance(mat.base_color);
+	float3 tint = lum > 0.f ? mat.base_color / lum : float3(1, 1, 1);
+	float3 sheen_color = lerp(float3(1, 1, 1), tint, mat.sheen_tint);
+	float f = schlick_weight(dot(w_i, w_h));
+	return f * mat.sheen * sheen_color;
+}
+
+float3 disney_brdf(in const DisneyMaterial mat, in const float3 n,
+	in const float3 w_o, in const float3 w_i, in const float3 w_h)
+{
+	if (!same_hemisphere(w_o, w_i, n)) {
+		return float3(0, 0, 0);
+	}
+
+	float3 diffuse = disney_diffuse(mat, n, w_o, w_i, w_h);
+	float3 gloss = disney_microfacet_isotropic(mat, n, w_o, w_i, w_h);
+	float coat = disney_clear_coat(mat, n, w_o, w_i, w_h);
+	float3 sheen = disney_sheen(mat, n, w_o, w_i, w_h);
+	return (diffuse + sheen) * (1.f - mat.metallic) + gloss + coat;
+}
+
+float disney_pdf(in const DisneyMaterial mat, in const float3 n,
+	in const float3 w_o, in const float3 w_i, in const float3 w_h)
+{
+	if (!same_hemisphere(w_o, w_i, n)) {
+		return float3(0, 0, 0);
+	}
+
+	float alpha = max(0.001, mat.roughness * mat.roughness);
+	float clearcoat_alpha = lerp(0.1f, 0.001f, mat.clearcoat_gloss);
+
+	float diffuse = lambertian_pdf(w_i, n);
+	float microfacet = gtr_2_pdf(w_o, w_h, w_i, n, alpha);
+	float clear_coat = gtr_1_pdf(w_o, w_h, w_i, n, clearcoat_alpha);
+	return (diffuse + microfacet + clear_coat) / 3.f;
+}
+
 [shader("raygeneration")] 
 void RayGen() {
 	const int PRIMARY_RAY = 0;
@@ -106,6 +294,18 @@ void RayGen() {
 	ray.TMin = 0;
 	ray.TMax = 1e20f;
 
+	DisneyMaterial mat;
+	mat.base_color = 0.9;
+	mat.metallic = 0.0;
+	mat.specular = 0.0;
+	mat.roughness = 0.2;
+	mat.specular_tint = 0;
+	mat.anisotropy = 0;
+	mat.sheen = 0;
+	mat.sheen_tint = 0;
+	mat.clearcoat = 0;
+	mat.clearcoat_gloss = 0;
+
 	const float3 light_emission = float3(1.0, 1.0, 1.0);
 	int bounce = 0;
 	float3 illum = float3(0, 0, 0);
@@ -119,16 +319,23 @@ void RayGen() {
 			break;
 		}
 
+		const float3 w_o = -ray.Direction;
 		const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
 		float3 v_x, v_y;
 		float3 v_z = payload.normal.xyz;
+		if (dot(v_z, w_o) < 0.0) {
+			v_z = -v_z;
+		}
 		ortho_basis(v_x, v_y, v_z);
 
-		const float3 bsdf = payload.color_dist.rgb * M_1_PI;
+		//const float3 bsdf = payload.color_dist.rgb * M_1_PI;
+		const float roughness = 0.f;
 
 		// Direct light sampling.
-		const float3 w_o = -ray.Direction;
+		// TODO: should sample the microfacet distribution
 		const float3 light_dir = normalize(float3(-0.5, 0.8, 0.5));
+		float3 w_h = normalize(w_o + light_dir);
+		float3 bsdf = disney_brdf(mat, v_z, w_o, light_dir, w_h);
 
 		OcclusionHitInfo shadow_hit;
 		RayDesc shadow_ray;
@@ -158,18 +365,20 @@ void RayGen() {
 		w_i.y = x * v_x.y + y * v_y.y + z * v_z.y;
 		w_i.z = x * v_x.z + y * v_y.z + z * v_z.z;
 		w_i = normalize(w_i);
+		w_h = normalize(w_o + w_i);
 
 		// Update path throughput and continue the ray
-		// TODO: This is just a hard-coded Lambertian BRDF,
-		// using the object's normal color as its albedo
-		float pdf = abs(dot(w_i, v_z)) * M_1_PI;
-		if (pdf == 0.0) {
+		// TODO NOTE: The extra M_PI term is here b/c the hemisphere sampling
+		// is not a cosine weighted distribution
+		float pdf = disney_pdf(mat, v_z, w_o, w_i, w_h) * M_PI;
+		if (pdf < 0.0001) {
 			break;
 		}
+		bsdf = disney_brdf(mat, v_z, w_o, w_i, w_h);
 		// Note: same as just multiplying my M_PI b/c the cancellation,
 		// but left like this b/c I'll swap to Disney BRDF soon-ish
 		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
-		if (path_throughput.x == 0 && path_throughput.y == 0 && path_throughput.z == 0) {
+		if (path_throughput.x < 0.0001 && path_throughput.y < 0.0001 && path_throughput.z < 0.0001) {
 			break;
 		}
 
