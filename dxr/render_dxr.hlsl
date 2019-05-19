@@ -1,5 +1,6 @@
 #define M_PI 3.14159265358979323846
 #define M_1_PI 0.318309886183790671538
+#define EPSILON 0.0001
 
 struct HitInfo {
 	float4 color_dist;
@@ -145,6 +146,10 @@ float3 cos_sample_hemisphere(float2 u) {
 	return float3(d.x, d.y, sqrt(max(0.f, 1.f - d.x * d.x - d.y * d.y)));
 }
 
+float3 spherical_dir(float sin_theta, float cos_theta, float phi) {
+	return float3(sin_theta * cos(phi), sin_theta * sin(phi), cos_theta);
+}
+
 float luminance(in const float3 c) {
 	// I wonder why they use this approximate luminance rather than the equation on wikipedia?
 	return 0.3f * c.r + 0.6f * c.g + 0.1f * c.b;
@@ -190,10 +195,36 @@ float smith_shadowing_ggx_aniso(float n_dot_o, float o_dot_x, float o_dot_y, flo
 	return 1.f / (n_dot_o + sqrt(pow(o_dot_x * alpha.x, 2.f) + pow(o_dot_y * alpha.y, 2.f) + pow(n_dot_o, 2.f)));
 }
 
-// Sample the hemisphere oriented along n and spanned by v_x, v_y using the random samples in s
-float3 sample_lambertian(in const float3 n, in const float3 v_x, in const float3 v_y, in const float2 s) {
+// Sample a reflection direction the hemisphere oriented along n and spanned by v_x, v_y using the random samples in s
+float3 sample_lambertian_dir(in const float3 n, in const float3 v_x, in const float3 v_y, in const float2 s) {
 	const float3 hemi_dir = normalize(cos_sample_hemisphere(s));
-	return normalize(hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n);
+	return hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n;
+}
+
+// Sample the microfacet normal vectors for the various microfacet distributions
+float3 sample_gtr_1_h(in const float3 n, in const float3 v_x, in const float3 v_y, float alpha, in const float2 s) {
+	float phi_h = 2.f * M_PI * s.x;
+	float alpha_sqr = alpha * alpha;
+	float cos_theta_h_sqr = (1.f - pow(alpha_sqr, 1.f - s.y)) / (1.f - alpha_sqr);
+	float cos_theta_h = sqrt(cos_theta_h_sqr);
+	float sin_theta_h = 1.f - cos_theta_h_sqr;
+	float3 hemi_dir = normalize(spherical_dir(sin_theta_h, cos_theta_h, phi_h));
+	return hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n;
+}
+
+float3 sample_gtr_2_h(in const float3 n, in const float3 v_x, in const float3 v_y, float alpha, in const float2 s) {
+	float phi_h = 2.f * M_PI * s.x;
+	float cos_theta_h_sqr = (1.f - s.y) / (1.f + (alpha * alpha - 1.f) * s.y);
+	float cos_theta_h = sqrt(cos_theta_h_sqr);
+	float sin_theta_h = 1.f - cos_theta_h_sqr;
+	float3 hemi_dir = normalize(spherical_dir(sin_theta_h, cos_theta_h, phi_h));
+	return hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n;
+}
+
+float3 sample_gtr_2_aniso_h(in const float3 n, in const float3 v_x, in const float3 v_y, in const float2 alpha, in const float2 s) {
+	float x = 2.f * M_PI * s.x;
+	float3 w_h = sqrt(s.y / (1.f - s.y)) * (alpha.x * cos(x) * v_x + alpha.y * sin(x) * v_y) + n;
+	return normalize(w_h);
 }
 
 float lambertian_pdf(in const float3 w_i, in const float3 n) {
@@ -278,7 +309,8 @@ float3 disney_microfacet_anisotropic(in const DisneyMaterial mat, in const float
 float disney_clear_coat(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 w_i, in const float3 w_h)
 {
-	float d = gtr_1(dot(n, w_h), lerp(0.1f, 0.001f, mat.clearcoat_gloss));
+	float alpha = lerp(0.1f, 0.001f, mat.clearcoat_gloss);
+	float d = gtr_1(dot(n, w_h), alpha);
 	float f = lerp(0.04f, 1.f, schlick_weight(dot(w_i, w_h)));
 	float g = smith_shadowing_ggx(dot(n, w_i), 0.25f) * smith_shadowing_ggx(dot(n, w_o), 0.25f);
 	return 0.25 * mat.clearcoat * d * f * g;
@@ -333,11 +365,44 @@ float disney_pdf(in const DisneyMaterial mat, in const float3 n,
 		microfacet = gtr_2_aniso_pdf(w_o, w_h, w_i, n, v_x, v_y, alpha);
 	}
 	float clear_coat = gtr_1_pdf(w_o, w_h, w_i, n, clearcoat_alpha);
-	// TODO: We only need to do the division by 3 when we are actually sampling
-	// a specific material layer to go through. Right now it's essentially always
-	// picking the diffuse layer to sample, so we just weight by that
-	//return (diffuse + microfacet + clear_coat);// / 3.f;
-	return diffuse;
+	// TODO: Sampling the sheen component? Weight? Same as Lambertian?
+	return (diffuse + microfacet + clear_coat) / 3.f;
+}
+
+/* Sample a component of the Disney BRDF, returns the sampled BRDF color,
+ * ray reflection direction (w_i) and sample PDF.
+ */
+float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
+	in const float3 w_o, in const float3 v_x, in const float3 v_y, inout PCGRand rng,
+	out float3 w_i, out float pdf)
+{
+	int component = pcg32_randomf(rng) * 3.f;
+	float2 samples = float2(pcg32_randomf(rng), pcg32_randomf(rng));
+	float3 w_h;
+	if (component == 0) {
+		// Sample diffuse component
+		w_i = sample_lambertian_dir(n, v_x, v_y, samples);
+		w_h = normalize(w_o + w_i);
+	} else if (component == 1) {
+		// Sample microfacet component
+		if (mat.anisotropy == 0.f) {
+			float alpha = max(0.001, mat.roughness * mat.roughness);
+			w_h = sample_gtr_2_h(n, v_x, v_y, alpha, samples);
+		} else {
+			float aspect = sqrt(1.f - mat.anisotropy * 0.9f);
+			float a = mat.roughness * mat.roughness;
+			float2 alpha = float2(max(0.001, a / aspect), max(0.001, a * aspect));
+			w_h = sample_gtr_2_aniso_h(n, v_x, v_y, alpha, samples);
+		}
+		w_i = reflect(-w_o, w_h);
+	} else {
+		// Sample clear coat component
+		float alpha = lerp(0.1f, 0.001f, mat.clearcoat_gloss);
+		w_h = sample_gtr_1_h(n, v_x, v_y, alpha, samples);
+		w_i = reflect(-w_o, w_h);
+	}
+	pdf = disney_pdf(mat, n, w_o, w_i, w_h, v_x, v_y);
+	return disney_brdf(mat, n, w_o, w_i, w_h, v_x, v_y);
 }
 
 [shader("raygeneration")] 
@@ -404,7 +469,7 @@ void RayGen() {
 		RayDesc shadow_ray;
 		shadow_ray.Origin = hit_p;
 		shadow_ray.Direction = light_dir;
-		shadow_ray.TMin = 0.0001;
+		shadow_ray.TMin = EPSILON;
 		shadow_ray.TMax = 1e20f;
 
 		TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
@@ -414,28 +479,21 @@ void RayGen() {
 			illum += path_throughput * bsdf * light_emission * abs(dot(light_dir, v_z));
 		}
 
-		// Sample the hemisphere to compute the outgoing direction
-		// TODO: We need to use the BRDF to do the sampling, otherwise for super smooth
-		// materials we do a terrible job
-		float3 w_i = sample_lambertian(v_z, v_x, v_y, float2(pcg32_randomf(rng), pcg32_randomf(rng)));
-		w_h = normalize(w_o + w_i);
-
-		// Update path throughput and continue the ray
-		float pdf = disney_pdf(mat, v_z, w_o, w_i, w_h, v_x, v_y);
-		if (pdf < 0.0001) {
+		float3 w_i;
+		float pdf;
+		bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
+		if (pdf < EPSILON) {
 			break;
 		}
-
-		bsdf = disney_brdf(mat, v_z, w_o, w_i, w_h, v_x, v_y);
 		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
 
-		if (path_throughput.x < 0.0001 && path_throughput.y < 0.0001 && path_throughput.z < 0.0001) {
+		if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
 			break;
 		}
 
 		ray.Origin = hit_p;
 		ray.Direction = w_i;
-		ray.TMin = 0.0001;
+		ray.TMin = EPSILON;
 		ray.TMax = 1e20f;
 
 		++bounce;
