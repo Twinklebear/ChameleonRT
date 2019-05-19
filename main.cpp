@@ -165,13 +165,12 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	std::vector<uint32_t> indices;
 	for (size_t s = 0; s < shapes.size(); ++s) {
 		const tinyobj::mesh_t &mesh = shapes[s].mesh;
-		std::cout << "Loading shape " << shapes[s].name
-			<< ", has " << shapes[s].mesh.indices.size() / 3 << " triangles\n";
 
 		for (size_t i = 0; i < mesh.indices.size(); ++i) {
 			indices.push_back(mesh.indices[i].vertex_index);
 		}
 	}
+	const std::string num_tris = pretty_print_count(indices.size() / 3);
 
 	std::string rt_backend;
 
@@ -305,6 +304,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		ImGui::Begin("Debug Panel");
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
 				1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+		ImGui::Text("# Triangles: %s", num_tris.c_str());
 		ImGui::Text("RT Backend: %s", rt_backend.c_str());
 
 		// We don't instrument inside OSPRay so we don't show these statistics for it
