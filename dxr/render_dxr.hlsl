@@ -327,7 +327,11 @@ float disney_pdf(in const DisneyMaterial mat, in const float3 n,
 		microfacet = gtr_2_aniso_pdf(w_o, w_h, w_i, n, v_x, v_y, alpha);
 	}
 	float clear_coat = gtr_1_pdf(w_o, w_h, w_i, n, clearcoat_alpha);
-	return (diffuse + microfacet + clear_coat) / 3.f;
+	// TODO: We only need to do the division by 3 when we are actually sampling
+	// a specific material layer to go through. Right now it's essentially always
+	// picking the diffuse layer to sample, so we just weight by that
+	//return (diffuse + microfacet + clear_coat);// / 3.f;
+	return diffuse;
 }
 
 [shader("raygeneration")] 
@@ -413,10 +417,7 @@ void RayGen() {
 		w_h = normalize(w_o + w_i);
 
 		// Update path throughput and continue the ray
-		// TODO WILL: check that this weighting is right for the cos. weighted hemisphere sampling
-		// It may be the geom term for the cos. is not needed down there, but with both that
-		// and PI out I get pretty bad fireflies for more shiny objects
-		float pdf = disney_pdf(mat, v_z, w_o, w_i, w_h, v_x, v_y) * M_PI;
+		float pdf = disney_pdf(mat, v_z, w_o, w_i, w_h, v_x, v_y);
 		if (pdf < 0.0001) {
 			break;
 		}
