@@ -125,20 +125,20 @@ bool same_hemisphere(in const float3 w_o, in const float3 w_i, in const float3 n
 
 // Sample the hemisphere using a cosine weighted distribution,
 // returns a vector in a hemisphere oriented about (0, 0, 1)
-float3 cos_sample_hemisphere(float u, float v) {
-	float2 s = float2(2.f * u - 1.f, 2.f * v - 1.f);
+float3 cos_sample_hemisphere(float2 u) {
+	float2 s = 2.f * u - 1.f;
 	float2 d;
 	float radius = 0;
 	float theta = 0;
     if (s.x == 0.f && s.y == 0.f) {
         d = s;
     } else {
-		if (abs(u) > v) {
+		if (abs(s.x) > abs(s.y)) {
 			radius = s.x;
-			theta  = M_PI / 4.f * (u / v);
+			theta  = M_PI / 4.f * (s.y / s.x);
 		} else {
 			radius = s.y;
-			theta  = M_PI / 2.f - M_PI / 4.f * (u / v);
+			theta  = M_PI / 2.f - M_PI / 4.f * (s.x / s.y);
 		}
 	}
 	d = radius * float2(cos(theta), sin(theta));
@@ -188,6 +188,12 @@ float smith_shadowing_ggx(float n_dot_o, float alpha_g) {
 
 float smith_shadowing_ggx_aniso(float n_dot_o, float o_dot_x, float o_dot_y, float2 alpha) {
 	return 1.f / (n_dot_o + sqrt(pow(o_dot_x * alpha.x, 2.f) + pow(o_dot_y * alpha.y, 2.f) + pow(n_dot_o, 2.f)));
+}
+
+// Sample the hemisphere oriented along n and spanned by v_x, v_y using the random samples in s
+float3 sample_lambertian(in const float3 n, in const float3 v_x, in const float3 v_y, in const float2 s) {
+	const float3 hemi_dir = normalize(cos_sample_hemisphere(s));
+	return normalize(hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n);
 }
 
 float lambertian_pdf(in const float3 w_i, in const float3 n) {
@@ -380,7 +386,7 @@ void RayGen() {
 		const float3 w_o = -ray.Direction;
 		const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
 		float3 v_x, v_y;
-		float3 v_z = payload.normal.xyz;
+		float3 v_z = normalize(payload.normal.xyz);
 		if (dot(v_z, w_o) < 0.0) {
 			v_z = -v_z;
 		}
@@ -411,9 +417,7 @@ void RayGen() {
 		// Sample the hemisphere to compute the outgoing direction
 		// TODO: We need to use the BRDF to do the sampling, otherwise for super smooth
 		// materials we do a terrible job
-		const float3 hemi_dir = normalize(cos_sample_hemisphere(pcg32_randomf(rng), pcg32_randomf(rng)));
-
-		float3 w_i = normalize(hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * v_z);
+		float3 w_i = sample_lambertian(v_z, v_x, v_y, float2(pcg32_randomf(rng), pcg32_randomf(rng)));
 		w_h = normalize(w_o + w_i);
 
 		// Update path throughput and continue the ray
