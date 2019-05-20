@@ -2,6 +2,11 @@
 #define M_1_PI 0.318309886183790671538
 #define EPSILON 0.0001
 
+#define PRIMARY_RAY 0
+#define OCCLUSION_RAY 1
+#define NUM_RAY_TYPES 2
+#define MAX_PATH_DEPTH 5
+
 struct HitInfo {
 	float4 color_dist;
 	float4 normal;
@@ -148,6 +153,12 @@ float3 cos_sample_hemisphere(float2 u) {
 
 float3 spherical_dir(float sin_theta, float cos_theta, float phi) {
 	return float3(sin_theta * cos(phi), sin_theta * sin(phi), cos_theta);
+}
+
+float power_heuristic(float n_f, float pdf_f, float n_g, float pdf_g) {
+	float f = n_f * pdf_f;
+	float g = n_g * pdf_g;
+	return (f * f) / (f * f + g * g);
 }
 
 float luminance(in const float3 c) {
@@ -403,13 +414,128 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 	return disney_brdf(mat, n, w_o, w_i, w_h, v_x, v_y);
 }
 
+// Quad-shaped light source
+struct QuadLight {
+	float4 emission;
+	float4 position;
+	float4 normal;
+	// x and y vectors spanning the quad, with
+	// the half-width and height in the w component
+	float4 v_x;
+	float4 v_y;
+};
+
+float3 sample_quad_light_position(in const QuadLight light, float2 samples) {
+	return samples.x * light.v_x.xyz * light.v_x.w
+		+ samples.y * light.v_y.xyz * light.v_y.w + light.position.xyz;
+}
+
+/* Compute the PDF of sampling the sampled point p light with the ray specified by orig and dir,
+ * assuming the light is not occluded
+ */
+float quad_light_pdf(in const QuadLight light, in const float3 p, in const float3 orig, in const float3 dir) {
+	float surface_area = light.v_x.w * light.v_y.w;
+	float3 to_pt = p - dir;
+	float dist_sqr = dot(to_pt, to_pt);
+	float n_dot_w = abs(dot(light.normal.xyz, -dir));
+	if (n_dot_w < EPSILON) {
+		return 0.f;
+	}
+	return dist_sqr / (n_dot_w * surface_area);
+}
+
+bool quad_intersect(in const QuadLight light, in const float3 orig, in const float3 dir,
+	out float t, out float3 light_pos)
+{
+	float denom = dot(dir, light.normal.xyz);
+	if (denom >= EPSILON) {
+		t = dot(light.position.xyz - orig, light.normal.xyz) / denom;
+		if (t < 0.f) {
+			return false;
+		}
+
+		// It's a finite plane so now see if the hit point is actually inside the plane
+		light_pos = orig + dir * t;
+		float3 hit_v = light_pos - light.position.xyz;
+		if (abs(dot(hit_v, light.v_x.xyz)) < light.v_x.w && abs(dot(hit_v, light.v_y.xyz)) < light.v_y.w) {
+			return true;
+		}
+	}
+	return false;
+}
+
+float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, in const float3 n,
+	in const float3 v_x, in const float3 v_y, in const float3 w_o, inout PCGRand rng)
+{
+	float3 illum = 0.f;
+
+	QuadLight light;
+	light.emission = 5.f;
+	light.normal.xyz = normalize(float3(0.5, -0.8, -0.5));
+	light.position.xyz = 10.f * -light.normal.xyz;
+	// TODO: This would be input from the scene telling us how the light is placed
+	// For now we don't care
+	ortho_basis(light.v_x.xyz, light.v_y.xyz, light.normal.xyz);
+	light.v_x.w = 5.f;
+	light.v_y.w = 5.f;
+
+	OcclusionHitInfo shadow_hit;
+	RayDesc shadow_ray;
+	shadow_ray.Origin = hit_p;
+	shadow_ray.TMin = EPSILON;
+
+	// Sample the light to compute an incident light ray to this point
+	{
+		float3 light_pos = sample_quad_light_position(light, float2(pcg32_randomf(rng), pcg32_randomf(rng)));
+		float3 light_dir = light_pos - hit_p;
+		float light_dist = length(light_dir);
+		light_dir = normalize(light_dir);
+
+		float light_pdf = quad_light_pdf(light, light_pos, hit_p, light_dir);
+		float3 w_h = normalize(w_o + light_dir);
+		float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, w_h, v_x, v_y);
+
+		shadow_ray.Direction = light_dir;
+		shadow_ray.TMax = light_dist;
+		TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
+				OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, shadow_ray, shadow_hit);
+
+		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_hit.hit == 0) {
+			float3 bsdf = disney_brdf(mat, n, w_o, light_dir, w_h, v_x, v_y);
+			float w = power_heuristic(1.f, light_pdf, 1.f, bsdf_pdf);
+			illum = bsdf * light.emission.rgb * abs(dot(light_dir, n)) * w / light_pdf;
+		}
+	}
+
+	// Sample the BRDF to compute a light sample as well
+	{
+		float3 w_i;
+		float bsdf_pdf;
+		float3 bsdf = sample_disney_brdf(mat, n, w_o, v_x, v_y, rng, w_i, bsdf_pdf);
+		
+		float light_dist;
+		float3 light_pos;
+		if (dot(light.normal.xyz, -w_i) > 0.f && bsdf_pdf >= EPSILON && quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
+			float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
+			if (light_pdf >= EPSILON) {
+				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
+
+				shadow_ray.Direction = w_i;
+				shadow_ray.TMax = light_dist;
+				TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
+						OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, shadow_ray, shadow_hit);
+				if (shadow_hit.hit == 0) {
+					illum += bsdf * light.emission.rgb * abs(dot(w_i, n)) * w / bsdf_pdf;
+				}
+			}
+		}
+	}
+	return illum;
+}
+
+
 [shader("raygeneration")] 
 void RayGen() {
-	const int PRIMARY_RAY = 0;
-	const int OCCLUSION_RAY = 1;
-	const int NUM_RAY_TYPES = 2;
-	const int MAX_PATH_DEPTH = 5;
-
 	uint2 pixel = DispatchRaysIndex().xy;
 	float2 dims = float2(DispatchRaysDimensions().xy);
 	PCGRand rng = get_rng();
@@ -433,7 +559,6 @@ void RayGen() {
 	mat.clearcoat = sheen_sheentint_clearc_ccgloss.b;
 	mat.clearcoat_gloss = sheen_sheentint_clearc_ccgloss.a;
 
-	const float3 light_emission = float3(1.0, 1.0, 1.0);
 	int bounce = 0;
 	float3 illum = float3(0, 0, 0);
 	float3 path_throughput = float3(1, 1, 1);
@@ -455,31 +580,11 @@ void RayGen() {
 		}
 		ortho_basis(v_x, v_y, v_z);
 
-		const float roughness = 0.f;
-
-		// Direct light sampling.
-		// TODO: should sample the microfacet distribution
-		const float3 light_dir = normalize(float3(-0.5, 0.8, 0.5));
-		float3 w_h = normalize(w_o + light_dir);
-		float3 bsdf = disney_brdf(mat, v_z, w_o, light_dir, w_h, v_x, v_y);
-
-		OcclusionHitInfo shadow_hit;
-		RayDesc shadow_ray;
-		shadow_ray.Origin = hit_p;
-		shadow_ray.Direction = light_dir;
-		shadow_ray.TMin = EPSILON;
-		shadow_ray.TMax = 1e20f;
-
-		TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
-				OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, shadow_ray, shadow_hit);
-		if (shadow_hit.hit == 0) {
-			// Light is a delta light, so pdf = 1.0
-			illum += path_throughput * bsdf * light_emission * abs(dot(light_dir, v_z));
-		}
+		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
 
 		float3 w_i;
 		float pdf;
-		bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
+		float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
 		if (pdf < EPSILON) {
 			break;
 		}
