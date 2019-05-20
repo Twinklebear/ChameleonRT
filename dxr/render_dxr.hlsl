@@ -437,7 +437,7 @@ float quad_light_pdf(in const QuadLight light, in const float3 p, in const float
 	float surface_area = light.v_x.w * light.v_y.w;
 	float3 to_pt = p - dir;
 	float dist_sqr = dot(to_pt, to_pt);
-	float n_dot_w = abs(dot(light.normal.xyz, -dir));
+	float n_dot_w = dot(light.normal.xyz, -dir);
 	if (n_dot_w < EPSILON) {
 		return 0.f;
 	}
@@ -515,7 +515,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 		
 		float light_dist;
 		float3 light_pos;
-		if (dot(light.normal.xyz, -w_i) > 0.f && bsdf_pdf >= EPSILON && quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
+		if (bsdf_pdf >= EPSILON && quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
 			float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
 			if (light_pdf >= EPSILON) {
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
