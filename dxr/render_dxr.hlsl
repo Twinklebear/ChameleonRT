@@ -136,9 +136,9 @@ float3 cos_sample_hemisphere(float2 u) {
 	float2 d;
 	float radius = 0;
 	float theta = 0;
-    if (s.x == 0.f && s.y == 0.f) {
-        d = s;
-    } else {
+	if (s.x == 0.f && s.y == 0.f) {
+		d = s;
+	} else {
 		if (abs(s.x) > abs(s.y)) {
 			radius = s.x;
 			theta  = M_PI / 4.f * (s.y / s.x);
