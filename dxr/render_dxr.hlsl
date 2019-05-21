@@ -405,8 +405,11 @@ float3 disney_brdf(in const DisneyMaterial mat, in const float3 n,
 	in const float3 v_x, in const float3 v_y)
 {
 	if (!same_hemisphere(w_o, w_i, n)) {
-		float3 spec_trans = disney_microfacet_transmission_isotropic(mat, n, w_o, w_i, w_h);
-		return spec_trans * (1.f - mat.metallic) * mat.specular_transmission;
+		if (mat.specular_transmission > 0.f) {
+			float3 spec_trans = disney_microfacet_transmission_isotropic(mat, n, w_o, w_i, w_h);
+			return spec_trans * (1.f - mat.metallic) * mat.specular_transmission;
+		}
+		return 0.f;
 	}
 
 	float coat = disney_clear_coat(mat, n, w_o, w_i, w_h);
