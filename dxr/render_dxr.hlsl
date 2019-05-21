@@ -332,6 +332,9 @@ float3 disney_microfacet_transmission_isotropic(in const DisneyMaterial mat, in 
 {
 	float lum = luminance(mat.base_color);
 	float3 tint = lum > 0.f ? mat.base_color / lum : float3(1, 1, 1);
+	// TODO: This is a bit ad-hoc and doesn't really match the model from other implementations?
+	// This tries to get the specular color for transmission to match up with the intensity
+	// of the specular reflections. Probably something is not quite weighted properly
 	float3 spec = mat.specular_transmission * 0.08 * tint;
 
 	float alpha = max(0.001, mat.roughness * mat.roughness);
@@ -374,6 +377,8 @@ float3 disney_microfacet_anisotropic(in const DisneyMaterial mat, in const float
 		* smith_shadowing_ggx_aniso(dot(n, w_o), abs(dot(w_o, v_x)), abs(dot(w_o, v_y)), alpha);
 	return d * f * g;
 }
+
+// TODO: Anisotropic transmission
 
 float disney_clear_coat(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 w_i, in const float3 w_h)
@@ -487,10 +492,9 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		w_h = sample_gtr_2_h(n, v_x, v_y, alpha, samples);
 		bool entering = dot(w_o, n) > 0.f;
 		w_i = refract(-w_o, w_h, entering ? mat.ior : 1.f / mat.ior);
-		// Invalid transmission, kill the ray
+		// Internal refraction
 		if (all(w_i == float3(0.f, 0.f, 0.f))) {
-			pdf = 0.f;
-			return 0.f;
+			w_i = reflect(-w_o, w_h);
 		}
 	}
 	pdf = disney_pdf(mat, n, w_o, w_i, w_h, v_x, v_y);
@@ -551,7 +555,6 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 	in const float3 v_x, in const float3 v_y, in const float3 w_o, inout PCGRand rng)
 {
 	float3 illum = 0.f;
-	return illum;
 
 	QuadLight light;
 	light.emission = 5.f;
@@ -707,11 +710,11 @@ void Miss(inout HitInfo payload : SV_RayPayload) {
 	float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
 	float v = acos(dir.y) * M_1_PI;
 
-	int check_x = u * 25.f;
-	int check_y = v * 25.f;
+	int check_x = u * 10.f;
+	int check_y = v * 10.f;
 
-	if ((check_x + check_y) % 2 == 0) {
-		payload.color_dist.rgb = 0.2f;// * (1.f + normalize(dir)) * 0.5f;
+	if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
+		payload.color_dist.rgb = 0.05f;// * (1.f + normalize(dir)) * 0.5f;
 	} else {
 		payload.color_dist.rgb = 0.0f;
 	}

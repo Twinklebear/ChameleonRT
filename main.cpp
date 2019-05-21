@@ -326,7 +326,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		material_changed |= ImGui::SliderFloat("Sheen Tint", &material.sheen_tint, 0.f, 1.f);
 		material_changed |= ImGui::SliderFloat("Clearcoat", &material.clearcoat, 0.f, 1.f);
 		material_changed |= ImGui::SliderFloat("Clearcoat Gloss", &material.clearcoat_gloss, 0.f, 1.f);
-		material_changed |= ImGui::SliderFloat("IoR", &material.ior, 1.f, 2.f);
+		material_changed |= ImGui::SliderFloat("IoR", &material.ior, 1.05f, 2.f);
 		material_changed |= ImGui::SliderFloat("Specular Transmission", &material.specular_transmission, 0.f, 1.f);
 
 		// We don't instrument inside OSPRay so we don't show these statistics for it
