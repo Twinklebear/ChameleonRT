@@ -169,6 +169,24 @@ float schlick_weight(float cos_theta) {
 	return pow(saturate(1.f - cos_theta), 5.f);
 }
 
+// Complete Fresnel Dielectric computation, for transmission at ior near 1
+// they mention having issues with the Schlick approximation.
+// eta_i: material on incident side's ior
+// eta_t: material on transmitted side's ior
+float fresnel_dielectric(float cos_theta_i, float eta_i, float eta_t) {
+	cos_theta_i = clamp(cos_theta_i, -1.f, 1.f);
+	float sin_theta_i = sqrt(max(0.f, 1.f - cos_theta_i * cos_theta_i));
+	float sin_theta_t = eta_i / eta_t * sin_theta_i;
+	// Total internal reflection
+	if (sin_theta_t >= 1.f) {
+		return 1.f;
+	}
+	float cos_theta_t = sqrt(max(0.f, 1.f - sin_theta_t * sin_theta_t));
+	float r_parl = (eta_t * cos_theta_i - eta_i * cos_theta_t) / (eta_t * cos_theta_i + eta_i * cos_theta_t);
+	float r_perp = (eta_i * cos_theta_i - eta_t * cos_theta_t) / (eta_i * cos_theta_i + eta_t * cos_theta_t);
+	return 0.5f * (r_parl * r_parl + r_perp * r_perp);
+}
+
 // D_GTR1: Generalized Trowbridge-Reitz with gamma=1
 // Burley notes eq. 4
 float gtr_1(float cos_theta_h, float alpha) {
@@ -567,7 +585,9 @@ void RayGen() {
 		payload.color_dist = float4(0, 0, 0, -1);
 		TraceRay(scene, 0, 0xff, PRIMARY_RAY, NUM_RAY_TYPES, PRIMARY_RAY, ray, payload);
 
+		// If we hit nothing, include the scene background color from the miss shader
 		if (payload.color_dist.w <= 0) {
+			illum += path_throughput * payload.color_dist.rgb;
 			break;
 		}
 
@@ -612,7 +632,20 @@ void RayGen() {
 
 [shader("miss")]
 void Miss(inout HitInfo payload : SV_RayPayload) {
-	payload.color_dist = float4(0, 0, 0, 0);
+	payload.color_dist.w = -1.f;
+
+	float3 dir = WorldRayDirection();
+	float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
+	float v = acos(dir.y) * M_1_PI;
+
+	int check_x = u * 25.f;
+	int check_y = v * 25.f;
+
+	if ((check_x + check_y) % 2 == 0) {
+		payload.color_dist.rgb = 0.2f;
+	} else {
+		payload.color_dist.rgb = 0.0f;
+	}
 }
 
 [shader("miss")]
