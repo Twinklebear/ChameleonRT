@@ -109,20 +109,26 @@ void ortho_basis(out float3 v_x, out float3 v_y, const float3 n) {
 struct DisneyMaterial {
 	float3 base_color;
 	float metallic;
+
 	float specular;
 	float roughness;
 	float specular_tint;
 	float anisotropy;
+
 	float sheen;
 	float sheen_tint;
 	float clearcoat;
 	float clearcoat_gloss;
+
+	float ior;
+	float specular_transmission;
 };
 
 cbuffer MaterialParams : register(b1) {
 	float4 basecolor_metallic;
 	float4 spec_rough_spectint_aniso;
 	float4 sheen_sheentint_clearc_ccgloss;
+	float4 ior_spectrans;
 }
 
 bool same_hemisphere(in const float3 w_o, in const float3 w_i, in const float3 n) {
@@ -169,6 +175,10 @@ float schlick_weight(float cos_theta) {
 	return pow(saturate(1.f - cos_theta), 5.f);
 }
 
+float pow2(float x) {
+	return x * x;
+}
+
 // Complete Fresnel Dielectric computation, for transmission at ior near 1
 // they mention having issues with the Schlick approximation.
 // eta_i: material on incident side's ior
@@ -201,14 +211,14 @@ float gtr_1(float cos_theta_h, float alpha) {
 // Burley notes eq. 8
 float gtr_2(float cos_theta_h, float alpha) {
 	float alpha_sqr = alpha * alpha;
-	return M_1_PI * alpha_sqr / pow(1.f + (alpha_sqr - 1.f) * cos_theta_h * cos_theta_h, 2.f);
+	return M_1_PI * alpha_sqr / pow2(1.f + (alpha_sqr - 1.f) * cos_theta_h * cos_theta_h);
 }
 
 // D_GTR2 Anisotropic: Anisotropic generalized Trowbridge-Reitz with gamma=2
 // Burley notes eq. 13
 float gtr_2_aniso(float h_dot_n, float h_dot_x, float h_dot_y, float2 alpha) {
 	return M_1_PI / (alpha.x * alpha.y
-			* pow(pow(h_dot_x / alpha.x, 2.f) + pow(h_dot_y / alpha.y, 2.f) + h_dot_n * h_dot_n, 2.f));
+			* pow2(pow2(h_dot_x / alpha.x) + pow2(h_dot_y / alpha.y) + h_dot_n * h_dot_n));
 }
 
 float smith_shadowing_ggx(float n_dot_o, float alpha_g) {
@@ -218,7 +228,7 @@ float smith_shadowing_ggx(float n_dot_o, float alpha_g) {
 }
 
 float smith_shadowing_ggx_aniso(float n_dot_o, float o_dot_x, float o_dot_y, float2 alpha) {
-	return 1.f / (n_dot_o + sqrt(pow(o_dot_x * alpha.x, 2.f) + pow(o_dot_y * alpha.y, 2.f) + pow(n_dot_o, 2.f)));
+	return 1.f / (n_dot_o + sqrt(pow2(o_dot_x * alpha.x) + pow2(o_dot_y * alpha.y) + pow2(n_dot_o)));
 }
 
 // Sample a reflection direction the hemisphere oriented along n and spanned by v_x, v_y using the random samples in s
@@ -295,7 +305,8 @@ float3 disney_diffuse(in const DisneyMaterial mat, in const float3 n,
 {
 	float n_dot_o = abs(dot(w_o, n));
 	float n_dot_i = abs(dot(w_i, n));
-	float fd90 = 0.5f + 2.f * mat.roughness * pow(dot(w_i, w_h), 2.0);
+	float i_dot_h = dot(w_i, w_h);
+	float fd90 = 0.5f + 2.f * mat.roughness * i_dot_h * i_dot_h;
 	float fi = schlick_weight(n_dot_i);
 	float fo = schlick_weight(n_dot_o);
 	return mat.base_color * M_1_PI * lerp(1.f, fd90, fi) * lerp(1.f, fd90, fo);
@@ -310,9 +321,41 @@ float3 disney_microfacet_isotropic(in const DisneyMaterial mat, in const float3 
 
 	float alpha = max(0.001, mat.roughness * mat.roughness);
 	float d = gtr_2(dot(n, w_h), alpha);
+	// TODO: Should these be dot(o, h)?
 	float3 f = lerp(spec, float3(1, 1, 1), schlick_weight(dot(w_i, w_h)));
 	float g = smith_shadowing_ggx(dot(n, w_i), alpha) * smith_shadowing_ggx(dot(n, w_o), alpha);
 	return d * f * g;
+}
+
+float3 disney_microfacet_transmission_isotropic(in const DisneyMaterial mat, in const float3 n,
+	in const float3 w_o, in const float3 w_i, in const float3 w_h)
+{
+	float lum = luminance(mat.base_color);
+	float3 tint = lum > 0.f ? mat.base_color / lum : float3(1, 1, 1);
+	float3 spec = mat.specular_transmission * 0.08 * tint;
+
+	float alpha = max(0.001, mat.roughness * mat.roughness);
+	float d = gtr_2(abs(dot(n, w_h)), alpha);
+
+	bool entering = dot(w_o, n) > 0.f;
+	float eta_i = entering ? 1.f : mat.ior;
+	float eta_t = entering ? mat.ior : 1.f;
+	float relative_ior = eta_i / eta_t;
+
+	float f = fresnel_dielectric(abs(dot(w_o, w_h)), eta_i, eta_t);
+	float g = smith_shadowing_ggx(abs(dot(n, w_i)), alpha) * smith_shadowing_ggx(abs(dot(n, w_o)), alpha);
+
+	if (dot(w_i, n) == 0.f || dot(w_o, n) == 0.f) {
+		return 0;
+	}
+	float i_dot_h = dot(w_i, w_h);
+	float o_dot_h = dot(w_o, w_h);
+
+	// Note: 1/eta^2 factor left out, see Burley 2015
+	float c = abs(o_dot_h) / abs(dot(w_o, n)) * abs(i_dot_h) / abs(dot(w_i, n))
+		* pow2(relative_ior) / pow2(o_dot_h + relative_ior * i_dot_h);
+
+	return spec * c * (1.f - f) * g * d;
 }
 
 float3 disney_microfacet_anisotropic(in const DisneyMaterial mat, in const float3 n,
@@ -357,9 +400,12 @@ float3 disney_brdf(in const DisneyMaterial mat, in const float3 n,
 	in const float3 v_x, in const float3 v_y)
 {
 	if (!same_hemisphere(w_o, w_i, n)) {
-		return float3(0, 0, 0);
+		float3 spec_trans = disney_microfacet_transmission_isotropic(mat, n, w_o, w_i, w_h);
+		return spec_trans * (1.f - mat.metallic) * mat.specular_transmission;
 	}
 
+	float coat = disney_clear_coat(mat, n, w_o, w_i, w_h);
+	float3 sheen = disney_sheen(mat, n, w_o, w_i, w_h);
 	float3 diffuse = disney_diffuse(mat, n, w_o, w_i, w_h);
 	float3 gloss;
 	if (mat.anisotropy == 0.f) {
@@ -367,33 +413,35 @@ float3 disney_brdf(in const DisneyMaterial mat, in const float3 n,
 	} else {
 		gloss = disney_microfacet_anisotropic(mat, n, w_o, w_i, w_h, v_x, v_y);
 	}
-	float coat = disney_clear_coat(mat, n, w_o, w_i, w_h);
-	float3 sheen = disney_sheen(mat, n, w_o, w_i, w_h);
-	return (diffuse + sheen) * (1.f - mat.metallic) + gloss + coat;
+	return (diffuse + sheen) * (1.f - mat.metallic) * (1.f - mat.specular_transmission) + gloss + coat;
 }
 
 float disney_pdf(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 w_i, in const float3 w_h,
 	in const float3 v_x, in const float3 v_y)
 {
-	if (!same_hemisphere(w_o, w_i, n)) {
-		return 0;
-	}
-
 	float alpha = max(0.001, mat.roughness * mat.roughness);
 	float clearcoat_alpha = lerp(0.1f, 0.001f, mat.clearcoat_gloss);
 
 	float diffuse = lambertian_pdf(w_i, n);
+	float clear_coat = gtr_1_pdf(w_o, w_h, w_i, n, clearcoat_alpha);
+
 	float microfacet;
+	float microfacet_transmission = 0.f;
+	float n_comp = 3.f;
 	if (mat.anisotropy == 0.f) {
 		microfacet = gtr_2_pdf(w_o, w_h, w_i, n, alpha);
+		if (mat.specular_transmission > 0.f) {
+			microfacet_transmission = gtr_2_pdf(w_o, w_h, -w_i, n, alpha);
+			n_comp = 4.f;
+		}
 	} else {
 		microfacet = gtr_2_aniso_pdf(w_o, w_h, w_i, n, v_x, v_y, alpha);
 	}
-	float clear_coat = gtr_1_pdf(w_o, w_h, w_i, n, clearcoat_alpha);
-	// TODO: Sampling the sheen component? Weight? Same as Lambertian?
-	// So would this be (2.f * diffuse ... ) / 4.f?
-	return (diffuse + microfacet + clear_coat) / 3.f;
+	if (!same_hemisphere(w_o, w_i, n)) {
+		return microfacet_transmission / n_comp;
+	}
+	return (diffuse + microfacet + clear_coat) / n_comp;
 }
 
 /* Sample a component of the Disney BRDF, returns the sampled BRDF color,
@@ -403,7 +451,13 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 v_x, in const float3 v_y, inout PCGRand rng,
 	out float3 w_i, out float pdf)
 {
-	int component = pcg32_random(rng) % 3;
+	int component = abs(pcg32_random(rng));
+	if (mat.specular_transmission == 0.f) {
+		component = component % 3;
+	} else {
+		component = component % 4;
+	}
+
 	float2 samples = float2(pcg32_randomf(rng), pcg32_randomf(rng));
 	float3 w_h;
 	if (component == 0) {
@@ -422,11 +476,22 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 			w_h = sample_gtr_2_aniso_h(n, v_x, v_y, alpha, samples);
 		}
 		w_i = reflect(-w_o, w_h);
-	} else {
+	} else if (component == 2) {
 		// Sample clear coat component
 		float alpha = lerp(0.1f, 0.001f, mat.clearcoat_gloss);
 		w_h = sample_gtr_1_h(n, v_x, v_y, alpha, samples);
 		w_i = reflect(-w_o, w_h);
+	} else {
+		// Sample transmission component
+		float alpha = max(0.001, mat.roughness * mat.roughness);
+		w_h = sample_gtr_2_h(n, v_x, v_y, alpha, samples);
+		bool entering = dot(w_o, n) > 0.f;
+		w_i = refract(-w_o, w_h, entering ? mat.ior : 1.f / mat.ior);
+		// Invalid transmission, kill the ray
+		if (all(w_i == float3(0.f, 0.f, 0.f))) {
+			pdf = 0.f;
+			return 0.f;
+		}
 	}
 	pdf = disney_pdf(mat, n, w_o, w_i, w_h, v_x, v_y);
 	return disney_brdf(mat, n, w_o, w_i, w_h, v_x, v_y);
@@ -486,6 +551,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 	in const float3 v_x, in const float3 v_y, in const float3 w_o, inout PCGRand rng)
 {
 	float3 illum = 0.f;
+	return illum;
 
 	QuadLight light;
 	light.emission = 5.f;
@@ -577,6 +643,9 @@ void RayGen() {
 	mat.clearcoat = sheen_sheentint_clearc_ccgloss.b;
 	mat.clearcoat_gloss = sheen_sheentint_clearc_ccgloss.a;
 
+	mat.ior = ior_spectrans.r;
+	mat.specular_transmission = ior_spectrans.g;
+
 	int bounce = 0;
 	float3 illum = float3(0, 0, 0);
 	float3 path_throughput = float3(1, 1, 1);
@@ -642,7 +711,7 @@ void Miss(inout HitInfo payload : SV_RayPayload) {
 	int check_y = v * 25.f;
 
 	if ((check_x + check_y) % 2 == 0) {
-		payload.color_dist.rgb = 0.2f;
+		payload.color_dist.rgb = 0.2f;// * (1.f + normalize(dir)) * 0.5f;
 	} else {
 		payload.color_dist.rgb = 0.0f;
 	}

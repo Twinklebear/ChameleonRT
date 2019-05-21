@@ -63,9 +63,9 @@ RenderDXR::RenderDXR() {
 		align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
 
-	// The material is packed into 3 float4
+	// The material is packed into 4 float4
 	material_param_buf = Buffer::upload(device.Get(),
-		align_to(sizeof(DisneyMaterial), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+		align_to(4 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
 
 	build_raytracing_pipeline();

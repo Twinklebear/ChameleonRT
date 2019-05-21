@@ -14,6 +14,8 @@ struct DisneyMaterial {
 	float sheen_tint = 0;
 	float clearcoat = 0;
 	float clearcoat_gloss = 0;
+	float ior = 1.5;
+	float specular_transmission = 0;
 };
 
 struct RenderBackend {
