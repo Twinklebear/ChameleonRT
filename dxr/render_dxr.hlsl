@@ -492,7 +492,7 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		w_h = sample_gtr_2_h(n, v_x, v_y, alpha, samples);
 		bool entering = dot(w_o, n) > 0.f;
 		w_i = refract(-w_o, w_h, entering ? mat.ior : 1.f / mat.ior);
-		// Internal refraction
+		// Invalid a refraction, we should have reflected
 		if (all(w_i == float3(0.f, 0.f, 0.f))) {
 			w_i = reflect(-w_o, w_h);
 		}
