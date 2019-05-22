@@ -335,7 +335,7 @@ float3 disney_microfacet_transmission_isotropic(in const DisneyMaterial mat, in 
 	// TODO: This is a bit ad-hoc and doesn't really match the model from other implementations?
 	// This tries to get the specular color for transmission to match up with the intensity
 	// of the specular reflections. Probably something is not quite weighted properly
-	float3 spec = mat.specular_transmission * 0.08 * tint;
+	float3 spec = mat.specular_transmission * tint;
 
 	float alpha = max(0.001, mat.roughness * mat.roughness);
 	float d = gtr_2(abs(dot(n, w_h)), alpha);
@@ -441,6 +441,15 @@ float disney_pdf(in const DisneyMaterial mat, in const float3 n,
 		microfacet = gtr_2_pdf(w_o, w_h, w_i, n, alpha);
 		if (mat.specular_transmission > 0.f) {
 			microfacet_transmission = gtr_2_pdf(w_o, w_h, -w_i, n, alpha);
+
+			bool entering = dot(w_o, n) > 0.f;
+			float eta_i = entering ? 1.f : mat.ior;
+			float eta_t = entering ? mat.ior : 1.f;
+			float relative_ior = eta_i / eta_t;
+			// TODO: Seems like this just cancels with some terms we have in the microfacet
+			// transmission division right?
+			microfacet_transmission /= pow2(dot(w_o, w_h) + relative_ior * dot(w_i, w_h));
+
 			n_comp = 4.f;
 		}
 	} else {
@@ -717,9 +726,10 @@ void Miss(inout HitInfo payload : SV_RayPayload) {
 	int check_y = v * 10.f;
 
 	if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
-		payload.color_dist.rgb = 0.05f;// * (1.f + normalize(dir)) * 0.5f;
+		payload.color_dist.rgb = 0.0f;// * (1.f + normalize(dir)) * 0.5f;
+		payload.color_dist.gb = 0.1;
 	} else {
-		payload.color_dist.rgb = 0.0f;
+		payload.color_dist.rgb = 0.05f;
 	}
 }
 
