@@ -297,6 +297,9 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 			}
 		}
 
+		if (material_changed || camera_changed) {
+			frame_id = 0;
+		}
 		if (material_changed) {
 			renderer->set_material(material);
 			material_changed = false;
@@ -314,6 +317,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 				1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::Text("# Triangles: %s", num_tris.c_str());
 		ImGui::Text("RT Backend: %s", rt_backend.c_str());
+		ImGui::Text("Accumulated Frames: %llu", frame_id);
 
 		ImGui::Text("Disney Material Params:");
 		material_changed = ImGui::ColorPicker3("Base Color", &material.base_color.x);
