@@ -479,34 +479,42 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		// Sample diffuse component
 		w_i = sample_lambertian_dir(n, v_x, v_y, samples);
 		w_h = normalize(w_o + w_i);
-	} else if (component == 1) {
-		// Sample microfacet component
-		if (mat.anisotropy == 0.f) {
+	} else if (component == 1 || component == 3) {
+		bool entering = dot(w_o, n) > 0.f;
+		float eta_i = entering ? 1.f : mat.ior;
+		float eta_t = entering ? mat.ior : 1.f;
+		float relative_ior = eta_i / eta_t;
+
+		float f = fresnel_dielectric(abs(dot(w_o, w_h)), eta_i, eta_t);
+		if (mat.specular_transmission > 0.f && pcg32_randomf(rng) <= f) {
+			// Sample microfacet component
+			if (mat.anisotropy == 0.f) {
+				float alpha = max(0.001, mat.roughness * mat.roughness);
+				w_h = sample_gtr_2_h(n, v_x, v_y, alpha, samples);
+			} else {
+				float aspect = sqrt(1.f - mat.anisotropy * 0.9f);
+				float a = mat.roughness * mat.roughness;
+				float2 alpha = float2(max(0.001, a / aspect), max(0.001, a * aspect));
+				w_h = sample_gtr_2_aniso_h(n, v_x, v_y, alpha, samples);
+			}
+			w_i = reflect(-w_o, w_h);
+		} else {
+			// Sample transmission component
 			float alpha = max(0.001, mat.roughness * mat.roughness);
 			w_h = sample_gtr_2_h(n, v_x, v_y, alpha, samples);
-		} else {
-			float aspect = sqrt(1.f - mat.anisotropy * 0.9f);
-			float a = mat.roughness * mat.roughness;
-			float2 alpha = float2(max(0.001, a / aspect), max(0.001, a * aspect));
-			w_h = sample_gtr_2_aniso_h(n, v_x, v_y, alpha, samples);
+			bool entering = dot(w_o, n) > 0.f;
+			w_i = refract(-w_o, w_h, entering ? 1.f / mat.ior : mat.ior);
+			// Invalid a refraction, terminate the ray
+			if (all(w_i == float3(0.f, 0.f, 0.f))) {
+				pdf = 0.f;
+				return 0.f;
+			}
 		}
-		w_i = reflect(-w_o, w_h);
-	} else if (component == 2) {
+	} else {
 		// Sample clear coat component
 		float alpha = lerp(0.1f, 0.001f, mat.clearcoat_gloss);
 		w_h = sample_gtr_1_h(n, v_x, v_y, alpha, samples);
 		w_i = reflect(-w_o, w_h);
-	} else {
-		// Sample transmission component
-		float alpha = max(0.001, mat.roughness * mat.roughness);
-		w_h = sample_gtr_2_h(n, v_x, v_y, alpha, samples);
-		bool entering = dot(w_o, n) > 0.f;
-		w_i = refract(-w_o, w_h, entering ? 1.f / mat.ior : mat.ior);
-		// Invalid a refraction, terminate the ray
-		if (all(w_i == float3(0.f, 0.f, 0.f))) {
-			pdf = 0.f;
-			return 0.f;
-		}
 	}
 	pdf = disney_pdf(mat, n, w_o, w_i, w_h, v_x, v_y);
 	return disney_brdf(mat, n, w_o, w_i, w_h, v_x, v_y);
