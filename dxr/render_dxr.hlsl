@@ -289,6 +289,20 @@ float gtr_2_pdf(in const float3 w_o, in const float3 w_h, in const float3 w_i, i
 	return d * cos_theta_h / (4.f * dot(w_o, w_h));
 }
 
+float gtr_2_transmission_pdf(in const float3 w_o, in const float3 w_h, in const float3 w_i, in const float3 n,
+	float alpha, float ior)
+{
+	if (same_hemisphere(w_o, w_i, n)) {
+		return 0.f;
+	}
+	bool entering = dot(w_o, n) > 0.f;
+	float relative_ior = entering ? 1.f / ior : ior;
+	float cos_theta_h = abs(dot(n, w_h));
+	float d = gtr_2(cos_theta_h, alpha);
+	float dwh_dwi = abs(pow2(relative_ior) * dot(w_i, w_h) / pow2(dot(w_o, w_h) + relative_ior * dot(w_i, w_h)));
+	return d * cos_theta_h * dwh_dwi;
+}
+
 float gtr_2_aniso_pdf(in const float3 w_o, in const float3 w_h, in const float3 w_i, in const float3 n,
 	in const float3 v_x, in const float3 v_y, const float2 alpha) 
 {
@@ -330,12 +344,11 @@ float3 disney_microfacet_isotropic(in const DisneyMaterial mat, in const float3 
 float3 disney_microfacet_transmission_isotropic(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 w_i, in const float3 w_h)
 {
-	float lum = luminance(mat.base_color);
-	float3 tint = lum > 0.f ? mat.base_color / lum : float3(1, 1, 1);
-	// TODO: This is a bit ad-hoc and doesn't really match the model from other implementations?
-	// This tries to get the specular color for transmission to match up with the intensity
-	// of the specular reflections. Probably something is not quite weighted properly
-	float3 spec = mat.specular_transmission * tint;
+	if (dot(w_i, n) == 0.f || dot(w_o, n) == 0.f) {
+		return 0.f;
+	}
+
+	float3 spec = mat.specular_transmission * sqrt(mat.base_color);
 
 	float alpha = max(0.001, mat.roughness * mat.roughness);
 	float d = gtr_2(abs(dot(n, w_h)), alpha);
@@ -348,9 +361,6 @@ float3 disney_microfacet_transmission_isotropic(in const DisneyMaterial mat, in 
 	float f = fresnel_dielectric(abs(dot(w_o, w_h)), eta_i, eta_t);
 	float g = smith_shadowing_ggx(abs(dot(n, w_i)), alpha) * smith_shadowing_ggx(abs(dot(n, w_o)), alpha);
 
-	if (dot(w_i, n) == 0.f || dot(w_o, n) == 0.f) {
-		return 0;
-	}
 	float i_dot_h = dot(w_i, w_h);
 	float o_dot_h = dot(w_o, w_h);
 
@@ -434,31 +444,19 @@ float disney_pdf(in const DisneyMaterial mat, in const float3 n,
 	float diffuse = lambertian_pdf(w_i, n);
 	float clear_coat = gtr_1_pdf(w_o, w_h, w_i, n, clearcoat_alpha);
 
+	float n_comp = 3.f;
 	float microfacet;
 	float microfacet_transmission = 0.f;
-	float n_comp = 3.f;
 	if (mat.anisotropy == 0.f) {
 		microfacet = gtr_2_pdf(w_o, w_h, w_i, n, alpha);
 		if (mat.specular_transmission > 0.f) {
-			microfacet_transmission = gtr_2_pdf(w_o, w_h, -w_i, n, alpha);
-
-			bool entering = dot(w_o, n) > 0.f;
-			float eta_i = entering ? 1.f : mat.ior;
-			float eta_t = entering ? mat.ior : 1.f;
-			float relative_ior = eta_i / eta_t;
-			// TODO: Seems like this just cancels with some terms we have in the microfacet
-			// transmission division right?
-			microfacet_transmission /= pow2(dot(w_o, w_h) + relative_ior * dot(w_i, w_h));
-
+			microfacet_transmission = gtr_2_transmission_pdf(w_o, w_h, w_i, n, alpha, mat.ior);
 			n_comp = 4.f;
 		}
 	} else {
 		microfacet = gtr_2_aniso_pdf(w_o, w_h, w_i, n, v_x, v_y, alpha);
 	}
-	if (!same_hemisphere(w_o, w_i, n)) {
-		return microfacet_transmission / n_comp;
-	}
-	return (diffuse + microfacet + clear_coat) / n_comp;
+	return (diffuse + microfacet + microfacet_transmission + clear_coat) / n_comp;
 }
 
 /* Sample a component of the Disney BRDF, returns the sampled BRDF color,
@@ -503,10 +501,11 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		float alpha = max(0.001, mat.roughness * mat.roughness);
 		w_h = sample_gtr_2_h(n, v_x, v_y, alpha, samples);
 		bool entering = dot(w_o, n) > 0.f;
-		w_i = refract(-w_o, w_h, entering ? mat.ior : 1.f / mat.ior);
-		// Invalid a refraction, we should have reflected
+		w_i = refract(-w_o, w_h, entering ? 1.f / mat.ior : mat.ior);
+		// Invalid a refraction, terminate the ray
 		if (all(w_i == float3(0.f, 0.f, 0.f))) {
-			w_i = reflect(-w_o, w_h);
+			pdf = 0.f;
+			return 0.f;
 		}
 	}
 	pdf = disney_pdf(mat, n, w_o, w_i, w_h, v_x, v_y);
