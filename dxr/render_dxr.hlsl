@@ -484,9 +484,8 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		float eta_i = entering ? 1.f : mat.ior;
 		float eta_t = entering ? mat.ior : 1.f;
 		float relative_ior = eta_i / eta_t;
-
 		float f = fresnel_dielectric(abs(dot(w_o, w_h)), eta_i, eta_t);
-		if (mat.specular_transmission > 0.f && pcg32_randomf(rng) <= f) {
+		if (mat.specular_transmission == 0.f || pcg32_randomf(rng) <= f) {
 			// Sample microfacet component
 			if (mat.anisotropy == 0.f) {
 				float alpha = max(0.001, mat.roughness * mat.roughness);
@@ -598,6 +597,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 		light_dir = normalize(light_dir);
 
 		float light_pdf = quad_light_pdf(light, light_pos, hit_p, light_dir);
+		// TODO: Maybe should check if same hemisphere here?
 		float3 w_h = normalize(w_o + light_dir);
 		float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, w_h, v_x, v_y);
 
@@ -723,7 +723,10 @@ void RayGen() {
 
 [shader("miss")]
 void Miss(inout HitInfo payload : SV_RayPayload) {
+#if 0
+	payload.color_dist.rgb = 0.f;
 	payload.color_dist.w = -1.f;
+#else
 
 	float3 dir = WorldRayDirection();
 	float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
@@ -738,6 +741,7 @@ void Miss(inout HitInfo payload : SV_RayPayload) {
 	} else {
 		payload.color_dist.rgb = 0.05f;
 	}
+#endif
 }
 
 [shader("miss")]
