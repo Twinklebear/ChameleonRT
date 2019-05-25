@@ -184,17 +184,12 @@ float pow2(float x) {
 // eta_i: material on incident side's ior
 // eta_t: material on transmitted side's ior
 float fresnel_dielectric(float cos_theta_i, float eta_i, float eta_t) {
-	cos_theta_i = clamp(cos_theta_i, -1.f, 1.f);
-	float sin_theta_i = sqrt(max(0.f, 1.f - cos_theta_i * cos_theta_i));
-	float sin_theta_t = eta_i / eta_t * sin_theta_i;
-	// Total internal reflection
-	if (sin_theta_t >= 1.f) {
+	float g = pow2(eta_t) / pow2(eta_i) - 1.f + pow2(cos_theta_i);
+	if (g < 0.f) {
 		return 1.f;
 	}
-	float cos_theta_t = sqrt(max(0.f, 1.f - sin_theta_t * sin_theta_t));
-	float r_parl = (eta_t * cos_theta_i - eta_i * cos_theta_t) / (eta_t * cos_theta_i + eta_i * cos_theta_t);
-	float r_perp = (eta_i * cos_theta_i - eta_t * cos_theta_t) / (eta_i * cos_theta_i + eta_t * cos_theta_t);
-	return 0.5f * (r_parl * r_parl + r_perp * r_perp);
+	return 0.5f * pow2(g - cos_theta_i) / pow2(g + cos_theta_i)
+		* (1.f + pow2(cos_theta_i * (g + cos_theta_i) - 1.f) / pow2(cos_theta_i * (g - cos_theta_i) + 1.f));
 }
 
 // D_GTR1: Generalized Trowbridge-Reitz with gamma=1
@@ -300,7 +295,7 @@ float gtr_2_transmission_pdf(in const float3 w_o, in const float3 w_i, in const 
 	bool entering = dot(w_o, n) > 0.f;
 	float eta_o = entering ? 1.f : ior;
 	float eta_i = entering ? ior : 1.f;
-	float3 w_h = normalize(-eta_i * w_i - eta_o * w_o);
+	float3 w_h = normalize(w_o + w_i * eta_i / eta_o);
 	float cos_theta_h = abs(dot(n, w_h));
 	float i_dot_h = dot(w_i, w_h);
 	float o_dot_h = dot(w_o, w_h);
@@ -361,13 +356,13 @@ float3 disney_microfacet_transmission_isotropic(in const DisneyMaterial mat, in 
 	bool entering = o_dot_n > 0.f;
 	float eta_o = entering ? 1.f : mat.ior;
 	float eta_i = entering ? mat.ior : 1.f;
-	float3 w_h = normalize(-eta_i * w_i - eta_o * w_o);
-	float3 spec = mat.specular_transmission * sqrt(mat.base_color);
+	//float3 w_h = normalize(-eta_i * w_i - eta_o * w_o);
+	float3 spec = mat.specular_transmission * mat.base_color;
 
 	float alpha = max(0.001, mat.roughness * mat.roughness);
 	float d = gtr_2(abs(dot(n, w_h)), alpha);
 
-	float f = fresnel_dielectric(abs(dot(w_i, n)), eta_i, eta_o);
+	float f = fresnel_dielectric(abs(dot(w_i, n)), eta_o, eta_i);
 	float g = smith_shadowing_ggx(abs(dot(n, w_i)), alpha) * smith_shadowing_ggx(abs(dot(n, w_o)), alpha);
 
 	float i_dot_h = dot(w_i, w_h);
@@ -500,11 +495,23 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 			w_h = sample_gtr_2_aniso_h(n, v_x, v_y, alpha, samples);
 		}
 		w_i = reflect(-w_o, w_h);
+
+		// Invalid reflection, terminate ray
+		if (!same_hemisphere(w_o, w_i, n)) {
+			pdf = 0.f;
+			return 0.f;
+		}
 	} else if (component == 2) {
 		// Sample clear coat component
 		float alpha = lerp(0.1f, 0.001f, mat.clearcoat_gloss);
 		float3 w_h = sample_gtr_1_h(n, v_x, v_y, alpha, samples);
 		w_i = reflect(-w_o, w_h);
+
+		// Invalid reflection, terminate ray
+		if (!same_hemisphere(w_o, w_i, n)) {
+			pdf = 0.f;
+			return 0.f;
+		}
 	} else {
 		// Sample microfacet transmission component
 		float alpha = max(0.001, mat.roughness * mat.roughness);
@@ -515,7 +522,7 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		}
 		w_i = refract(-w_o, w_h, entering ? 1.f / mat.ior : mat.ior);
 
-		// Invalid refraction, terminate the ray
+		// Invalid refraction, terminate ray
 		if (all(w_i == float3(0.f, 0.f, 0.f))) {
 			pdf = 0.f;
 			return 0.f;
@@ -626,7 +633,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 		
 		float light_dist;
 		float3 light_pos;
-		if (bsdf_pdf >= EPSILON && quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
+		if (all(bsdf > 0.f) && bsdf_pdf >= EPSILON && quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
 			float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
 			if (light_pdf >= EPSILON) {
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
@@ -698,7 +705,7 @@ void RayGen() {
 		float3 w_i;
 		float pdf;
 		float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
-		if (pdf < EPSILON) {
+		if (pdf < EPSILON || all(bsdf == 0.f)) {
 			break;
 		}
 		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
