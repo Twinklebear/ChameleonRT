@@ -305,7 +305,7 @@ float gtr_2_transmission_pdf(in const float3 w_o, in const float3 w_i, in const 
 }
 
 float gtr_2_aniso_pdf(in const float3 w_o, in const float3 w_i, in const float3 n,
-	in const float3 v_x, in const float3 v_y, const float2 alpha) 
+	in const float3 v_x, in const float3 v_y, const float2 alpha)
 {
 	if (!same_hemisphere(w_o, w_i, n)) {
 		return 0.f;
@@ -391,8 +391,6 @@ float3 disney_microfacet_anisotropic(in const DisneyMaterial mat, in const float
 	return d * f * g;
 }
 
-// TODO: Anisotropic transmission?
-
 float disney_clear_coat(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 w_i)
 {
@@ -441,7 +439,10 @@ float3 disney_brdf(in const DisneyMaterial mat, in const float3 n,
 float disney_pdf(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 w_i, in const float3 v_x, in const float3 v_y)
 {
-	float alpha = max(0.001, mat.roughness * mat.roughness);
+	float alpha = mat.roughness * mat.roughness;
+	float aspect = sqrt(1.f - mat.anisotropy * 0.9f);
+	float2 alpha_aniso = float2(max(0.001, alpha / aspect), max(0.001, alpha * aspect));
+
 	float clearcoat_alpha = lerp(0.1f, 0.001f, mat.clearcoat_gloss);
 
 	float diffuse = lambertian_pdf(w_i, n);
@@ -452,12 +453,12 @@ float disney_pdf(in const DisneyMaterial mat, in const float3 n,
 	float microfacet_transmission = 0.f;
 	if (mat.anisotropy == 0.f) {
 		microfacet = gtr_2_pdf(w_o, w_i, n, alpha);
-		if (mat.specular_transmission > 0.f) {
-			microfacet_transmission = gtr_2_transmission_pdf(w_o, w_i, n, alpha, mat.ior);
-			n_comp = 4.f;
-		}
 	} else {
-		microfacet = gtr_2_aniso_pdf(w_o, w_i, n, v_x, v_y, alpha);
+		microfacet = gtr_2_aniso_pdf(w_o, w_i, n, v_x, v_y, alpha_aniso);
+	}
+	if (mat.specular_transmission > 0.f) {
+		n_comp = 4.f;
+		microfacet_transmission = gtr_2_transmission_pdf(w_o, w_i, n, alpha, mat.ior);
 	}
 	return (diffuse + microfacet + microfacet_transmission + clear_coat) / n_comp;
 }
@@ -482,14 +483,13 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		w_i = sample_lambertian_dir(n, v_x, v_y, samples);
 	} else if (component == 1) {
 		float3 w_h;
+		float alpha = max(0.001, mat.roughness * mat.roughness);
 		if (mat.anisotropy == 0.f) {
-			float alpha = max(0.001, mat.roughness * mat.roughness);
 			w_h = sample_gtr_2_h(n, v_x, v_y, alpha, samples);
 		} else {
 			float aspect = sqrt(1.f - mat.anisotropy * 0.9f);
-			float a = mat.roughness * mat.roughness;
-			float2 alpha = float2(max(0.001, a / aspect), max(0.001, a * aspect));
-			w_h = sample_gtr_2_aniso_h(n, v_x, v_y, alpha, samples);
+			float2 alpha_aniso = float2(max(0.001, alpha / aspect), max(0.001, alpha * aspect));
+			w_h = sample_gtr_2_aniso_h(n, v_x, v_y, alpha_aniso, samples);
 		}
 		w_i = reflect(-w_o, w_h);
 
@@ -513,10 +513,10 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		// Sample microfacet transmission component
 		float alpha = max(0.001, mat.roughness * mat.roughness);
 		float3 w_h = sample_gtr_2_h(n, v_x, v_y, alpha, samples);
-		bool entering = dot(w_o, n) > 0.f;
 		if (dot(w_o, w_h) < 0.f) {
 			w_h = -w_h;
 		}
+		bool entering = dot(w_o, n) > 0.f;
 		w_i = refract(-w_o, w_h, entering ? 1.f / mat.ior : mat.ior);
 
 		// Invalid refraction, terminate ray
