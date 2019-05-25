@@ -356,7 +356,7 @@ float3 disney_microfacet_transmission_isotropic(in const DisneyMaterial mat, in 
 	bool entering = o_dot_n > 0.f;
 	float eta_o = entering ? 1.f : mat.ior;
 	float eta_i = entering ? mat.ior : 1.f;
-	//float3 w_h = normalize(-eta_i * w_i - eta_o * w_o);
+	float3 w_h = normalize(w_o + w_i * eta_i / eta_o);
 	float3 spec = mat.specular_transmission * mat.base_color;
 
 	float alpha = max(0.001, mat.roughness * mat.roughness);
@@ -742,9 +742,9 @@ void Miss(inout HitInfo payload : SV_RayPayload) {
 	int check_y = v * 10.f;
 
 	if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
-		payload.color_dist.rgb = 0.2f;// * (1.f + normalize(dir)) * 0.5f;
+		payload.color_dist.rgb = 0.5f;// * (1.f + normalize(dir)) * 0.5f;
 	} else {
-		payload.color_dist.rgb = 0.0f;
+		payload.color_dist.rgb = 0.1f;
 	}
 }
 
