@@ -439,7 +439,7 @@ float3 disney_brdf(in const DisneyMaterial mat, in const float3 n,
 float disney_pdf(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 w_i, in const float3 v_x, in const float3 v_y)
 {
-	float alpha = mat.roughness * mat.roughness;
+	float alpha = max(0.001, mat.roughness * mat.roughness);
 	float aspect = sqrt(1.f - mat.anisotropy * 0.9f);
 	float2 alpha_aniso = float2(max(0.001, alpha / aspect), max(0.001, alpha * aspect));
 
@@ -496,6 +496,7 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		// Invalid reflection, terminate ray
 		if (!same_hemisphere(w_o, w_i, n)) {
 			pdf = 0.f;
+			w_i = 0.f;
 			return 0.f;
 		}
 	} else if (component == 2) {
@@ -507,6 +508,7 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		// Invalid reflection, terminate ray
 		if (!same_hemisphere(w_o, w_i, n)) {
 			pdf = 0.f;
+			w_i = 0.f;
 			return 0.f;
 		}
 	} else {
