@@ -339,8 +339,7 @@ float3 disney_microfacet_isotropic(in const DisneyMaterial mat, in const float3 
 
 	float alpha = max(0.001, mat.roughness * mat.roughness);
 	float d = gtr_2(dot(n, w_h), alpha);
-	// TODO: Should these be dot(o, h)?
-	float3 f = lerp(spec, float3(1, 1, 1), schlick_weight(dot(w_i, n)));
+	float3 f = lerp(spec, float3(1, 1, 1), schlick_weight(dot(w_i, w_h)));
 	float g = smith_shadowing_ggx(dot(n, w_i), alpha) * smith_shadowing_ggx(dot(n, w_o), alpha);
 	return d * f * g;
 }
@@ -374,8 +373,6 @@ float3 disney_microfacet_transmission_isotropic(in const DisneyMaterial mat, in 
 	return spec * c * (1.f - f) * g * d;
 }
 
-// TODO: This seems to have some issues as well.
-// Maybe just toss it for now.
 float3 disney_microfacet_anisotropic(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 w_i, in const float3 v_x, in const float3 v_y)
 {
@@ -388,7 +385,7 @@ float3 disney_microfacet_anisotropic(in const DisneyMaterial mat, in const float
 	float a = mat.roughness * mat.roughness;
 	float2 alpha = float2(max(0.001, a / aspect), max(0.001, a * aspect));
 	float d = gtr_2_aniso(dot(n, w_h), abs(dot(w_h, v_x)), abs(dot(w_h, v_y)), alpha);
-	float3 f = lerp(spec, float3(1, 1, 1), schlick_weight(dot(w_i, n)));
+	float3 f = lerp(spec, float3(1, 1, 1), schlick_weight(dot(w_i, w_h)));
 	float g = smith_shadowing_ggx_aniso(dot(n, w_i), abs(dot(w_i, v_x)), abs(dot(w_i, v_y)), alpha)
 		* smith_shadowing_ggx_aniso(dot(n, w_o), abs(dot(w_o, v_x)), abs(dot(w_o, v_y)), alpha);
 	return d * f * g;
