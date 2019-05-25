@@ -209,7 +209,6 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 
 	GLuint render_texture;
 	glGenTextures(1, &render_texture);
-	// Setup the render textures for color and normals
 	glBindTexture(GL_TEXTURE_2D, render_texture);
 	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, win_width, win_height);
 
