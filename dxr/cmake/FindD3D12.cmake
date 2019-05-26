@@ -76,13 +76,11 @@ function(add_dxil_embed_library)
 		list(APPEND HLSL_SRCS "${CMAKE_CURRENT_LIST_DIR}/${shader}")
 	endforeach()
 	list(GET DXIL_UNPARSED_ARGUMENTS 0 MAIN_SHADER)
-	message("hlsl SRC: ${HLSL_SRCS}")
 
 	# We only compile the main shader with dxc, but use the rest to
 	# set the target dependencies properly
 	get_filename_component(FNAME ${MAIN_SHADER} NAME_WE)
 	set(DXIL_EMBED_FILE "${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_embedded_dxil.h")
-	message(${DXIL_EMBED_FILE})
 	add_custom_command(OUTPUT ${DXIL_EMBED_FILE}
 		COMMAND ${D3D12_SHADER_COMPILER} ${CMAKE_CURRENT_LIST_DIR}/${MAIN_SHADER}
 		-T lib_6_3 -Fh ${DXIL_EMBED_FILE} -Vn ${FNAME}_dxil
