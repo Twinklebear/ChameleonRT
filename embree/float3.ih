@@ -1,0 +1,86 @@
+#pragma once
+
+struct float3 {
+	float x, y, z;
+};
+
+float3 make_float3(float x, float y, float z) {
+	float3 v;
+	v.x = x;
+	v.y = y;
+	v.z = z;
+	return v;
+}
+
+float3 make_float3(float c) {
+	return make_float3(c, c, c);
+}
+
+float length(const float3 v) {
+	return sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+float3 normalized(const float3 v) {
+	float l = length(v);
+	if (l < 0.0) {
+		l = 0.0001;
+	}
+	const float c = 1.f / length(v);
+	return make_float3(v.x * c, v.y * c, v.z * c);
+}
+
+void normalize(uniform float *x, uniform float *y, uniform float *z) {
+	const float len = sqrt(*x * *x + *y * *y + *z * *z);
+	*x /= len;
+	*y /= len;
+	*z /= len;
+}
+
+float3 cross(const float3 a, const float3 b) {
+	float3 c;
+	c.x = a.y * b.z - a.z * b.y;
+	c.y = a.z * b.x - a.x * b.z;
+	c.z = a.x * b.y - a.y * b.x;
+	return c;
+}
+
+float dot(const float3 a, const float3 b) {
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+float3 operator-(const float3 &a, const float3 &b) {
+	return make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+float3 operator+(const float3 &a, const float3 &b) {
+	return make_float3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+float3 operator*(const float3 &a, const float s) {
+	return make_float3(a.x * s, a.y * s, a.z * s);
+}
+
+float3 operator*(const float3 &a, const float3 &b) {
+	return make_float3(a.x * b.x, a.y * b.y, a.z * b.z);
+}
+
+float3 operator/(const float3 &a, const float s) {
+	return make_float3(a.x / s, a.y / s, a.z / s);
+}
+
+void ortho_basis(float3 &v_x, float3 &v_y, const float3 &n) {
+	v_y = make_float3(0, 0, 0);
+
+	if (n.x < 0.6f && n.x > -0.6f) {
+		v_y.x = 1.f;
+	} else if (n.y < 0.6f && n.y > -0.6f) {
+		v_y.y = 1.f;
+	} else if (n.z < 0.6f && n.z > -0.6f) {
+		v_y.z = 1.f;
+	} else {
+		v_y.x = 1.f;
+	}
+	v_x = normalized(cross(v_y, n));
+	v_y = normalized(cross(n, v_x));
+}
+

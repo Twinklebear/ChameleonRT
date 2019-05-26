@@ -1,126 +1,10 @@
 #include <embree3/rtcore.isph>
-
-#define M_PI 3.14159265358979323846
-#define M_1_PI 0.318309886183790671538
-
-typedef unsigned int8 uint8_t;
-typedef unsigned int uint32_t;
-typedef unsigned int64 uint64_t;
-
-struct vec3 {
-	float x, y, z;
-};
-
-vec3 make_vec3(float x, float y, float z) {
-	vec3 v;
-	v.x = x;
-	v.y = y;
-	v.z = z;
-	return v;
-}
-
-vec3 make_vec3(float c) {
-	return make_vec3(c, c, c);
-}
-
-float length(const vec3 v) {
-	return sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-}
-
-vec3 normalized(const vec3 v) {
-	float l = length(v);
-	if (l < 0.0) {
-		l = 0.0001;
-	}
-	const float c = 1.f / length(v);
-	return make_vec3(v.x * c, v.y * c, v.z * c);
-}
-
-void normalize(uniform float *x, uniform float *y, uniform float *z) {
-	const float len = sqrt(*x * *x + *y * *y + *z * *z);
-	*x /= len;
-	*y /= len;
-	*z /= len;
-}
-
-vec3 cross(const vec3 a, const vec3 b) {
-	vec3 c;
-	c.x = a.y * b.z - a.z * b.y;
-	c.y = a.z * b.x - a.x * b.z;
-	c.z = a.x * b.y - a.y * b.x;
-	return c;
-}
-
-float dot(const vec3 a, const vec3 b) {
-	return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-vec3 operator-(const vec3 &a, const vec3 &b) {
-	return make_vec3(a.x - b.x, a.y - b.y, a.z - b.z);
-}
-
-vec3 operator+(const vec3 &a, const vec3 &b) {
-	return make_vec3(a.x + b.x, a.y + b.y, a.z + b.z);
-}
-
-vec3 operator*(const vec3 &a, const float s) {
-	return make_vec3(a.x * s, a.y * s, a.z * s);
-}
-
-vec3 operator*(const vec3 &a, const vec3 &b) {
-	return make_vec3(a.x * b.x, a.y * b.y, a.z * b.z);
-}
-
-vec3 operator/(const vec3 &a, const float s) {
-	return make_vec3(a.x / s, a.y / s, a.z / s);
-}
-
-void ortho_basis(vec3 &v_x, vec3 &v_y, const vec3 &n) {
-	v_y = make_vec3(0, 0, 0);
-
-	if (n.x < 0.6f && n.x > -0.6f) {
-		v_y.x = 1.f;
-	} else if (n.y < 0.6f && n.y > -0.6f) {
-		v_y.y = 1.f;
-	} else if (n.z < 0.6f && n.z > -0.6f) {
-		v_y.z = 1.f;
-	} else {
-		v_y.x = 1.f;
-	}
-	v_x = normalized(cross(v_y, n));
-	v_y = normalized(cross(n, v_x));
-}
-
-// http://www.pcg-random.org/download.html
-struct PCGRand {
-	uint64_t state;
-	// Just use stream 1
-};
-
-uint32_t pcg32_random(PCGRand &rng) {
-	uint64_t oldstate = rng.state;
-	rng.state = oldstate * 6364136223846793005ULL + 1;
-	// Calculate output function (XSH RR), uses old state for max ILP
-	uint32_t xorshifted = ((oldstate >> 18u) ^ oldstate) >> 27u;
-	uint32_t rot = oldstate >> 59u;
-	return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
-}
-
-float pcg32_randomf(PCGRand &rng) {
-	return ldexp((double)pcg32_random(rng), -32);
-}
-
-PCGRand get_rng(uint32_t seed) {
-	PCGRand rng;
-	rng.state = 0;
-	pcg32_random(rng);
-	rng.state += seed;
-	pcg32_random(rng);
-	return rng;
-}
+#include "util.ih"
+#include "pcg_rng.ih"
+#include "float3.ih"
 
 struct ViewParams {
-	vec3 pos, dir_du, dir_dv, dir_top_left;
+	float3 pos, dir_du, dir_dv, dir_top_left;
 	uint32_t frame_id;
 };
 
@@ -137,14 +21,7 @@ struct Tile {
 	float *uniform data;
 };
 
-float linear_to_srgb(float x) {
-	if (x <= 0.0031308f) {
-		return 12.92f * x;
-	}
-	return 1.055f * pow(x, 1.f/2.4f) - 0.055f;
-}
-
-RTCRay make_ray(const vec3 &pos, const vec3 &dir, const float tnear) {
+RTCRay make_ray(const float3 &pos, const float3 &dir, const float tnear) {
 	RTCRay ray;
 	ray.org_x = pos.x;
 	ray.org_y = pos.y;
@@ -163,7 +40,7 @@ RTCRay make_ray(const vec3 &pos, const vec3 &dir, const float tnear) {
 	return ray;
 }
 
-RTCRayHit make_ray_hit(const vec3 &pos, const vec3 &dir, const float tnear) {
+RTCRayHit make_ray_hit(const float3 &pos, const float3 &dir, const float tnear) {
 	RTCRayHit ray_hit;
 	ray_hit.ray.org_x = pos.x;
 	ray_hit.ray.org_y = pos.y;
@@ -186,7 +63,7 @@ RTCRayHit make_ray_hit(const vec3 &pos, const vec3 &dir, const float tnear) {
 	return ray_hit;
 };
 
-vec3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng);
+float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng);
 
 export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		void *uniform _tile, const void *uniform _view_params,
@@ -244,7 +121,7 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		const uint32_t pixel = ray * 3;
 		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 2));
 
-		const vec3 color = shade_path(scene, ray_hit, ray, rng);
+		const float3 color = shade_path(scene, ray_hit, ray, rng);
 		
 		tile->data[pixel] = (color.x + view_params->frame_id * tile->data[pixel]) / (view_params->frame_id + 1);
 		tile->data[pixel + 1] = (color.y + view_params->frame_id * tile->data[pixel + 1]) / (view_params->frame_id + 1);
@@ -252,40 +129,40 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	}
 }
 
-vec3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng) {
+float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng) {
 	if (ray_hits->hit.geomID[px] == (uint32_t)-1) {
-		return make_vec3(0.f);
+		return make_float3(0.f);
 	}
 	const int MAX_PATH_DEPTH = 5;
 
 	// Initial hit data since we're coming from the stream of primary hits
-	vec3 hit_p;
+	float3 hit_p;
 	hit_p.x = ray_hits->ray.org_x[px] + ray_hits->ray.tfar[px] * ray_hits->ray.dir_x[px];
 	hit_p.y = ray_hits->ray.org_y[px] + ray_hits->ray.tfar[px] * ray_hits->ray.dir_y[px];
 	hit_p.z = ray_hits->ray.org_z[px] + ray_hits->ray.tfar[px] * ray_hits->ray.dir_z[px];
 
-	vec3 normal;
+	float3 normal;
 	normal.x = ray_hits->hit.Ng_x[px];
 	normal.y = ray_hits->hit.Ng_y[px];
 	normal.z = ray_hits->hit.Ng_z[px];
 	normal = normalized(normal);
 
-	vec3 w_o;
+	float3 w_o;
 	w_o.x = -ray_hits->ray.dir_x[px];
 	w_o.y = -ray_hits->ray.dir_y[px];
 	w_o.z = -ray_hits->ray.dir_z[px];
 
-	const vec3 light_emission = make_vec3(1.0);
-	const vec3 light_dir = normalized(make_vec3(-0.5, 0.8, 0.5));
+	const float3 light_emission = make_float3(1.0);
+	const float3 light_dir = normalized(make_float3(-0.5, 0.8, 0.5));
 
 	RTCRayHit path_ray;
 	int bounce = 0;
-	vec3 illum = make_vec3(0.0);
-	vec3 path_throughput = make_vec3(1.0);
-	vec3 w_i;
+	float3 illum = make_float3(0.0);
+	float3 path_throughput = make_float3(1.0);
+	float3 w_i;
 	do {
-		const vec3 obj_color = make_vec3(0.9);
-		const vec3 bsdf = obj_color * M_1_PI;
+		const float3 obj_color = make_float3(0.9);
+		const float3 bsdf = obj_color * M_1_PI;
 
 		// Direct light sampling
 		RTCRay shadow_ray = make_ray(hit_p, light_dir, 0.0001);
@@ -296,7 +173,7 @@ vec3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits,
 
 		// Sample the hemisphere
 		// TODO: Cosine weighted hemisphere sampling
-		vec3 v_x, v_y;
+		float3 v_x, v_y;
 		ortho_basis(v_x, v_y, normal);
 
 		const float theta = sqrt(pcg32_randomf(rng));

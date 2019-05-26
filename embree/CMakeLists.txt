@@ -3,7 +3,7 @@ find_package(TBB REQUIRED)
 
 include(cmake/ISPC.cmake)
 add_ispc_library(ispc_kernels render_embree.ispc
-	INCLUDE_DIRECTORIES ${EMBREE_INCLUDE_DIRS}
+	INCLUDE_DIRECTORIES ${EMBREE_INCLUDE_DIRS} ${CMAKE_CURRENT_LIST_DIR}
 	COMPILE_DEFINITIONS -O2)
 
 add_library(render_embree render_embree.cpp)

@@ -1,0 +1,16 @@
+#pragma once
+
+#define M_PI 3.14159265358979323846
+#define M_1_PI 0.318309886183790671538
+
+typedef unsigned int8 uint8_t;
+typedef unsigned int uint32_t;
+typedef unsigned int64 uint64_t;
+
+float linear_to_srgb(float x) {
+	if (x <= 0.0031308f) {
+		return 12.92f * x;
+	}
+	return 1.055f * pow(x, 1.f/2.4f) - 0.055f;
+}
+
