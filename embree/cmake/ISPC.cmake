@@ -41,6 +41,8 @@ function(add_ispc_library)
 			${ISPC_PIC}
 			--quiet)
 
+		# TODO: We need to recurse through the dependencies to build their dep lists and
+		# add them on to the ispc file we're compiling
 		set(DEPS "${CMAKE_CURRENT_LIST_DIR}/${SRC}")
 		if (EXISTS ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep)
 			file(READ ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep DEPS_CONTENT)
