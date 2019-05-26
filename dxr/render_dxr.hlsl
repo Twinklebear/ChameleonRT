@@ -56,7 +56,6 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 		light_dir = normalize(light_dir);
 
 		float light_pdf = quad_light_pdf(light, light_pos, hit_p, light_dir);
-		// TODO: Maybe should check if same hemisphere here?
 		float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, v_x, v_y);
 
 		shadow_ray.Direction = light_dir;
@@ -156,7 +155,7 @@ void RayGen() {
 		}
 		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
 
-		if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
+		if (all(path_throughput < EPSILON)) {
 			break;
 		}
 

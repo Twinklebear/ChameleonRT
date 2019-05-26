@@ -366,11 +366,13 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 	in const float3 w_o, in const float3 v_x, in const float3 v_y, inout PCGRand rng,
 	out float3 w_i, out float pdf)
 {
-	int component = abs(pcg32_random(rng));
+	int component = 0;
 	if (mat.specular_transmission == 0.f) {
-		component = component % 3;
+		component = pcg32_randomf(rng) * 3.f;
+		component = clamp(component, 0, 3);
 	} else {
-		component = component % 4;
+		component = pcg32_randomf(rng) * 4.f;
+		component = clamp(component, 0, 3);
 	}
 
 	float2 samples = float2(pcg32_randomf(rng), pcg32_randomf(rng));
