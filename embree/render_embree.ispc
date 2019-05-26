@@ -2,6 +2,7 @@
 #include "util.ih"
 #include "pcg_rng.ih"
 #include "float3.ih"
+#include "disney_bsdf.ih"
 
 struct ViewParams {
 	float3 pos, dir_du, dir_dv, dir_top_left;
@@ -66,8 +67,7 @@ RTCRayHit make_ray_hit(const float3 &pos, const float3 &dir, const float tnear) 
 float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng);
 
 export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
-		void *uniform _tile, const void *uniform _view_params,
-		const uint32_t *uniform indices, const float *uniform verts)
+		void *uniform _tile, const void *uniform _view_params)
 {
 	Scene *uniform scene = (Scene *uniform)_scene;
 	const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
@@ -133,7 +133,6 @@ float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hit
 	if (ray_hits->hit.geomID[px] == (uint32_t)-1) {
 		return make_float3(0.f);
 	}
-	const int MAX_PATH_DEPTH = 5;
 
 	// Initial hit data since we're coming from the stream of primary hits
 	float3 hit_p;
@@ -145,7 +144,7 @@ float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hit
 	normal.x = ray_hits->hit.Ng_x[px];
 	normal.y = ray_hits->hit.Ng_y[px];
 	normal.z = ray_hits->hit.Ng_z[px];
-	normal = normalized(normal);
+	normal = normalize(normal);
 
 	float3 w_o;
 	w_o.x = -ray_hits->ray.dir_x[px];
@@ -153,7 +152,7 @@ float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hit
 	w_o.z = -ray_hits->ray.dir_z[px];
 
 	const float3 light_emission = make_float3(1.0);
-	const float3 light_dir = normalized(make_float3(-0.5, 0.8, 0.5));
+	const float3 light_dir = normalize(make_float3(-0.5, 0.8, 0.5));
 
 	RTCRayHit path_ray;
 	int bounce = 0;
@@ -186,7 +185,7 @@ float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hit
 		w_i.x = x * v_x.x + y * v_y.x + z * normal.x;
 		w_i.y = x * v_x.y + y * v_y.y + z * normal.y;
 		w_i.z = x * v_x.z + y * v_y.z + z * normal.z;
-		w_i = normalized(w_i);
+		w_i = normalize(w_i);
 
 		float pdf = abs(dot(w_i, normal)) * M_1_PI;
 		if (pdf == 0.0) {
@@ -205,6 +204,8 @@ float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hit
 		if (bounce < MAX_PATH_DEPTH) {
 			rtcIntersectV(scene->scene, scene->incoherent_context, &path_ray);
 			if (path_ray.hit.geomID == (uint32_t)-1) {
+				// TODO: Here we should run the "miss" shader that we run in DXR
+				// to generate the checkerboard environment map
 				break;
 			}
 			hit_p.x = path_ray.ray.org_x + path_ray.ray.tfar * w_i.x;
@@ -214,11 +215,9 @@ float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hit
 			normal.x = path_ray.hit.Ng_x;
 			normal.y = path_ray.hit.Ng_y;
 			normal.z = path_ray.hit.Ng_z;
-			normal = normalized(normal);
+			normal = normalize(normal);
 
-			w_o.x = -w_i.x;
-			w_o.y = -w_i.y;
-			w_o.z = -w_i.z;
+			w_o = neg(w_i);
 		}
 	} while (bounce < MAX_PATH_DEPTH);
 

@@ -214,9 +214,7 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		RTCRayHitNp ray_hit = make_ray_hit_soa(primary_rays[tile_id].first, primary_rays[tile_id].second);
 
 		ispc::trace_rays(&ispc_scene, (ispc::RTCRayHitNp*)&ray_hit,
-				&ispc_tile, &view_params,
-				reinterpret_cast<const uint32_t*>(indices.data()),
-				reinterpret_cast<const float*>(verts.data()));
+				&ispc_tile, &view_params);
 
 		ispc::tile_to_uint8(&ispc_tile, color);
 	});
