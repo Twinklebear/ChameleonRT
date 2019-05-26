@@ -2,6 +2,7 @@
 #include "util.ih"
 #include "pcg_rng.ih"
 #include "float3.ih"
+#include "lights.ih"
 #include "disney_bsdf.ih"
 
 struct ViewParams {
