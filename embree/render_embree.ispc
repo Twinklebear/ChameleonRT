@@ -23,56 +23,16 @@ struct Tile {
 	float *uniform data;
 };
 
-RTCRay make_ray(const float3 &pos, const float3 &dir, const float tnear) {
-	RTCRay ray;
-	ray.org_x = pos.x;
-	ray.org_y = pos.y;
-	ray.org_z = pos.z;
-	ray.tnear = tnear;
-
-	ray.dir_x = dir.x;
-	ray.dir_y = dir.y;
-	ray.dir_z = dir.z;
-	ray.time = 0.f;
-	ray.tfar = 1e20f;
-
-	ray.mask = -1;
-	ray.id = 0;
-	ray.flags = 0;
-	return ray;
-}
-
-RTCRayHit make_ray_hit(const float3 &pos, const float3 &dir, const float tnear) {
-	RTCRayHit ray_hit;
-	ray_hit.ray.org_x = pos.x;
-	ray_hit.ray.org_y = pos.y;
-	ray_hit.ray.org_z = pos.z;
-	ray_hit.ray.tnear = tnear;
-
-	ray_hit.ray.dir_x = dir.x;
-	ray_hit.ray.dir_y = dir.y;
-	ray_hit.ray.dir_z = dir.z;
-	ray_hit.ray.time = 0.f;
-	ray_hit.ray.tfar = 1e20f;
-
-	ray_hit.ray.mask = -1;
-	ray_hit.ray.id = 0;
-	ray_hit.ray.flags = 0;
-
-	ray_hit.hit.primID = -1;
-	ray_hit.hit.geomID = -1;
-	ray_hit.hit.instID[0] = -1;
-	return ray_hit;
-};
-
-float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng);
+float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits,
+		const DisneyMaterial &mat, uint32_t px, PCGRand &rng);
 
 export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
-		void *uniform _tile, const void *uniform _view_params)
+		void *uniform _tile, const void *uniform _view_params, void *uniform _mat)
 {
 	Scene *uniform scene = (Scene *uniform)_scene;
 	const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
 	Tile *uniform tile = (Tile *uniform)_tile;
+	DisneyMaterial *uniform mat = (DisneyMaterial *uniform)_mat;
 
 	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
@@ -122,7 +82,10 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		const uint32_t pixel = ray * 3;
 		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 2));
 
-		const float3 color = shade_path(scene, ray_hit, ray, rng);
+		// TODO: Bit of a hack to make the single material a "varying" b/c in the future we'll have multiple
+		// materials, so it will be varying
+		DisneyMaterial dmat = *mat;
+		const float3 color = shade_path(scene, ray_hit, dmat, ray, rng);
 		
 		tile->data[pixel] = (color.x + view_params->frame_id * tile->data[pixel]) / (view_params->frame_id + 1);
 		tile->data[pixel + 1] = (color.y + view_params->frame_id * tile->data[pixel + 1]) / (view_params->frame_id + 1);
@@ -130,9 +93,89 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	}
 }
 
-float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng) {
+float3 sample_direct_light(const Scene *uniform scene, const DisneyMaterial &mat,
+	const float3 &hit_p, const float3 &n, const float3 &v_x, const float3 &v_y, const float3 &w_o, PCGRand &rng)
+{
+	float3 illum = make_float3(0.f);
+
+	QuadLight light;
+	light.emission = make_float3(5.f);
+	light.normal = normalize(make_float3(0.5, -0.8, -0.5));
+	light.position = 10.f * neg(light.normal);
+	// TODO: This would be input from the scene telling us how the light is placed
+	// For now we don't care
+	ortho_basis(light.v_x, light.v_y, light.normal);
+	light.width = 5.f;
+	light.height = 5.f;
+
+	RTCRay shadow_ray;
+
+	// Sample the light to compute an incident light ray to this point
+	{
+		float3 light_pos = sample_quad_light_position(light, make_float2(pcg32_randomf(rng), pcg32_randomf(rng)));
+		float3 light_dir = light_pos - hit_p;
+		float light_dist = length(light_dir);
+		light_dir = normalize(light_dir);
+
+		float light_pdf = quad_light_pdf(light, light_pos, hit_p, light_dir);
+		float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, v_x, v_y);
+
+		set_ray(shadow_ray, hit_p, light_dir, EPSILON);
+		shadow_ray.tfar = light_dist;
+		rtcOccludedV(scene->scene, scene->incoherent_context, &shadow_ray);
+
+		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_ray.tfar > 0.f) {
+			float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
+			float w = power_heuristic(1.f, light_pdf, 1.f, bsdf_pdf);
+			illum = bsdf * light.emission * abs(dot(light_dir, n)) * w / light_pdf;
+		}
+	}
+
+	// Sample the BRDF to compute a light sample as well
+	{
+		float3 w_i;
+		float bsdf_pdf;
+		float3 bsdf = sample_disney_brdf(mat, n, w_o, v_x, v_y, rng, w_i, bsdf_pdf);
+		
+		float light_dist;
+		float3 light_pos;
+		if (!all_zero(bsdf) && bsdf_pdf >= EPSILON && quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
+			float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
+			if (light_pdf >= EPSILON) {
+				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
+
+				set_ray(shadow_ray, hit_p, w_i, EPSILON);
+				shadow_ray.tfar = light_dist;
+				rtcOccludedV(scene->scene, scene->incoherent_context, &shadow_ray);
+				if (shadow_ray.tfar > 0.f) {
+					illum = illum + bsdf * light.emission * abs(dot(w_i, n)) * w / bsdf_pdf;
+				}
+			}
+		}
+	}
+	return illum;
+}
+
+// A miss "shader" to make the same checkerboard background for testing as in the DXR backend
+float3 miss_shader(const float3 &dir) {
+	float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
+	float v = acos(dir.y) * M_1_PI;
+
+	int check_x = u * 10.f;
+	int check_y = v * 10.f;
+
+	if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
+		return make_float3(0.5f);// * (1.f + normalize(dir)) * 0.5f;
+	}
+	return make_float3(0.1f);
+}
+
+float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits,
+		const DisneyMaterial &mat, uint32_t px, PCGRand &rng)
+{
 	if (ray_hits->hit.geomID[px] == (uint32_t)-1) {
-		return make_float3(0.f);
+		float3 dir = make_float3(ray_hits->ray.dir_x[px], ray_hits->ray.dir_y[px], ray_hits->ray.dir_z[px]);
+		return miss_shader(dir);
 	}
 
 	// Initial hit data since we're coming from the stream of primary hits
@@ -161,52 +204,31 @@ float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hit
 	float3 path_throughput = make_float3(1.0);
 	float3 w_i;
 	do {
-		const float3 obj_color = make_float3(0.9);
-		const float3 bsdf = obj_color * M_1_PI;
-
 		// Direct light sampling
-		RTCRay shadow_ray = make_ray(hit_p, light_dir, 0.0001);
-		rtcOccludedV(scene->scene, scene->incoherent_context, &shadow_ray);
-		if (shadow_ray.tfar > 0) {
-			illum = illum + path_throughput * bsdf * light_emission * abs(dot(light_dir, normal));
-		}
-
-		// Sample the hemisphere
-		// TODO: Cosine weighted hemisphere sampling
 		float3 v_x, v_y;
 		ortho_basis(v_x, v_y, normal);
+		illum = illum + path_throughput * sample_direct_light(scene, mat, hit_p, normal, v_x, v_y, w_o, rng);
 
-		const float theta = sqrt(pcg32_randomf(rng));
-		const float phi = 2.0f * M_PI * pcg32_randomf(rng);
-
-		const float x = cos(phi) * theta;
-		const float y = sin(phi) * theta;
-		const float z = sqrt(1.0 - theta * theta);
-
-		w_i.x = x * v_x.x + y * v_y.x + z * normal.x;
-		w_i.y = x * v_x.y + y * v_y.y + z * normal.y;
-		w_i.z = x * v_x.z + y * v_y.z + z * normal.z;
-		w_i = normalize(w_i);
-
-		float pdf = abs(dot(w_i, normal)) * M_1_PI;
-		if (pdf == 0.0) {
+		// Sample the BSDF to continue the ray
+		float pdf;
+		float3 bsdf = sample_disney_brdf(mat, normal, w_o, v_x, v_y, rng, w_i, pdf);
+		if (pdf < EPSILON || all_zero(bsdf)) {
 			break;
 		}
-		// Note: same as just multiplying my M_PI b/c the cancellation,
-		// but left like this b/c I'll swap to Disney BRDF soon-ish
 		path_throughput = path_throughput * bsdf * abs(dot(w_i, normal)) / pdf;
-		if (path_throughput.x == 0 && path_throughput.y == 0 && path_throughput.z == 0) {
+
+		if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
 			break;
 		}
 
-		path_ray = make_ray_hit(hit_p, w_i, 0.0001);
+		// Trace the ray continuing the path
+		set_ray_hit(path_ray, hit_p, w_i, EPSILON);
 
 		++bounce;
 		if (bounce < MAX_PATH_DEPTH) {
 			rtcIntersectV(scene->scene, scene->incoherent_context, &path_ray);
 			if (path_ray.hit.geomID == (uint32_t)-1) {
-				// TODO: Here we should run the "miss" shader that we run in DXR
-				// to generate the checkerboard environment map
+				illum = illum + path_throughput * miss_shader(w_i);
 				break;
 			}
 			hit_p.x = path_ray.ray.org_x + path_ray.ray.tfar * w_i.x;

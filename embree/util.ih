@@ -62,10 +62,60 @@ float3 reflect(const float3 &i, const float3 &n) {
 
 float3 refract(const float3 &i, const float3 &n, float eta) {
 	float n_dot_i = dot(n, i);
-	float k = 1.f - eta * eta * (1.f - pow2(n_dot_i));
+	float k = 1.f - eta * eta * (1.f - n_dot_i * n_dot_i);
 	if (k < 0.f) {
 		return make_float3(0.f);
 	}
 	return eta * i - (eta * n_dot_i + sqrt(k)) * n;
 }
+
+void set_ray(RTCRay &ray, const float3 &pos, const float3 &dir, const float tnear) {
+	ray.org_x = pos.x;
+	ray.org_y = pos.y;
+	ray.org_z = pos.z;
+	ray.tnear = tnear;
+
+	ray.dir_x = dir.x;
+	ray.dir_y = dir.y;
+	ray.dir_z = dir.z;
+	ray.time = 0.f;
+	ray.tfar = 1e20f;
+
+	ray.mask = -1;
+	ray.id = 0;
+	ray.flags = 0;
+}
+
+RTCRay make_ray(const float3 &pos, const float3 &dir, const float tnear) {
+	RTCRay ray;
+	set_ray(ray, pos, dir, tnear);
+	return ray;
+}
+
+void set_ray_hit(RTCRayHit &ray_hit, const float3 &pos, const float3 &dir, const float tnear) {
+	ray_hit.ray.org_x = pos.x;
+	ray_hit.ray.org_y = pos.y;
+	ray_hit.ray.org_z = pos.z;
+	ray_hit.ray.tnear = tnear;
+
+	ray_hit.ray.dir_x = dir.x;
+	ray_hit.ray.dir_y = dir.y;
+	ray_hit.ray.dir_z = dir.z;
+	ray_hit.ray.time = 0.f;
+	ray_hit.ray.tfar = 1e20f;
+
+	ray_hit.ray.mask = -1;
+	ray_hit.ray.id = 0;
+	ray_hit.ray.flags = 0;
+
+	ray_hit.hit.primID = -1;
+	ray_hit.hit.geomID = -1;
+	ray_hit.hit.instID[0] = -1;
+}
+
+RTCRayHit make_ray_hit(const float3 &pos, const float3 &dir, const float tnear) {
+	RTCRayHit ray_hit;
+	set_ray_hit(ray_hit, pos, dir, tnear);
+	return ray_hit;
+};
 

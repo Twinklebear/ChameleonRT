@@ -106,6 +106,11 @@ void RenderEmbree::set_mesh(const std::vector<float> &verts_unaligned,
 	rtcCommitScene(scene);
 }
 
+void RenderEmbree::set_material(const DisneyMaterial &m) {
+	material = m;
+	frame_id = 0;
+}
+
 RTCRayHitNp make_ray_hit_soa(RaySoA &rays, HitSoA &hits) {
 	RTCRayHitNp rh;
 	rh.ray.org_x = rays.org_x.data();
@@ -214,7 +219,7 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		RTCRayHitNp ray_hit = make_ray_hit_soa(primary_rays[tile_id].first, primary_rays[tile_id].second);
 
 		ispc::trace_rays(&ispc_scene, (ispc::RTCRayHitNp*)&ray_hit,
-				&ispc_tile, &view_params);
+				&ispc_tile, &view_params, &material);
 
 		ispc::tile_to_uint8(&ispc_tile, color);
 	});

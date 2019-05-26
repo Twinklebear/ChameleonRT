@@ -366,11 +366,13 @@ float3 sample_disney_brdf(const DisneyMaterial &mat, const float3 &n,
 	const float3 &w_o, const float3 &v_x, const float3 &v_y, PCGRand &rng,
 	float3 &w_i, float &pdf)
 {
-	int component = abs((float)pcg32_random(rng));
+	int component = 0;
 	if (mat.specular_transmission == 0.f) {
-		component = component % 3;
+		component = pcg32_randomf(rng) * 3.f;
+		component = clamp(component, 0, 3);
 	} else {
-		component = component % 4;
+		component = pcg32_randomf(rng) * 4.f;
+		component = clamp(component, 0, 4);
 	}
 
 	float2 samples = make_float2(pcg32_randomf(rng), pcg32_randomf(rng));
@@ -418,7 +420,7 @@ float3 sample_disney_brdf(const DisneyMaterial &mat, const float3 &n,
 		w_i = refract(neg(w_o), w_h, entering ? 1.f / mat.ior : mat.ior);
 
 		// Invalid refraction, terminate ray
-		if (w_i.x == 0.f && w_i.y == 0.f && w_i.z == 0.f) {
+		if (all_zero(w_i)) {
 			pdf = 0.f;
 			return make_float3(0.f);
 		}
