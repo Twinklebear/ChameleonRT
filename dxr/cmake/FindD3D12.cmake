@@ -51,6 +51,8 @@ else()
 		PATHS ${WIN10_SDK_PATH}/bin/${WIN10_SDK_VERSION}/x86)
 endif()
 
+# The first shader in the list should be the main shader, while
+# others contain dependencies and additional required functions.
 # Note that the include paths and defines should not have
 # the -I or -D prefix, respectively
 function(add_dxil_embed_library)
@@ -69,29 +71,31 @@ function(add_dxil_embed_library)
 	endforeach()
 
 	set(DXIL_LIB ${ARGV0})
-	set(HLSL_SRCS ${DXIL_UNPARSED_ARGUMENTS})
-
-	set(DXIL_SRCS "")
-	foreach (SRC ${HLSL_SRCS})
-		get_filename_component(FNAME ${SRC} NAME_WE)
-
-		set(DXIL_EMBED_FILE "${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_embedded_dxil.h")
-		add_custom_command(OUTPUT ${DXIL_EMBED_FILE}
-			COMMAND ${D3D12_SHADER_COMPILER} ${CMAKE_CURRENT_LIST_DIR}/${SRC}
-			-T lib_6_3 -Fh ${DXIL_EMBED_FILE} -Vn ${FNAME}_dxil
-			${HLSL_INCLUDE_DIRS} ${HLSL_COMPILE_DEFNS} ${DXIL_COMPILE_OPTIONS}
-			DEPENDS ${SRC}
-			COMMENT "Compiling and embedding ${SRC} as ${FNAME}_dxil")
-
-		list(APPEND DXIL_SRCS ${DXIL_EMBED_FILE})
+	set(HLSL_SRCS "")
+	foreach (shader ${DXIL_UNPARSED_ARGUMENTS})
+		list(APPEND HLSL_SRCS "${CMAKE_CURRENT_LIST_DIR}/${shader}")
 	endforeach()
+	list(GET DXIL_UNPARSED_ARGUMENTS 0 MAIN_SHADER)
+	message("hlsl SRC: ${HLSL_SRCS}")
+
+	# We only compile the main shader with dxc, but use the rest to
+	# set the target dependencies properly
+	get_filename_component(FNAME ${MAIN_SHADER} NAME_WE)
+	set(DXIL_EMBED_FILE "${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_embedded_dxil.h")
+	message(${DXIL_EMBED_FILE})
+	add_custom_command(OUTPUT ${DXIL_EMBED_FILE}
+		COMMAND ${D3D12_SHADER_COMPILER} ${CMAKE_CURRENT_LIST_DIR}/${MAIN_SHADER}
+		-T lib_6_3 -Fh ${DXIL_EMBED_FILE} -Vn ${FNAME}_dxil
+		${HLSL_INCLUDE_DIRS} ${HLSL_COMPILE_DEFNS} ${DXIL_COMPILE_OPTIONS}
+		DEPENDS ${HLSL_SRCS}
+		COMMENT "Compiling and embedding ${MAIN_SHADER} as ${FNAME}_dxil")
 
 	# This is needed for some reason to get CMake to generate the file properly
 	# and not screw up the build, because the original approach of just
 	# setting target_sources on ${DXIL_LIB} stopped working once this got put
 	# in some subdirectory. CMake ¯\_(ツ)_/¯
 	set(DXIL_CMAKE_CUSTOM_WRAPPER ${DXIL_LIB}_custom_target)
-	add_custom_target(${DXIL_CMAKE_CUSTOM_WRAPPER} ALL DEPENDS ${DXIL_SRCS})
+	add_custom_target(${DXIL_CMAKE_CUSTOM_WRAPPER} ALL DEPENDS ${DXIL_EMBED_FILE})
 
 	add_library(${DXIL_LIB} INTERFACE)
 	add_dependencies(${DXIL_LIB} ${DXIL_CMAKE_CUSTOM_WRAPPER})
