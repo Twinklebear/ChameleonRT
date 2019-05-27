@@ -51,6 +51,7 @@ void ortho_basis(out float3 v_x, out float3 v_y, const float3 n) {
 float luminance(in const float3 c) {
 	return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
 }
+
 float pow2(float x) {
 	return x * x;
 }

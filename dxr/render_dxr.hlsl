@@ -78,7 +78,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 		
 		float light_dist;
 		float3 light_pos;
-		if (all(bsdf > 0.f) && bsdf_pdf >= EPSILON && quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
+		if (any(bsdf > 0.f) && bsdf_pdf >= EPSILON && quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
 			float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
 			if (light_pdf >= EPSILON) {
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);

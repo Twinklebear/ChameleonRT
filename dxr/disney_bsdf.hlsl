@@ -420,7 +420,7 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 		w_i = refract(-w_o, w_h, entering ? 1.f / mat.ior : mat.ior);
 
 		// Invalid refraction, terminate ray
-		if (all(w_i == float3(0.f, 0.f, 0.f))) {
+		if (all(w_i == 0.f)) {
 			pdf = 0.f;
 			return 0.f;
 		}
