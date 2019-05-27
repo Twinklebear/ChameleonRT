@@ -121,7 +121,6 @@ void RayGen() {
 	mat.sheen_tint = sheen_sheentint_clearc_ccgloss.g;
 	mat.clearcoat = sheen_sheentint_clearc_ccgloss.b;
 	mat.clearcoat_gloss = sheen_sheentint_clearc_ccgloss.a;
-
 	mat.ior = ior_spectrans.r;
 	mat.specular_transmission = ior_spectrans.g;
 
