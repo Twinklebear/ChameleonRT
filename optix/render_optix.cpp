@@ -18,6 +18,12 @@ RenderOptiX::RenderOptiX() {
 	view_params->setElementSize(5 * sizeof(glm::vec4));
 	view_params->setSize(1);
 	context["view_params"]->set(view_params);
+
+	mat_params = context->createBuffer(RT_BUFFER_INPUT);
+	mat_params->setFormat(RT_FORMAT_USER);
+	mat_params->setElementSize(4 * sizeof(glm::vec4));
+	mat_params->setSize(1);
+	context["mat_params"]->set(mat_params);
 }
 
 void RenderOptiX::initialize(const int fb_width, const int fb_height) {
@@ -70,6 +76,12 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 	scene->setAcceleration(context->createAcceleration("Trbvh"));
 
 	context["scene"]->set(scene);
+}
+
+void RenderOptiX::set_material(const DisneyMaterial &m) {
+	std::memcpy(mat_params->map(), &m, sizeof(DisneyMaterial));
+	mat_params->unmap();
+	frame_id = 0;
 }
 
 double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
