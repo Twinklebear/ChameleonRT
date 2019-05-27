@@ -46,6 +46,8 @@ public:
 	glm::vec3 dir() const;
 	// Get the up direction of the camera in world space
 	glm::vec3 up() const;
+	// Get the center of rotation of the camera in world space
+	glm::vec3 center() const;
 
 private:
 	void update_camera();

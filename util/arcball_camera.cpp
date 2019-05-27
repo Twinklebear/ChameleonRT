@@ -63,6 +63,9 @@ glm::vec3 ArcballCamera::dir() const {
 glm::vec3 ArcballCamera::up() const {
 	return glm::normalize(glm::vec3{inv_camera * glm::vec4{0, 1, 0, 0}});
 }
+glm::vec3 ArcballCamera::center() const {
+	return -glm::column(center_translation, 3);
+}
 void ArcballCamera::update_camera() {
 	camera = translation * glm::mat4_cast(rotation) * center_translation;
 	inv_camera = glm::inverse(camera);

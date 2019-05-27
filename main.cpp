@@ -59,7 +59,7 @@ void main(void){
 int win_width = 1280;
 int win_height = 720;
 
-void run_app(int argc, const char **argv, SDL_Window *window);
+void run_app(const std::vector<std::string> &args, SDL_Window *window);
 
 glm::vec2 transform_mouse(glm::vec2 in) {
 	return glm::vec2(in.x * 2.f / win_width - 1.f, 1.f - 2.f * in.y / win_height);
@@ -67,7 +67,7 @@ glm::vec2 transform_mouse(glm::vec2 in) {
 
 int main(int argc, const char **argv) {
 	if (argc < 3) {
-		std::cout << "Usage: " << argv[0] << " [backend] <obj_file>\n"
+		std::cout << "Usage: " << argv[0] << " (backend) <obj_file> [camera]\n"
 			<< "Backends:\n"
 #if ENABLE_OSPRAY
 			<< "\t-ospray    Render with OSPRay\n"
@@ -125,7 +125,9 @@ int main(int argc, const char **argv) {
 	ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
 	ImGui_ImplOpenGL3_Init(glsl_version);
 
-	run_app(argc, argv, window);
+	std::vector<std::string> args(argv, argv + argc);
+
+	run_app(args, window);
 
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplSDL2_Shutdown();
@@ -138,10 +140,29 @@ int main(int argc, const char **argv) {
 	return 0;
 }
 
-void run_app(int argc, const char **argv, SDL_Window *window) {
+void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	ImGuiIO& io = ImGui::GetIO();
 
-	ArcballCamera camera(glm::vec3(0, 0, 5), glm::vec3(0), glm::vec3(0, 1, 0));
+	glm::vec3 eye(0, 0, 5);
+	glm::vec3 center(0);
+	glm::vec3 up(0, 1, 0);
+	for (size_t i = 1; i < args.size(); ++i) {
+		if (args[i] == "-eye") {
+			eye.x = std::stof(args[++i]);
+			eye.y = std::stof(args[++i]);
+			eye.z = std::stof(args[++i]);
+		} else if (args[i] == "-center") {
+			center.x = std::stof(args[++i]);
+			center.y = std::stof(args[++i]);
+			center.z = std::stof(args[++i]);
+		} else if (args[i] == "-up") {
+			up.x = std::stof(args[++i]);
+			up.y = std::stof(args[++i]);
+			up.z = std::stof(args[++i]);
+		}
+	}
+
+	ArcballCamera camera(eye, center, up);
 
 	// Load the model w/ tinyobjloader. We just take any OBJ groups etc. stuff
 	// that may be in the file and dump them all into a single OBJ model.
@@ -149,7 +170,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> materials;
 	std::string err, warn;
-	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, argv[2]);
+	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, args[2].c_str());
 	if (!warn.empty()) {
 		std::cout << "Warning loading model: " << warn << "\n";
 	}
@@ -158,7 +179,7 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 		std::exit(1);
 	}
 	if (!ret) {
-		std::cerr << "Failed to load OBJ model '" << argv[2] << "', aborting\n";
+		std::cerr << "Failed to load OBJ model '" << args[2] << "', aborting\n";
 		std::exit(1);
 	}
 
@@ -176,25 +197,25 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 
 	std::unique_ptr<RenderBackend> renderer = nullptr;
 #if ENABLE_OSPRAY
-	if (std::strcmp(argv[1], "-ospray") == 0) {
+	if (args[1] == "-ospray") {
 		renderer = std::make_unique<RenderOSPRay>();
 		rt_backend = "OSPRay";
 	}
 #endif
 #if ENABLE_OPTIX
-	if (std::strcmp(argv[1], "-optix") == 0) {
+	if (args[1] == "-optix") {
 		renderer = std::make_unique<RenderOptiX>();
 		rt_backend = "OptiX";
 	}
 #endif
 #if ENABLE_EMBREE
-	if (std::strcmp(argv[1], "-embree") == 0) {
+	if (args[1] == "-embree") {
 		renderer = std::make_unique<RenderEmbree>();
 		rt_backend = "Embree (w/ TBB & ISPC)";
 	}
 #endif
 #if ENABLE_DXR
-	if (std::strcmp(argv[1], "-dxr") == 0) {
+	if (args[1] == "-dxr") {
 		renderer = std::make_unique<RenderDXR>();
 		rt_backend = "DirectX Ray Tracing";
 	}
@@ -239,10 +260,17 @@ void run_app(int argc, const char **argv, SDL_Window *window) {
 			if (event.type == SDL_QUIT) {
 				done = true;
 			}
-			if (!io.WantCaptureKeyboard && event.type == SDL_KEYDOWN
-					&& event.key.keysym.sym == SDLK_ESCAPE)
-			{
-				done = true;
+			if (!io.WantCaptureKeyboard && event.type == SDL_KEYDOWN) {
+				if (event.key.keysym.sym == SDLK_ESCAPE) {
+					done = true;
+				} else if (event.key.keysym.sym == SDLK_p) {
+					auto eye = camera.eye();
+					auto center = camera.center();
+					auto up = camera.up();
+					std::cout << "-eye " << eye.x << " " << eye.y << " " << eye.z
+						<< " -center " << center.x << " " << center.y << " " << center.z
+						<< " -up " << up.x << " " << up.y << " " << up.z << "\n";
+				}
 			}
 			if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE
 					&& event.window.windowID == SDL_GetWindowID(window)) {
