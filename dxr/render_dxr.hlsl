@@ -1,7 +1,7 @@
 #include "util.hlsl"
-#include "pcg_rng.hlsl"
-#include "disney_bsdf.hlsl"
-#include "lights.hlsl"
+#include "kernels/pcg_rng.h"
+#include "kernels/disney_bsdf.h"
+#include "kernels/lights.h"
 
 // Raytracing output texture, accessed as a UAV
 RWTexture2D<float4> output : register(u0);
@@ -35,13 +35,13 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 
 	QuadLight light;
 	light.emission = 5.f;
-	light.normal.xyz = normalize(float3(0.5, -0.8, -0.5));
-	light.position.xyz = 10.f * -light.normal.xyz;
+	light.normal = normalize(float3(0.5, -0.8, -0.5));
+	light.position = 10.f * -light.normal;
 	// TODO: This would be input from the scene telling us how the light is placed
 	// For now we don't care
-	ortho_basis(light.v_x.xyz, light.v_y.xyz, light.normal.xyz);
-	light.v_x.w = 5.f;
-	light.v_y.w = 5.f;
+	ortho_basis(light.v_x, light.v_y, light.normal);
+	light.width = 5.f;
+	light.height = 5.f;
 
 	OcclusionHitInfo shadow_hit;
 	RayDesc shadow_ray;
@@ -101,7 +101,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 void RayGen() {
 	uint2 pixel = DispatchRaysIndex().xy;
 	float2 dims = float2(DispatchRaysDimensions().xy);
-	PCGRand rng = get_rng(frame_id);
+	PCGRand rng = get_rng((pixel.x + pixel.y * DispatchRaysDimensions().x) * (frame_id + 1));
 	float2 d = (pixel + float2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
 
 	RayDesc ray;

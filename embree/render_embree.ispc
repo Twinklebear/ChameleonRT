@@ -1,9 +1,8 @@
 #include <embree3/rtcore.isph>
 #include "util.ih"
-#include "pcg_rng.ih"
-#include "float3.ih"
-#include "lights.ih"
-#include "disney_bsdf.ih"
+#include "kernels/pcg_rng.h"
+#include "kernels/disney_bsdf.h"
+#include "kernels/lights.h"
 
 struct ViewParams {
 	float3 pos, dir_du, dir_dv, dir_top_left;

@@ -1,7 +1,7 @@
 #include "util.h"
-#include "pcg_rng.h"
-#include "disney_bsdf.h"
-#include "lights.h"
+#include "kernels/pcg_rng.h"
+#include "kernels/disney_bsdf.h"
+#include "kernels/lights.h"
 
 rtDeclareVariable(rtObject, scene, , );
 

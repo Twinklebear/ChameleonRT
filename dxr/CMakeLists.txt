@@ -3,9 +3,9 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 find_package(D3D12 REQUIRED)
 
 add_dxil_embed_library(shaders render_dxr.hlsl util.hlsl
-	disney_bsdf.hlsl pcg_rng.hlsl
-	COMPILE_OPTIONS -Zi
-	INCLUDE_DIRECTORIES ${CMAKE_CURRENT_LIST_DIR})
+	INCLUDE_DIRECTORIES ${CMAKE_CURRENT_LIST_DIR} ${PROJECT_SOURCE_DIR}
+	COMPILE_DEFINITIONS TARGET_HLSL
+	COMPILE_OPTIONS -Zi)
 
 add_library(render_dxr render_dxr.cpp dx12_utils.cpp dxr_utils.cpp)
 

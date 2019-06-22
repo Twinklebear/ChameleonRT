@@ -1,7 +1,7 @@
-#pragma once
+#ifndef KERNELS_LIGHTS_BSDF_H
+#define KERNELS_LIGHTS_BSDF_H
 
-#include "util.ih"
-#include "float3.ih"
+#include "kernels/wrappers.h"
 
 // Quad-shaped light source
 struct QuadLight {
@@ -16,7 +16,7 @@ struct QuadLight {
 	float height;
 };
 
-float3 sample_quad_light_position(const QuadLight &light, float2 samples) {
+__device__ float3 sample_quad_light_position(IN(QuadLight, light), float2 samples) {
 	return samples.x * light.v_x * light.width
 		+ samples.y * light.v_y * light.height + light.position;
 }
@@ -24,7 +24,7 @@ float3 sample_quad_light_position(const QuadLight &light, float2 samples) {
 /* Compute the PDF of sampling the sampled point p light with the ray specified by orig and dir,
  * assuming the light is not occluded
  */
-float quad_light_pdf(const QuadLight &light, const float3 &p, const float3 &orig, const float3 &dir) {
+__device__ float quad_light_pdf(IN(QuadLight, light), IN(float3, p), IN(float3, orig), IN(float3, dir)) {
 	float surface_area = light.width * light.height;
 	float3 to_pt = p - dir;
 	float dist_sqr = dot(to_pt, to_pt);
@@ -35,8 +35,8 @@ float quad_light_pdf(const QuadLight &light, const float3 &p, const float3 &orig
 	return dist_sqr / (n_dot_w * surface_area);
 }
 
-bool quad_intersect(const QuadLight &light, const float3 &orig, const float3 &dir,
-	float &t, float3 &light_pos)
+__device__ bool quad_intersect(IN(QuadLight, light), IN(float3, orig), IN(float3, dir),
+	OUT(float, t), OUT(float3, light_pos))
 {
 	float denom = dot(dir, light.normal);
 	if (denom >= EPSILON) {
@@ -54,4 +54,6 @@ bool quad_intersect(const QuadLight &light, const float3 &orig, const float3 &di
 	}
 	return false;
 }
+
+#endif
 

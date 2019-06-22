@@ -5,8 +5,8 @@ find_package(OptiX 6 REQUIRED)
 
 include(cmake/Bin2C.cmake)
 add_ptx_embed_library(optix_kernels render_optix.cu
-	INCLUDE_DIRECTORIES ${OptiX_INCLUDE}
-	COMPILE_DEFINITIONS --use_fast_math)
+	INCLUDE_DIRECTORIES ${OptiX_INCLUDE} ${PROJECT_SOURCE_DIR}
+	COMPILE_DEFINITIONS --use_fast_math -DTARGET_CUDA)
 
 add_library(render_optix render_optix.cpp)
 

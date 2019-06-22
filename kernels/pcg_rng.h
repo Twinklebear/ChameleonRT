@@ -1,4 +1,7 @@
-#pragma once
+#ifndef KERNELS_PCG_RNG_H
+#define KERNELS_PCG_RNG_H
+
+#include "wrappers.h"
 
 // http://www.pcg-random.org/download.html
 struct PCGRand {
@@ -6,7 +9,7 @@ struct PCGRand {
 	// Just use stream 1
 };
 
-uint32_t pcg32_random(PCGRand &rng) {
+__device__ uint32_t pcg32_random(INOUT(varying PCGRand, rng)) {
 	uint64_t oldstate = rng.state;
 	rng.state = oldstate * 6364136223846793005ULL + 1;
 	// Calculate output function (XSH RR), uses old state for max ILP
@@ -15,11 +18,11 @@ uint32_t pcg32_random(PCGRand &rng) {
 	return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
 }
 
-float pcg32_randomf(PCGRand &rng) {
+__device__ float pcg32_randomf(INOUT(PCGRand, rng)) {
 	return ldexp((double)pcg32_random(rng), -32);
 }
 
-PCGRand get_rng(uint32_t seed) {
+__device__ PCGRand get_rng(uint32_t seed) {
 	PCGRand rng;
 	rng.state = 0;
 	pcg32_random(rng);
@@ -27,4 +30,6 @@ PCGRand get_rng(uint32_t seed) {
 	pcg32_random(rng);
 	return rng;
 }
+
+#endif
 
