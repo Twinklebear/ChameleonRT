@@ -186,17 +186,6 @@ void RenderDXR::set_meshes(const std::vector<std::vector<float>> &all_verts,
 			buf[i].Transform[0][0] = 1.0f;
 			buf[i].Transform[1][1] = 1.0f;
 			buf[i].Transform[2][2] = 1.0f;
-			if (i == 1) {
-				buf[i].Transform[0][0] = 5.0f;
-				buf[i].Transform[1][1] = 5.0f;
-				buf[i].Transform[2][2] = 5.0f;
-				buf[i].Transform[1][3] = 2.2f;
-			} else if (i == 2) {
-				buf[i].Transform[0][0] = 3.0f;
-				buf[i].Transform[1][1] = 3.0f;
-				buf[i].Transform[2][2] = 3.0f;
-				buf[i].Transform[1][3] = 2.0f;
-			}
 
 			// TODO Testing: Scoot the instances apart some
 			buf[i].Transform[0][3] = (static_cast<float>(i + 1) / meshes.size() - 0.5f) * 8.f;
