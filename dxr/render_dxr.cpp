@@ -9,6 +9,8 @@
 #include "render_dxr.h"
 #include "render_dxr_embedded_dxil.h"
 
+#define NUM_RAY_TYPES 2
+
 using Microsoft::WRL::ComPtr;
 
 RenderDXR::RenderDXR() {
@@ -68,7 +70,6 @@ RenderDXR::RenderDXR() {
 		align_to(4 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
 
-	build_raytracing_pipeline();
 	build_shader_resource_heap();
 }
 
@@ -97,97 +98,126 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 void RenderDXR::set_mesh(const std::vector<float> &verts,
 		const std::vector<uint32_t> &indices)
 {
+	set_mesh({verts}, {indices});
+}
+
+void RenderDXR::set_meshes(const std::vector<std::vector<float>> &all_verts,
+		const std::vector<std::vector<uint32_t>> &all_indices)
+{
 	frame_id = 0;
-	// Upload the mesh to the vertex buffer, build accel structures
-	// Place the vertex data in an upload heap first, then do a GPU-side copy
-	// into a default heap (resident in VRAM)
-	Buffer upload_verts = Buffer::upload(device.Get(), verts.size() * sizeof(float),
-		D3D12_RESOURCE_STATE_GENERIC_READ);
-	Buffer upload_indices = Buffer::upload(device.Get(), indices.size() * sizeof(uint32_t),
-		D3D12_RESOURCE_STATE_GENERIC_READ);
+	for (size_t i = 0; i < all_verts.size(); ++i) {
+		auto &verts = all_verts[i];
+		auto &indices = all_indices[i];
 
-	// Copy vertex and index data into the upload buffers
-	std::memcpy(upload_verts.map(), verts.data(), upload_verts.size());
-	upload_verts.unmap();
+		// Upload the mesh to the vertex buffer, build accel structures
+		// Place the vertex data in an upload heap first, then do a GPU-side copy
+		// into a default heap (resident in VRAM)
+		Buffer upload_verts = Buffer::upload(device.Get(), verts.size() * sizeof(float),
+				D3D12_RESOURCE_STATE_GENERIC_READ);
+		Buffer upload_indices = Buffer::upload(device.Get(), indices.size() * sizeof(uint32_t),
+				D3D12_RESOURCE_STATE_GENERIC_READ);
 
-	std::memcpy(upload_indices.map(), indices.data(), upload_indices.size());
-	upload_indices.unmap();
+		// Copy vertex and index data into the upload buffers
+		std::memcpy(upload_verts.map(), verts.data(), upload_verts.size());
+		upload_verts.unmap();
 
-	// Allocate GPU side buffers for the data so we can have it resident in VRAM
-	vertex_buf = Buffer::default(device.Get(), verts.size() * sizeof(float),
-		D3D12_RESOURCE_STATE_COPY_DEST);
-	index_buf = Buffer::default(device.Get(), indices.size() * sizeof(uint32_t),
-		D3D12_RESOURCE_STATE_COPY_DEST);
+		std::memcpy(upload_indices.map(), indices.data(), upload_indices.size());
+		upload_indices.unmap();
 
-	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+		// Allocate GPU side buffers for the data so we can have it resident in VRAM
+		vertex_buf = Buffer::default(device.Get(), verts.size() * sizeof(float),
+				D3D12_RESOURCE_STATE_COPY_DEST);
+		index_buf = Buffer::default(device.Get(), indices.size() * sizeof(uint32_t),
+				D3D12_RESOURCE_STATE_COPY_DEST);
 
-	// Enqueue the copy into GPU memory
-	cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
-	cmd_list->CopyResource(index_buf.get(), upload_indices.get());
+		CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 
-	// Barriers to wait for the copies to finish before building the accel. structs
-	{
-		std::array<D3D12_RESOURCE_BARRIER, 2> barriers = {
-			barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
-			barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
-		};
-		cmd_list->ResourceBarrier(barriers.size(), barriers.data());
+		// Enqueue the copy into GPU memory
+		cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
+		cmd_list->CopyResource(index_buf.get(), upload_indices.get());
+
+		// Barriers to wait for the copies to finish before building the accel. structs
+		{
+			std::array<D3D12_RESOURCE_BARRIER, 2> barriers = {
+				barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
+				barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+			};
+			cmd_list->ResourceBarrier(barriers.size(), barriers.data());
+		}
+
+		meshes.emplace_back(vertex_buf, index_buf);
+		meshes.back().enqeue_build(device.Get(), cmd_list.Get());
+
+		CHECK_ERR(cmd_list->Close());
+		std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
+		cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+		sync_gpu();
+
+		CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+		meshes.back().enqueue_compaction(device.Get(), cmd_list.Get());
+		CHECK_ERR(cmd_list->Close());
+		cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+		sync_gpu();
+
+		meshes.back().finalize();
 	}
 
-	mesh = TriangleMesh(vertex_buf, index_buf);
-	mesh.enqeue_build(device.Get(), cmd_list.Get());
-
-	CHECK_ERR(cmd_list->Close());
-	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
-	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
-	sync_gpu();
-
-	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
-	mesh.enqueue_compaction(device.Get(), cmd_list.Get());
-	CHECK_ERR(cmd_list->Close());
-	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
-	sync_gpu();
-
-	mesh.finalize();
-
-	// The top-level AS is built over the instances of our bottom level AS
-	// in the scene. For now we just have 1, with an identity transform
 	instance_buf = Buffer::upload(device.Get(),
-		align_to(sizeof(D3D12_RAYTRACING_INSTANCE_DESC), D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT),
+		align_to(meshes.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
+			D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
+
 	{
 		// Write the data about our instance
 		D3D12_RAYTRACING_INSTANCE_DESC *buf =
 			static_cast<D3D12_RAYTRACING_INSTANCE_DESC*>(instance_buf.map());
+		for (size_t i = 0; i < meshes.size(); ++i) {
+			buf[i].InstanceID = i;
+			// Note: we set the num ray type stride for the hit groups here, because
+			// the shader table order may be different than the order we add stuff to
+			// TLAS, since the wrapper does its own internal ordering/mapping/etc.
+			buf[i].InstanceContributionToHitGroupIndex = i * NUM_RAY_TYPES;
+			buf[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+			buf[i].AccelerationStructure = meshes[i]->GetGPUVirtualAddress();
+			buf[i].InstanceMask = 0xff;
 
-		buf->InstanceID = 0;
-		// TODO: does this mean you can do per-instance hit groups? I think so
-		buf->InstanceContributionToHitGroupIndex = 0;
-		buf->Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-		buf->AccelerationStructure = mesh->GetGPUVirtualAddress();
-		buf->InstanceMask = 0xff;
+			// Note: D3D matrices are row-major
+			std::memset(buf[i].Transform, 0, sizeof(buf[i].Transform));
+			buf[i].Transform[0][0] = 1.0f;
+			buf[i].Transform[1][1] = 1.0f;
+			buf[i].Transform[2][2] = 1.0f;
+			if (i == 1) {
+				buf[i].Transform[0][0] = 5.0f;
+				buf[i].Transform[1][1] = 5.0f;
+				buf[i].Transform[2][2] = 5.0f;
+				buf[i].Transform[1][3] = 2.2f;
+			} else if (i == 2) {
+				buf[i].Transform[0][0] = 3.0f;
+				buf[i].Transform[1][1] = 3.0f;
+				buf[i].Transform[2][2] = 3.0f;
+				buf[i].Transform[1][3] = 2.0f;
+			}
 
-		// Note: D3D matrices are row-major
-		std::memset(buf->Transform, 0, sizeof(buf->Transform));
-		buf->Transform[0][0] = 1.f;
-		buf->Transform[1][1] = 1.f;
-		buf->Transform[2][2] = 1.f;
-
+			// TODO Testing: Scoot the instances apart some
+			buf[i].Transform[0][3] = (static_cast<float>(i + 1) / meshes.size() - 0.5f) * 8.f;
+		}
 		instance_buf.unmap();
 	}
 
 	// Now build the top level acceleration structure on our instance
-	scene_bvh = TopLevelBVH(instance_buf, 1);
+	scene_bvh = TopLevelBVH(instance_buf, meshes.size());
 
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	scene_bvh.enqeue_build(device.Get(), cmd_list.Get());
 	CHECK_ERR(cmd_list->Close());
+
+	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
 	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
 	sync_gpu();
 
 	scene_bvh.finalize();
-	
-	
+
+	build_raytracing_pipeline();
 	build_shader_binding_table();
 }
 
@@ -298,7 +328,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 void RenderDXR::build_raytracing_pipeline() {
 	ShaderLibrary shader_library(render_dxr_dxil, sizeof(render_dxr_dxil),
-		{ L"RayGen", L"Miss", L"ClosestHit", L"AOHit", L"AOMiss" });
+		{ L"RayGen", L"Miss", L"ClosestHit", L"OcclusionHit", L"AOMiss" });
 
 	// Create the root signature for our ray gen shader
 	// The raygen program takes three parameters:
@@ -317,17 +347,30 @@ void RenderDXR::build_raytracing_pipeline() {
 		.add_srv("index_buf", 1, 1)
 		.create(device.Get());
 
-	rt_pipeline = RTPipelineBuilder()
+	RTPipelineBuilder rt_pipeline_builder = RTPipelineBuilder()
 		.add_shader_library(shader_library)
 		.set_ray_gen(L"RayGen")
 		.add_miss_shaders({ L"Miss", L"AOMiss" })
-		.add_hit_groups({HitGroup(L"HitGroup", D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit"),
-						HitGroup(L"OcclusionGroup", D3D12_HIT_GROUP_TYPE_TRIANGLES, L"AOHit")})
 		.set_shader_root_sig({ L"RayGen" }, raygen_root_sig)
-		.set_shader_root_sig({ L"HitGroup" }, hitgroup_root_sig)
 		.configure_shader_payload(shader_library.export_names(), 8 * sizeof(float), 2 * sizeof(float))
-		.set_max_recursion(1)
-		.create(device.Get());
+		.set_max_recursion(1);
+
+	// Setup hit groups and shader root signatures for our instances.
+	// For now this is also easy since they all share the same programs and root signatures,
+	// but we just need different hitgroups to set the different params for the meshes
+	std::vector<std::wstring> hg_names;
+	for (size_t i = 0; i < meshes.size(); ++i) {
+		const std::wstring hg_name = L"HitGroup_inst" + std::to_wstring(i);
+		hg_names.push_back(hg_name);
+		const std::wstring og_name = L"OcclusionGroup_inst" + std::to_wstring(i);
+
+		rt_pipeline_builder.add_hit_groups({
+				HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit"),
+				HitGroup(og_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"OcclusionHit")});
+	}
+	rt_pipeline_builder.set_shader_root_sig(hg_names, hitgroup_root_sig);
+
+	rt_pipeline = rt_pipeline_builder.create(device.Get());
 }
 
 void RenderDXR::build_shader_resource_heap() {
@@ -351,16 +394,17 @@ void RenderDXR::build_shader_binding_table() {
 
 		// Is writing the descriptor heap handle actually needed? It seems to not matter
 		// if this is written or not
-		std::memcpy(map + sig->descriptor_table_offset(), &desc_heap_handle,
-			sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+		//std::memcpy(map + sig->descriptor_table_offset(), &desc_heap_handle,
+		//	sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 	}
-	{
-		uint8_t *map = rt_pipeline.shader_record(L"HitGroup");
-		const RootSignature *sig = rt_pipeline.shader_signature(L"HitGroup");
-		D3D12_GPU_VIRTUAL_ADDRESS gpu_handle = vertex_buf->GetGPUVirtualAddress();
+	for (size_t i = 0; i < meshes.size(); ++i) {
+		const std::wstring hg_name = L"HitGroup_inst" + std::to_wstring(i);
+		uint8_t *map = rt_pipeline.shader_record(hg_name);
+		const RootSignature *sig = rt_pipeline.shader_signature(hg_name);
+		D3D12_GPU_VIRTUAL_ADDRESS gpu_handle = meshes[i].vertex_buf->GetGPUVirtualAddress();
 		std::memcpy(map + sig->offset("vertex_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 
-		gpu_handle = index_buf->GetGPUVirtualAddress();
+		gpu_handle = meshes[i].index_buf->GetGPUVirtualAddress();
 		std::memcpy(map + sig->offset("index_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 	}
 

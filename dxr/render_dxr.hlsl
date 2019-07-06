@@ -21,6 +21,14 @@ cbuffer ViewParams : register(b0) {
 	uint32_t frame_id;
 }
 
+// TODO: For per-instance materials I'll want to pass this data inside
+// a StructuredBuffer and assign a material ID for each instance. The
+// material ID can be sent through a buffer which is indexed in the
+// hitgroup by instance ID to lookup and return the material ID. If the
+// only thing the instance ID is used for is that then it's also good enough
+// to just use the instance ID as the material ID. The latter path might
+// actualy be better, since the "instance ID" is not really per-mesh, but
+// more of a global-ish thing
 cbuffer MaterialParams : register(b1) {
 	float4 basecolor_metallic;
 	float4 spec_rough_spectint_aniso;
@@ -61,7 +69,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 		shadow_ray.Direction = light_dir;
 		shadow_ray.TMax = light_dist;
 		TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
-				OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, shadow_ray, shadow_hit);
+				OCCLUSION_RAY, 0, OCCLUSION_RAY, shadow_ray, shadow_hit);
 
 		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_hit.hit == 0) {
 			float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
@@ -86,7 +94,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 				shadow_ray.Direction = w_i;
 				shadow_ray.TMax = light_dist;
 				TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
-						OCCLUSION_RAY, NUM_RAY_TYPES, OCCLUSION_RAY, shadow_ray, shadow_hit);
+						OCCLUSION_RAY, 0, OCCLUSION_RAY, shadow_ray, shadow_hit);
 				if (shadow_hit.hit == 0) {
 					illum += bsdf * light.emission.rgb * abs(dot(w_i, n)) * w / bsdf_pdf;
 				}
@@ -130,7 +138,7 @@ void RayGen() {
 	do {
 		HitInfo payload;
 		payload.color_dist = float4(0, 0, 0, -1);
-		TraceRay(scene, 0, 0xff, PRIMARY_RAY, NUM_RAY_TYPES, PRIMARY_RAY, ray, payload);
+		TraceRay(scene, 0, 0xff, PRIMARY_RAY, 0, PRIMARY_RAY, ray, payload);
 
 		// If we hit nothing, include the scene background color from the miss shader
 		if (payload.color_dist.w <= 0) {
@@ -207,11 +215,12 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 	float3 vb = vertices[idx.y];
 	float3 vc = vertices[idx.z];
 	float3 n = normalize(cross(vb - va, vc - va));
-	payload.color_dist = float4(0.9, 0.9, 0.9, RayTCurrent());
-	payload.normal = float4(n, 0);
+	payload.color_dist = float4(1, 1, 1, RayTCurrent());
+	float3x3 inv_transp = float3x3(WorldToObject4x3()[0], WorldToObject4x3()[1], WorldToObject4x3()[2]);
+	payload.normal = float4(normalize(mul(inv_transp, n)), InstanceID());
 }
 
 [shader("closesthit")]
-void AOHit(inout OcclusionHitInfo occlusion, Attributes attrib) {
+void OcclusionHit(inout OcclusionHitInfo occlusion, Attributes attrib) {
 	occlusion.hit = 1;
 }

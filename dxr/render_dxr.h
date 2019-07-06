@@ -18,7 +18,7 @@ struct RenderDXR : RenderBackend {
 
 	Texture2D render_target, accum_buffer;
 
-	TriangleMesh mesh;
+	std::vector<TriangleMesh> meshes;
 	TopLevelBVH scene_bvh;
 
 	RTPipeline rt_pipeline;
@@ -39,6 +39,8 @@ struct RenderDXR : RenderBackend {
 	void initialize(const int fb_width, const int fb_height) override;
 	void set_mesh(const std::vector<float> &verts,
 			const std::vector<uint32_t> &indices) override;
+	void set_meshes(const std::vector<std::vector<float>> &verts,
+			const std::vector<std::vector<uint32_t>> &indices);
 	void set_material(const DisneyMaterial &m) override;
 	double render(const glm::vec3 &pos, const glm::vec3 &dir,
 			const glm::vec3 &up, const float fovy, const bool camera_changed) override;

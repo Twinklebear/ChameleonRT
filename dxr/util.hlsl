@@ -7,7 +7,6 @@
 
 #define PRIMARY_RAY 0
 #define OCCLUSION_RAY 1
-#define NUM_RAY_TYPES 2
 #define MAX_PATH_DEPTH 5
 
 struct HitInfo {

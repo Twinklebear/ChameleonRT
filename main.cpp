@@ -143,6 +143,10 @@ int main(int argc, const char **argv) {
 void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	ImGuiIO& io = ImGui::GetIO();
 
+	std::vector<std::vector<float>> vertices;
+	std::vector<std::vector<uint32_t>> indices;
+	size_t total_tris = 0; 
+
 	glm::vec3 eye(0, 0, 5);
 	glm::vec3 center(0);
 	glm::vec3 up(0, 1, 0);
@@ -159,39 +163,46 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 			up.x = std::stof(args[++i]);
 			up.y = std::stof(args[++i]);
 			up.z = std::stof(args[++i]);
+		} else if (args[i][0] != '-') {
+			// Otherwise assume it's an obj file we're being given to load
+			// Load the model w/ tinyobjloader. We just take any OBJ groups etc. stuff
+			// that may be in the file and dump them all into a single OBJ model.
+			tinyobj::attrib_t attrib;
+			std::vector<tinyobj::shape_t> shapes;
+			std::vector<tinyobj::material_t> materials;
+			std::string err, warn;
+			std::cout << "Loading OBJ: " << args[i] << "\n";
+			bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, args[i].c_str());
+			if (!warn.empty()) {
+				std::cout << "Warning loading model: " << warn << "\n";
+			}
+			if (!err.empty()) {
+				std::cerr << "Error loading model: " << err << "\n";
+				std::exit(1);
+			}
+			if (!ret) {
+				std::cerr << "Failed to load OBJ model '" << args[2] << "', aborting\n";
+				std::exit(1);
+			}
+
+			vertices.emplace_back(std::move(attrib.vertices));
+			std::vector<uint32_t> mesh_indices;
+			for (size_t s = 0; s < shapes.size(); ++s) {
+				const tinyobj::mesh_t &mesh = shapes[s].mesh;
+
+				for (size_t i = 0; i < mesh.indices.size(); ++i) {
+					mesh_indices.push_back(mesh.indices[i].vertex_index);
+				}
+				total_tris += mesh_indices.size() / 3;
+			}
+			std::cout << args[i] << " has " << mesh_indices.size() / 3 << " tris\n";
+			indices.emplace_back(std::move(mesh_indices));
 		}
 	}
 
 	ArcballCamera camera(eye, center, up);
 
-	// Load the model w/ tinyobjloader. We just take any OBJ groups etc. stuff
-	// that may be in the file and dump them all into a single OBJ model.
-	tinyobj::attrib_t attrib;
-	std::vector<tinyobj::shape_t> shapes;
-	std::vector<tinyobj::material_t> materials;
-	std::string err, warn;
-	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, args[2].c_str());
-	if (!warn.empty()) {
-		std::cout << "Warning loading model: " << warn << "\n";
-	}
-	if (!err.empty()) {
-		std::cerr << "Error loading model: " << err << "\n";
-		std::exit(1);
-	}
-	if (!ret) {
-		std::cerr << "Failed to load OBJ model '" << args[2] << "', aborting\n";
-		std::exit(1);
-	}
-
-	std::vector<uint32_t> indices;
-	for (size_t s = 0; s < shapes.size(); ++s) {
-		const tinyobj::mesh_t &mesh = shapes[s].mesh;
-
-		for (size_t i = 0; i < mesh.indices.size(); ++i) {
-			indices.push_back(mesh.indices[i].vertex_index);
-		}
-	}
-	const std::string num_tris = pretty_print_count(indices.size() / 3);
+	const std::string num_tris = pretty_print_count(total_tris);
 
 	std::string rt_backend;
 
@@ -224,7 +235,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 		throw std::runtime_error("Invalid renderer name");
 	}
 	renderer->initialize(win_width, win_height);
-	renderer->set_mesh(attrib.vertices, indices);
+	renderer->set_meshes(vertices, indices);
 
 	Shader display_render(fullscreen_quad_vs, display_texture_fs);
 
