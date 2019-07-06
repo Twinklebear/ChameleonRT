@@ -1,3 +1,4 @@
+#include <glm/ext.hpp>
 #include <iostream>
 #include <array>
 #include <algorithm>
@@ -65,13 +66,6 @@ RenderDXR::RenderDXR() {
 		align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
 
-	// The material is packed into 4 float4
-	// TODO: Eventually this should be on the default heap as well when I take out the little
-	// testing UI for tweaking the material data
-	const size_t material_size = 4 * sizeof(glm::vec4);
-	material_param_buf = Buffer::upload(device.Get(), 3 * material_size,
-		D3D12_RESOURCE_STATE_GENERIC_READ);
-
 	build_shader_resource_heap();
 }
 
@@ -100,51 +94,66 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 void RenderDXR::set_mesh(const std::vector<float> &verts,
 		const std::vector<uint32_t> &indices)
 {
-	set_mesh({verts}, {indices});
+//	set_mesh({verts}, {indices});
 }
 
-void RenderDXR::set_meshes(const std::vector<std::vector<float>> &all_verts,
-		const std::vector<std::vector<uint32_t>> &all_indices)
+void RenderDXR::set_scene(const std::vector<float> &verts,
+		const std::vector<std::vector<uint32_t>> &all_indices,
+		const std::vector<uint32_t> &material_ids)
 {
 	frame_id = 0;
-	for (size_t i = 0; i < all_verts.size(); ++i) {
-		auto &verts = all_verts[i];
-		auto &indices = all_indices[i];
 
-		// Upload the mesh to the vertex buffer, build accel structures
-		// Place the vertex data in an upload heap first, then do a GPU-side copy
-		// into a default heap (resident in VRAM)
+	// For the semi-hack w/ tinyobjloader we want a shared big buffer with all the verts,
+	// and this is indexed into by the different shapes
+	// So first upload the vertex buffer
+	Buffer vertex_buf;
+	{
 		Buffer upload_verts = Buffer::upload(device.Get(), verts.size() * sizeof(float),
 				D3D12_RESOURCE_STATE_GENERIC_READ);
-		Buffer upload_indices = Buffer::upload(device.Get(), indices.size() * sizeof(uint32_t),
-				D3D12_RESOURCE_STATE_GENERIC_READ);
-
 		// Copy vertex and index data into the upload buffers
 		std::memcpy(upload_verts.map(), verts.data(), upload_verts.size());
 		upload_verts.unmap();
+
+		vertex_buf = Buffer::default(device.Get(), upload_verts.size(),
+				D3D12_RESOURCE_STATE_COPY_DEST);
+
+		CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+		// Enqueue the copy into GPU memory
+		cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
+		auto b = barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		cmd_list->ResourceBarrier(1, &b);
+
+		CHECK_ERR(cmd_list->Close());
+		std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
+		cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+		sync_gpu();
+	}
+
+	for (size_t i = 0; i < all_indices.size(); ++i) {
+		auto &indices = all_indices[i];
+
+		// Upload the mesh to the vertex buffer, build accel structures
+		// Place the data in an upload heap first, then do a GPU-side copy
+		// into a default heap (resident in VRAM)
+		Buffer upload_indices = Buffer::upload(device.Get(), indices.size() * sizeof(uint32_t),
+				D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		std::memcpy(upload_indices.map(), indices.data(), upload_indices.size());
 		upload_indices.unmap();
 
 		// Allocate GPU side buffers for the data so we can have it resident in VRAM
-		vertex_buf = Buffer::default(device.Get(), verts.size() * sizeof(float),
-				D3D12_RESOURCE_STATE_COPY_DEST);
-		index_buf = Buffer::default(device.Get(), indices.size() * sizeof(uint32_t),
+		Buffer index_buf = Buffer::default(device.Get(), indices.size() * sizeof(uint32_t),
 				D3D12_RESOURCE_STATE_COPY_DEST);
 
 		CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 
 		// Enqueue the copy into GPU memory
-		cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
 		cmd_list->CopyResource(index_buf.get(), upload_indices.get());
 
 		// Barriers to wait for the copies to finish before building the accel. structs
 		{
-			std::array<D3D12_RESOURCE_BARRIER, 2> barriers = {
-				barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
-				barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
-			};
-			cmd_list->ResourceBarrier(barriers.size(), barriers.data());
+			auto b = barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+			cmd_list->ResourceBarrier(1, &b);
 		}
 
 		meshes.emplace_back(vertex_buf, index_buf);
@@ -174,7 +183,9 @@ void RenderDXR::set_meshes(const std::vector<std::vector<float>> &all_verts,
 		D3D12_RAYTRACING_INSTANCE_DESC *buf =
 			static_cast<D3D12_RAYTRACING_INSTANCE_DESC*>(instance_buf.map());
 		for (size_t i = 0; i < meshes.size(); ++i) {
-			buf[i].InstanceID = i;
+			// TODO: Eventually when we move off OBJ we'll need to handle scenes
+			// which can support actual instancing, so we'll want a vector of material IDs
+			buf[i].InstanceID = material_ids[i];
 			// Note: we set the num ray type stride for the hit groups here, I think the
 			// other multiplier is for doing some sort of per-geometry shaders
 			buf[i].InstanceContributionToHitGroupIndex = i * NUM_RAY_TYPES;
@@ -187,9 +198,6 @@ void RenderDXR::set_meshes(const std::vector<std::vector<float>> &all_verts,
 			buf[i].Transform[0][0] = 1.0f;
 			buf[i].Transform[1][1] = 1.0f;
 			buf[i].Transform[2][2] = 1.0f;
-
-			// TODO Testing: Scoot the instances apart some
-			buf[i].Transform[0][3] = (static_cast<float>(i + 1) / meshes.size() - 0.5f) * 8.f;
 		}
 		instance_buf.unmap();
 	}
@@ -199,6 +207,7 @@ void RenderDXR::set_meshes(const std::vector<std::vector<float>> &all_verts,
 
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	scene_bvh.enqeue_build(device.Get(), cmd_list.Get());
+
 	CHECK_ERR(cmd_list->Close());
 
 	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
@@ -402,23 +411,39 @@ void RenderDXR::build_shader_binding_table() {
 }
 
 void RenderDXR::set_material(const DisneyMaterial &mat) {
+	set_materials({mat});
+}
+void RenderDXR::set_materials(const std::vector<DisneyMaterial> &materials) {
 	frame_id = 0;
-	const size_t material_size = 4 * sizeof(glm::vec4);
-	uint8_t *buf = static_cast<uint8_t*>(material_param_buf.map());
-	for (size_t i = 0; i < 3; ++i) {
-		DisneyMaterial m = mat;
-		switch (i % 3) {
-			case 0: m.base_color *= glm::vec3(1.0f, 0.1f, 0.1f);
-					break;
-			case 1: m.base_color *= glm::vec3(0.1f, 1.0f, 0.1f);
-					break;
-			case 2: m.base_color *= glm::vec3(0.1f, 0.1f, 1.0f);
-					break;
-			default: break;
-		}
-		std::memcpy(buf + material_size * i, &m, sizeof(DisneyMaterial));
+
+	// Upload the material data
+	Buffer mat_upload_buf = Buffer::upload(device.Get(),
+			materials.size() * sizeof(DisneyMaterial),
+			D3D12_RESOURCE_STATE_GENERIC_READ);
+	std::memcpy(mat_upload_buf.map(), materials.data(), mat_upload_buf.size());
+	mat_upload_buf.unmap();
+
+	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+	// Note: scenes are static so the number of materials are fixed
+	if (material_param_buf.get() == nullptr) {
+		material_param_buf = Buffer::default(device.Get(), mat_upload_buf.size(),
+				D3D12_RESOURCE_STATE_COPY_DEST);
+	} else {
+		D3D12_RESOURCE_BARRIER b = barrier_transition(material_param_buf, D3D12_RESOURCE_STATE_COPY_DEST);
+		cmd_list->ResourceBarrier(1, &b);
 	}
-	material_param_buf.unmap();
+
+	cmd_list->CopyResource(material_param_buf.get(), mat_upload_buf.get());
+
+	{
+		D3D12_RESOURCE_BARRIER b = barrier_transition(material_param_buf, D3D12_RESOURCE_STATE_GENERIC_READ);
+		cmd_list->ResourceBarrier(1, &b);
+	}
+	CHECK_ERR(cmd_list->Close());
+
+	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
+	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+	sync_gpu();
 }
 
 void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -484,8 +509,8 @@ void RenderDXR::update_descriptor_heap() {
 		srv_desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 		srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		srv_desc.Buffer.FirstElement = 0;
-		srv_desc.Buffer.NumElements = 3;
-		srv_desc.Buffer.StructureByteStride = 4 * sizeof(glm::vec4);
+		srv_desc.Buffer.NumElements = material_param_buf.size() / sizeof(DisneyMaterial);
+		srv_desc.Buffer.StructureByteStride = sizeof(DisneyMaterial);
 		srv_desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 		device->CreateShaderResourceView(material_param_buf.get(), &srv_desc, heap_handle);
 		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);

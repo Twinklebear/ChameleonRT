@@ -143,10 +143,6 @@ int main(int argc, const char **argv) {
 void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	ImGuiIO& io = ImGui::GetIO();
 
-	std::vector<std::vector<float>> vertices;
-	std::vector<std::vector<uint32_t>> indices;
-	size_t total_tris = 0; 
-
 	glm::vec3 eye(0, 0, 5);
 	glm::vec3 center(0);
 	glm::vec3 up(0, 1, 0);
@@ -163,40 +159,79 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 			up.x = std::stof(args[++i]);
 			up.y = std::stof(args[++i]);
 			up.z = std::stof(args[++i]);
-		} else if (args[i][0] != '-') {
-			// Otherwise assume it's an obj file we're being given to load
-			// Load the model w/ tinyobjloader. We just take any OBJ groups etc. stuff
-			// that may be in the file and dump them all into a single OBJ model.
-			tinyobj::attrib_t attrib;
-			std::vector<tinyobj::shape_t> shapes;
-			std::vector<tinyobj::material_t> materials;
-			std::string err, warn;
-			std::cout << "Loading OBJ: " << args[i] << "\n";
-			bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, args[i].c_str());
-			if (!warn.empty()) {
-				std::cout << "Warning loading model: " << warn << "\n";
-			}
-			if (!err.empty()) {
-				std::cerr << "Error loading model: " << err << "\n";
-				std::exit(1);
-			}
-			if (!ret) {
-				std::cerr << "Failed to load OBJ model '" << args[2] << "', aborting\n";
-				std::exit(1);
-			}
+		}
+	}
 
-			vertices.emplace_back(std::move(attrib.vertices));
-			std::vector<uint32_t> mesh_indices;
-			for (size_t s = 0; s < shapes.size(); ++s) {
-				const tinyobj::mesh_t &mesh = shapes[s].mesh;
+	std::vector<float> vertices;
+	std::vector<std::vector<uint32_t>> indices;
+	std::vector<uint32_t> material_ids;
+	std::vector<DisneyMaterial> materials;
+	std::vector<std::string> material_names;
+	size_t total_tris = 0;
+	{
+		// Load the model w/ tinyobjloader. We just take any OBJ groups etc. stuff
+		// that may be in the file and dump them all into a single OBJ model.
+		tinyobj::attrib_t attrib;
+		std::vector<tinyobj::shape_t> shapes;
+		std::vector<tinyobj::material_t> obj_materials;
+		std::string err, warn;
+		const std::string obj_file = args[2];
+		std::cout << "Loading OBJ: " << obj_file << "\n";
+#ifdef _WIN32
+		const std::string mtl_base_dir = obj_file.substr(0, obj_file.rfind('\\'));
+#else
+		const std::string mtl_base_dir = obj_file.substr(0, obj_file.rfind('/'));
+#endif
+		bool ret = tinyobj::LoadObj(&attrib, &shapes, &obj_materials, &warn, &err,
+				obj_file.c_str(), mtl_base_dir.c_str());
+		if (!warn.empty()) {
+			std::cout << "Warning loading model: " << warn << "\n";
+		}
+		if (!err.empty()) {
+			std::cerr << "Error loading model: " << err << "\n";
+			std::exit(1);
+		}
+		if (!ret) {
+			std::cerr << "Failed to load OBJ model '" << args[2] << "', aborting\n";
+			std::exit(1);
+		}
 
-				for (size_t i = 0; i < mesh.indices.size(); ++i) {
-					mesh_indices.push_back(mesh.indices[i].vertex_index);
-				}
-				total_tris += mesh_indices.size() / 3;
+		vertices = std::move(attrib.vertices);
+		for (size_t s = 0; s < shapes.size(); ++s) {
+			std::vector<uint32_t> shape_indices;
+			const tinyobj::mesh_t &mesh = shapes[s].mesh;
+
+			for (size_t i = 0; i < mesh.indices.size(); ++i) {
+				shape_indices.push_back(mesh.indices[i].vertex_index);
 			}
-			std::cout << args[i] << " has " << mesh_indices.size() / 3 << " tris\n";
-			indices.emplace_back(std::move(mesh_indices));
+			indices.emplace_back(std::move(shape_indices));
+
+			// Note: not supporting per-primitive materials
+			material_ids.push_back(mesh.material_ids[0]);
+			total_tris += mesh.indices.size() / 3;
+		}
+		std::cout << args[2] << " has " << total_tris << " tris, used over "
+			<< shapes.size() << " shapes\n";
+
+		// Parse the materials over to a similar DisneyMaterial representation
+		for (const auto &m : obj_materials) {
+			DisneyMaterial d;
+			d.base_color = glm::vec3(m.diffuse[0], m.diffuse[1], m.diffuse[2]);
+			d.specular = glm::clamp(m.shininess / 500.f, 0.f, 1.f);
+			d.roughness = 1.f - d.specular;
+			d.specular_transmission = glm::clamp(1.f - m.dissolve, 0.f, 1.f);
+			materials.push_back(d);
+			material_names.push_back(m.name);
+		}
+
+		const bool need_default_mat =
+			std::find(material_ids.begin(), material_ids.end(), uint32_t(-1)) != material_ids.end();
+		if (need_default_mat) {
+			std::cout << "No materials assigned for some or all objects, generating a default material\n";
+			const uint32_t default_mat_id = materials.size();
+			materials.push_back(DisneyMaterial());
+			std::replace(material_ids.begin(), material_ids.end(), uint32_t(-1), default_mat_id);
+			material_names.push_back("default");
 		}
 	}
 
@@ -235,7 +270,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 		throw std::runtime_error("Invalid renderer name");
 	}
 	renderer->initialize(win_width, win_height);
-	renderer->set_meshes(vertices, indices);
+	renderer->set_scene(vertices, indices, material_ids);
+	renderer->set_materials(materials);
 
 	Shader display_render(fullscreen_quad_vs, display_texture_fs);
 
@@ -255,8 +291,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 
 	glClearColor(0.0, 0.0, 0.0, 0.0);
 	glDisable(GL_DEPTH_TEST);
-
-	DisneyMaterial material;
 
 	size_t frame_id = 0;
 	double avg_rays_per_sec = 0.f;
@@ -322,7 +356,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
 			}
 		}
 
@@ -330,7 +363,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 			frame_id = 0;
 		}
 		if (material_changed) {
-			renderer->set_material(material);
+			renderer->set_materials(materials);
 			material_changed = false;
 		}
 
@@ -349,19 +382,32 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 		ImGui::Text("Accumulated Frames: %llu", frame_id);
 
 		ImGui::Text("Disney Material Params:");
-		material_changed = ImGui::ColorPicker3("Base Color", &material.base_color.x);
-		material_changed |= ImGui::SliderFloat("Metallic", &material.metallic, 0.f, 1.f);
-		material_changed |= ImGui::SliderFloat("Specular", &material.specular, 0.f, 1.f);
-		material_changed |= ImGui::SliderFloat("Roughness", &material.roughness, 0.f, 1.f);
-		material_changed |= ImGui::SliderFloat("Specular Tint", &material.specular_tint, 0.f, 1.f);
-		material_changed |= ImGui::SliderFloat("Anisotropy", &material.anisotropy, 0.f, 1.f);
-		material_changed |= ImGui::SliderFloat("Sheen", &material.sheen, 0.f, 1.f);
-		material_changed |= ImGui::SliderFloat("Sheen Tint", &material.sheen_tint, 0.f, 1.f);
-		material_changed |= ImGui::SliderFloat("Clearcoat", &material.clearcoat, 0.f, 1.f);
-		material_changed |= ImGui::SliderFloat("Clearcoat Gloss", &material.clearcoat_gloss, 0.f, 1.f);
-		material_changed |= ImGui::SliderFloat("IoR", &material.ior, 1.05f, 2.f);
-		material_changed |= ImGui::SliderFloat("Specular Transmission", &material.specular_transmission, 0.f, 1.f);
-		material.ior = glm::clamp(material.ior, 1.05f, 2.f);
+		for (size_t i = 0; i < materials.size(); ++i) {
+			ImGui::PushID(i);
+
+			if (!ImGui::TreeNode(material_names[i].c_str())) {
+				ImGui::PopID();
+				continue;
+			}
+
+			auto &m = materials[i];
+			material_changed |= ImGui::ColorPicker3("Base Color", &m.base_color.x);
+			material_changed |= ImGui::SliderFloat("Metallic", &m.metallic, 0.f, 1.f);
+			material_changed |= ImGui::SliderFloat("Specular", &m.specular, 0.f, 1.f);
+			material_changed |= ImGui::SliderFloat("Roughness", &m.roughness, 0.f, 1.f);
+			material_changed |= ImGui::SliderFloat("Specular Tint", &m.specular_tint, 0.f, 1.f);
+			material_changed |= ImGui::SliderFloat("Anisotropy", &m.anisotropy, 0.f, 1.f);
+			material_changed |= ImGui::SliderFloat("Sheen", &m.sheen, 0.f, 1.f);
+			material_changed |= ImGui::SliderFloat("Sheen Tint", &m.sheen_tint, 0.f, 1.f);
+			material_changed |= ImGui::SliderFloat("Clearcoat", &m.clearcoat, 0.f, 1.f);
+			material_changed |= ImGui::SliderFloat("Clearcoat Gloss", &m.clearcoat_gloss, 0.f, 1.f);
+			material_changed |= ImGui::SliderFloat("IoR", &m.ior, 1.05f, 2.f);
+			material_changed |= ImGui::SliderFloat("Specular Transmission", &m.specular_transmission, 0.f, 1.f);
+			m.ior = glm::clamp(m.ior, 1.05f, 2.f);
+
+			ImGui::TreePop();
+			ImGui::PopID();
+		}
 
 		// We don't instrument inside OSPRay so we don't show these statistics for it
 		if (rays_per_sec > 0.0) {

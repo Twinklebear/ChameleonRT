@@ -783,9 +783,12 @@ void TriangleMesh::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList
 		align_to(prebuild_info.ResultDataMaxSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
 	prebuild_info.ScratchDataSizeInBytes =
 		align_to(prebuild_info.ScratchDataSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
+
+#if 0
 	std::cout << "TriangleMesh BVH will use at most "
 		<< pretty_print_count(prebuild_info.ResultDataMaxSizeInBytes) << "b, and scratch of: "
 		<< pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
+#endif
 
 	bvh = Buffer::default(device, prebuild_info.ResultDataMaxSizeInBytes,
 		D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
@@ -813,7 +816,10 @@ void TriangleMesh::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList
 void TriangleMesh::enqueue_compaction(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list) {
 	uint64_t *map = static_cast<uint64_t*>(post_build_info_readback.map());
 	const uint64_t compacted_size = align_to(*map, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
+#if 0
 	std::cout << "Bottom level AS compacted size will be: " << pretty_print_count(compacted_size) << "b\n";
+#endif
+
 	post_build_info_readback.unmap();
 
 	if (build_flags & D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION) {

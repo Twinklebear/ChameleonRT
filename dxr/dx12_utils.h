@@ -34,7 +34,7 @@ D3D12_RESOURCE_BARRIER barrier_uav(Microsoft::WRL::ComPtr<ID3D12Resource> &res);
 
 class Resource {
 protected:
-	Microsoft::WRL::ComPtr<ID3D12Resource> res;
+	Microsoft::WRL::ComPtr<ID3D12Resource> res = nullptr;
 	D3D12_HEAP_TYPE rheap;
 	D3D12_RESOURCE_STATES rstate;
 	
