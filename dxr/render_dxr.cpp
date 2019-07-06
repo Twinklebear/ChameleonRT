@@ -175,9 +175,8 @@ void RenderDXR::set_meshes(const std::vector<std::vector<float>> &all_verts,
 			static_cast<D3D12_RAYTRACING_INSTANCE_DESC*>(instance_buf.map());
 		for (size_t i = 0; i < meshes.size(); ++i) {
 			buf[i].InstanceID = i;
-			// Note: we set the num ray type stride for the hit groups here, because
-			// the shader table order may be different than the order we add stuff to
-			// TLAS, since the wrapper does its own internal ordering/mapping/etc.
+			// Note: we set the num ray type stride for the hit groups here, I think the
+			// other multiplier is for doing some sort of per-geometry shaders
 			buf[i].InstanceContributionToHitGroupIndex = i * NUM_RAY_TYPES;
 			buf[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
 			buf[i].AccelerationStructure = meshes[i]->GetGPUVirtualAddress();
