@@ -66,8 +66,10 @@ RenderDXR::RenderDXR() {
 		D3D12_RESOURCE_STATE_GENERIC_READ);
 
 	// The material is packed into 4 float4
-	material_param_buf = Buffer::upload(device.Get(),
-		align_to(4 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+	// TODO: Eventually this should be on the default heap as well when I take out the little
+	// testing UI for tweaking the material data
+	const size_t material_size = 4 * sizeof(glm::vec4);
+	material_param_buf = Buffer::upload(device.Get(), 3 * material_size,
 		D3D12_RESOURCE_STATE_GENERIC_READ);
 
 	build_shader_resource_heap();
@@ -321,13 +323,13 @@ void RenderDXR::build_raytracing_pipeline() {
 
 	// Create the root signature for our ray gen shader
 	// The raygen program takes three parameters:
-	// the UAV to the output image buffer
-	// the SRV holding the top-level acceleration structure
+	// the UAVs to the output image buffer and accumulation buffer
+	// the SRV holding the top-level acceleration structure, and the material params
 	// the CBV holding the camera params
 	RootSignature raygen_root_sig = RootSignatureBuilder::local()
 		.add_uav_range(2, 0, 0, 0)
-		.add_srv_range(1, 0, 0, 2)
-		.add_cbv_range(2, 0, 0, 3)
+		.add_srv_range(2, 0, 0, 2)
+		.add_cbv_range(1, 0, 0, 4)
 		.create(device.Get());
 
 	// Create the root signature for our closest hit function
@@ -400,10 +402,24 @@ void RenderDXR::build_shader_binding_table() {
 	rt_pipeline.unmap_shader_table();
 }
 
-void RenderDXR::set_material(const DisneyMaterial &m) {
-	std::memcpy(material_param_buf.map(), &m, sizeof(DisneyMaterial));
-	material_param_buf.unmap();
+void RenderDXR::set_material(const DisneyMaterial &mat) {
 	frame_id = 0;
+	const size_t material_size = 4 * sizeof(glm::vec4);
+	uint8_t *buf = static_cast<uint8_t*>(material_param_buf.map());
+	for (size_t i = 0; i < 3; ++i) {
+		DisneyMaterial m = mat;
+		switch (i % 3) {
+			case 0: m.base_color *= glm::vec3(1.0f, 0.1f, 0.1f);
+					break;
+			case 1: m.base_color *= glm::vec3(0.1f, 1.0f, 0.1f);
+					break;
+			case 2: m.base_color *= glm::vec3(0.1f, 0.1f, 1.0f);
+					break;
+			default: break;
+		}
+		std::memcpy(buf + material_size * i, &m, sizeof(DisneyMaterial));
+	}
+	material_param_buf.unmap();
 }
 
 void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -441,35 +457,47 @@ void RenderDXR::update_descriptor_heap() {
 		raygen_shader_desc_heap->GetCPUDescriptorHandleForHeapStart();
 
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = { 0 };
+
 	// Render target
 	uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 	device->CreateUnorderedAccessView(render_target.get(), nullptr, &uav_desc, heap_handle);
+	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	// Accum buffer
-	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	device->CreateUnorderedAccessView(accum_buffer.get(), nullptr, &uav_desc, heap_handle);
+	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	// Write the TLAS after the output image in the heap
-	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	D3D12_SHADER_RESOURCE_VIEW_DESC tlas_desc = { 0 };
-	tlas_desc.Format = DXGI_FORMAT_UNKNOWN;
-	tlas_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
-	tlas_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	tlas_desc.RaytracingAccelerationStructure.Location = scene_bvh->GetGPUVirtualAddress();
-	device->CreateShaderResourceView(nullptr, &tlas_desc, heap_handle);
+	{
+		D3D12_SHADER_RESOURCE_VIEW_DESC tlas_desc = { 0 };
+		tlas_desc.Format = DXGI_FORMAT_UNKNOWN;
+		tlas_desc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+		tlas_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		tlas_desc.RaytracingAccelerationStructure.Location = scene_bvh->GetGPUVirtualAddress();
+		device->CreateShaderResourceView(nullptr, &tlas_desc, heap_handle);
+		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
+
+	// Write the material params buffer view
+	{
+		D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = { 0 };
+		srv_desc.Format = DXGI_FORMAT_UNKNOWN;
+		srv_desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srv_desc.Buffer.FirstElement = 0;
+		srv_desc.Buffer.NumElements = 3;
+		srv_desc.Buffer.StructureByteStride = 4 * sizeof(glm::vec4);
+		srv_desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+		device->CreateShaderResourceView(material_param_buf.get(), &srv_desc, heap_handle);
+		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
 
 	// Write the view params constants buffer
-	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = { 0 };
 	cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
 	cbv_desc.SizeInBytes = view_param_buf.size();
 	device->CreateConstantBufferView(&cbv_desc, heap_handle);
 
-	// Write the material params constants buffer
-	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	cbv_desc.BufferLocation = material_param_buf->GetGPUVirtualAddress();
-	cbv_desc.SizeInBytes = material_param_buf.size();
-	device->CreateConstantBufferView(&cbv_desc, heap_handle);
 }
 
 void RenderDXR::sync_gpu() {

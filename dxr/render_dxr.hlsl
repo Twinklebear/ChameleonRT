@@ -21,19 +21,31 @@ cbuffer ViewParams : register(b0) {
 	uint32_t frame_id;
 }
 
-// TODO: For per-instance materials I'll want to pass this data inside
-// a StructuredBuffer and assign a material ID for each instance. The
-// material ID can be sent through a buffer which is indexed in the
-// hitgroup by instance ID to lookup and return the material ID. If the
-// only thing the instance ID is used for is that then it's also good enough
-// to just use the instance ID as the material ID. The latter path might
-// actualy be better, since the "instance ID" is not really per-mesh, but
-// more of a global-ish thing
-cbuffer MaterialParams : register(b1) {
+struct MaterialParams {
 	float4 basecolor_metallic;
 	float4 spec_rough_spectint_aniso;
 	float4 sheen_sheentint_clearc_ccgloss;
 	float4 ior_spectrans;
+};
+
+// Instance ID = Material ID
+// TODO: How would we handle textures in this approach?
+StructuredBuffer<MaterialParams> material_params : register(t1);
+
+void unpack_material(inout DisneyMaterial mat, uint id) {
+	MaterialParams p = material_params[id];
+	mat.base_color = p.basecolor_metallic.rgb;
+	mat.metallic = p.basecolor_metallic.a;
+	mat.specular = p.spec_rough_spectint_aniso.r;
+	mat.roughness = p.spec_rough_spectint_aniso.g;
+	mat.specular_tint = p.spec_rough_spectint_aniso.b;
+	mat.anisotropy = p.spec_rough_spectint_aniso.a;
+	mat.sheen = p.sheen_sheentint_clearc_ccgloss.r;
+	mat.sheen_tint = p.sheen_sheentint_clearc_ccgloss.g;
+	mat.clearcoat = p.sheen_sheentint_clearc_ccgloss.b;
+	mat.clearcoat_gloss = p.sheen_sheentint_clearc_ccgloss.a;
+	mat.ior = p.ior_spectrans.r;
+	mat.specular_transmission = p.ior_spectrans.g;
 }
 
 float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, in const float3 n,
@@ -104,7 +116,6 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 	return illum;
 }
 
-
 [shader("raygeneration")] 
 void RayGen() {
 	uint2 pixel = DispatchRaysIndex().xy;
@@ -119,18 +130,6 @@ void RayGen() {
 	ray.TMax = 1e20f;
 
 	DisneyMaterial mat;
-	mat.base_color = basecolor_metallic.rgb;
-	mat.metallic = basecolor_metallic.a;
-	mat.specular = spec_rough_spectint_aniso.r;
-	mat.roughness = spec_rough_spectint_aniso.g;
-	mat.specular_tint = spec_rough_spectint_aniso.b;
-	mat.anisotropy = spec_rough_spectint_aniso.a;
-	mat.sheen = sheen_sheentint_clearc_ccgloss.r;
-	mat.sheen_tint = sheen_sheentint_clearc_ccgloss.g;
-	mat.clearcoat = sheen_sheentint_clearc_ccgloss.b;
-	mat.clearcoat_gloss = sheen_sheentint_clearc_ccgloss.a;
-	mat.ior = ior_spectrans.r;
-	mat.specular_transmission = ior_spectrans.g;
 
 	int bounce = 0;
 	float3 illum = float3(0, 0, 0);
@@ -152,6 +151,7 @@ void RayGen() {
 		float3 v_z = normalize(payload.normal.xyz);
 		ortho_basis(v_x, v_y, v_z);
 
+		unpack_material(mat, uint(payload.normal.w));
 		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
 
 		float3 w_i;
