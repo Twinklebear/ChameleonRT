@@ -99,7 +99,8 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 
 void RenderDXR::set_scene(const std::vector<float> &verts,
 		const std::vector<std::vector<uint32_t>> &all_indices,
-		const std::vector<uint32_t> &material_ids)
+		const std::vector<uint32_t> &material_ids,
+		const std::vector<DisneyMaterial> &materials)
 {
 	frame_id = 0;
 
@@ -159,6 +160,13 @@ void RenderDXR::set_scene(const std::vector<float> &verts,
 		meshes.emplace_back(vertex_buf, index_buf);
 		meshes.back().enqeue_build(device.Get(), cmd_list.Get());
 
+		// TODO: Some possible perf improvements: We can run all the upload of
+		// index data in parallel, and the BVH building in parallel for all the
+		// geometries. This should help for some large scenes, though with the assumption
+		// that the entire build space for all the bottom level stuff can fit on the GPU.
+		// For large scenes it would be best to monitor the available space needed for
+		// the queued builds vs. the available GPU memory and then run stuff and compact
+		// when we start getting full.
 		CHECK_ERR(cmd_list->Close());
 		std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
 		cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
@@ -208,6 +216,21 @@ void RenderDXR::set_scene(const std::vector<float> &verts,
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	scene_bvh.enqeue_build(device.Get(), cmd_list.Get());
 
+	// Upload the material data
+	Buffer mat_upload_buf = Buffer::upload(device.Get(),
+			materials.size() * sizeof(DisneyMaterial),
+			D3D12_RESOURCE_STATE_GENERIC_READ);
+	std::memcpy(mat_upload_buf.map(), materials.data(), mat_upload_buf.size());
+	mat_upload_buf.unmap();
+
+	material_param_buf = Buffer::default(device.Get(), mat_upload_buf.size(),
+			D3D12_RESOURCE_STATE_COPY_DEST);
+
+	cmd_list->CopyResource(material_param_buf.get(), mat_upload_buf.get());
+	{
+		D3D12_RESOURCE_BARRIER b = barrier_transition(material_param_buf, D3D12_RESOURCE_STATE_GENERIC_READ);
+		cmd_list->ResourceBarrier(1, &b);
+	}
 	CHECK_ERR(cmd_list->Close());
 
 	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
@@ -238,6 +261,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	CHECK_ERR(cmd_allocator->Reset());
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 
+	// TODO: We'll need a second desc. heap for the sampler and bind both of them here
 	cmd_list->SetDescriptorHeaps(1, raygen_shader_desc_heap.GetAddressOf());
 	cmd_list->SetPipelineState1(rt_pipeline.get());
 
@@ -267,7 +291,8 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		cmd_list->ResourceBarrier(1, &b);
 	}
 	
-	const uint32_t readback_row_pitch = align_to(render_target.dims().x * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+	const uint32_t readback_row_pitch = align_to(render_target.dims().x * 4,
+			D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
 	{
 		// Copy the rendered image to the readback buf so we can access it on the CPU
 		D3D12_TEXTURE_COPY_LOCATION dst_desc = { 0 };
@@ -344,6 +369,7 @@ void RenderDXR::build_raytracing_pipeline() {
 	RootSignature hitgroup_root_sig = RootSignatureBuilder::local()
 		.add_srv("vertex_buf", 0, 1)
 		.add_srv("index_buf", 1, 1)
+		//.add_srv("uv_buf", 2, 1)
 		.create(device.Get());
 
 	RTPipelineBuilder rt_pipeline_builder = RTPipelineBuilder()
@@ -408,42 +434,6 @@ void RenderDXR::build_shader_binding_table() {
 	}
 
 	rt_pipeline.unmap_shader_table();
-}
-
-void RenderDXR::set_material(const DisneyMaterial &mat) {
-	set_materials({mat});
-}
-void RenderDXR::set_materials(const std::vector<DisneyMaterial> &materials) {
-	frame_id = 0;
-
-	// Upload the material data
-	Buffer mat_upload_buf = Buffer::upload(device.Get(),
-			materials.size() * sizeof(DisneyMaterial),
-			D3D12_RESOURCE_STATE_GENERIC_READ);
-	std::memcpy(mat_upload_buf.map(), materials.data(), mat_upload_buf.size());
-	mat_upload_buf.unmap();
-
-	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
-	// Note: scenes are static so the number of materials are fixed
-	if (material_param_buf.get() == nullptr) {
-		material_param_buf = Buffer::default(device.Get(), mat_upload_buf.size(),
-				D3D12_RESOURCE_STATE_COPY_DEST);
-	} else {
-		D3D12_RESOURCE_BARRIER b = barrier_transition(material_param_buf, D3D12_RESOURCE_STATE_COPY_DEST);
-		cmd_list->ResourceBarrier(1, &b);
-	}
-
-	cmd_list->CopyResource(material_param_buf.get(), mat_upload_buf.get());
-
-	{
-		D3D12_RESOURCE_BARRIER b = barrier_transition(material_param_buf, D3D12_RESOURCE_STATE_GENERIC_READ);
-		cmd_list->ResourceBarrier(1, &b);
-	}
-	CHECK_ERR(cmd_list->Close());
-
-	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
-	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
-	sync_gpu();
 }
 
 void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -521,7 +511,6 @@ void RenderDXR::update_descriptor_heap() {
 	cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
 	cbv_desc.SizeInBytes = view_param_buf.size();
 	device->CreateConstantBufferView(&cbv_desc, heap_handle);
-
 }
 
 void RenderDXR::sync_gpu() {

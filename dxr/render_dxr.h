@@ -41,9 +41,8 @@ struct RenderDXR : RenderBackend {
 			const std::vector<uint32_t> &indices) override;
 	void set_scene(const std::vector<float> &all_verts,
 			const std::vector<std::vector<uint32_t>> &indices,
-			const std::vector<uint32_t> &material_ids) override;
-	void set_material(const DisneyMaterial &m) override;
-	virtual void set_materials(const std::vector<DisneyMaterial> &materials) override;
+			const std::vector<uint32_t> &material_ids,
+			const std::vector<DisneyMaterial> &materials) override;
 	double render(const glm::vec3 &pos, const glm::vec3 &dir,
 			const glm::vec3 &up, const float fovy, const bool camera_changed) override;
 

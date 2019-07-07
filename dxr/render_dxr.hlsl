@@ -32,6 +32,9 @@ struct MaterialParams {
 // TODO: How would we handle textures in this approach?
 StructuredBuffer<MaterialParams> material_params : register(t1);
 
+//Texture2D mats[] : register(t2);
+//SamplerState texture_sampler_state : register(s0);
+
 void unpack_material(inout DisneyMaterial mat, uint id) {
 	MaterialParams p = material_params[id];
 	mat.base_color = p.basecolor_metallic.rgb;
@@ -46,6 +49,10 @@ void unpack_material(inout DisneyMaterial mat, uint id) {
 	mat.clearcoat_gloss = p.sheen_sheentint_clearc_ccgloss.a;
 	mat.ior = p.ior_spectrans.r;
 	mat.specular_transmission = p.ior_spectrans.g;
+	/*
+	mat.base_color = mats[NonUniformResourceIndex(id)]
+		.SampleLevel(texture_sampler_state, float2(0.5, 0.5), 0).rgb;
+		*/
 }
 
 float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, in const float3 n,
@@ -70,7 +77,8 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 
 	// Sample the light to compute an incident light ray to this point
 	{
-		float3 light_pos = sample_quad_light_position(light, float2(pcg32_randomf(rng), pcg32_randomf(rng)));
+		float3 light_pos = sample_quad_light_position(light,
+			float2(pcg32_randomf(rng), pcg32_randomf(rng)));
 		float3 light_dir = light_pos - hit_p;
 		float light_dist = length(light_dir);
 		light_dir = normalize(light_dir);
@@ -98,7 +106,9 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 		
 		float light_dist;
 		float3 light_pos;
-		if (any(bsdf > 0.f) && bsdf_pdf >= EPSILON && quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
+		if (any(bsdf > 0.f) && bsdf_pdf >= EPSILON
+			&& quad_intersect(light, hit_p, w_i, light_dist, light_pos))
+		{
 			float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
 			if (light_pdf >= EPSILON) {
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
@@ -153,6 +163,7 @@ void RayGen() {
 
 		unpack_material(mat, uint(payload.normal.w));
 		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
+		illum += float3(payload.color_dist.rg, 0);
 
 		float3 w_i;
 		float pdf;
@@ -207,6 +218,7 @@ void AOMiss(inout OcclusionHitInfo occlusion : SV_RayPayload) {
 
 StructuredBuffer<float3> vertices : register(t0, space1);
 StructuredBuffer<uint3> indices : register(t1, space1);
+//StructuredBuffer<float2> uvs : register(t2, space1);
 
 [shader("closesthit")] 
 void ClosestHit(inout HitInfo payload, Attributes attrib) {
@@ -215,7 +227,22 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 	float3 vb = vertices[idx.y];
 	float3 vc = vertices[idx.z];
 	float3 n = normalize(cross(vb - va, vc - va));
-	payload.color_dist = float4(1, 1, 1, RayTCurrent());
+
+	float2 uv = float2(0, 0);
+	/*
+	uint num_uvs = 0;
+	uint uv_stride = 0;
+	uvs.GetDimensions(num_uvs, uv_stride);
+	if (num_uvs > 0) {
+		float2 uva = uvs[idx.x];
+		float2 uvb = uvs[idx.y];
+		float2 uvc = uvs[idx.z];
+		uv = (1.f - attrib.bary.x - attrib.bary.y) * uva
+			+ attrib.bary.x * uvb + attrib.bary.y * uvc;
+	}
+	*/
+	// TODO: For textured meshes we should return the uvs here.
+	payload.color_dist = float4(uv, 1, RayTCurrent());
 	float3x3 inv_transp = float3x3(WorldToObject4x3()[0], WorldToObject4x3()[1], WorldToObject4x3()[2]);
 	payload.normal = float4(normalize(mul(inv_transp, n)), InstanceID());
 }

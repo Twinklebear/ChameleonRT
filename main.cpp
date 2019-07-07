@@ -270,8 +270,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 		throw std::runtime_error("Invalid renderer name");
 	}
 	renderer->initialize(win_width, win_height);
-	renderer->set_scene(vertices, indices, material_ids);
-	renderer->set_materials(materials);
+	renderer->set_scene(vertices, indices, material_ids, materials);
 
 	Shader display_render(fullscreen_quad_vs, display_texture_fs);
 
@@ -297,7 +296,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	glm::vec2 prev_mouse(-2.f);
 	bool done = false;
 	bool camera_changed = true;
-	bool material_changed = true;
 	while (!done) {
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
@@ -359,12 +357,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 			}
 		}
 
-		if (material_changed || camera_changed) {
+		if (camera_changed) {
 			frame_id = 0;
-		}
-		if (material_changed) {
-			renderer->set_materials(materials);
-			material_changed = false;
 		}
 
 		const double rays_per_sec =
@@ -380,34 +374,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 		ImGui::Text("# Triangles: %s", num_tris.c_str());
 		ImGui::Text("RT Backend: %s", rt_backend.c_str());
 		ImGui::Text("Accumulated Frames: %llu", frame_id);
-
-		ImGui::Text("Disney Material Params:");
-		for (size_t i = 0; i < materials.size(); ++i) {
-			ImGui::PushID(i);
-
-			if (!ImGui::TreeNode(material_names[i].c_str())) {
-				ImGui::PopID();
-				continue;
-			}
-
-			auto &m = materials[i];
-			material_changed |= ImGui::ColorPicker3("Base Color", &m.base_color.x);
-			material_changed |= ImGui::SliderFloat("Metallic", &m.metallic, 0.f, 1.f);
-			material_changed |= ImGui::SliderFloat("Specular", &m.specular, 0.f, 1.f);
-			material_changed |= ImGui::SliderFloat("Roughness", &m.roughness, 0.f, 1.f);
-			material_changed |= ImGui::SliderFloat("Specular Tint", &m.specular_tint, 0.f, 1.f);
-			material_changed |= ImGui::SliderFloat("Anisotropy", &m.anisotropy, 0.f, 1.f);
-			material_changed |= ImGui::SliderFloat("Sheen", &m.sheen, 0.f, 1.f);
-			material_changed |= ImGui::SliderFloat("Sheen Tint", &m.sheen_tint, 0.f, 1.f);
-			material_changed |= ImGui::SliderFloat("Clearcoat", &m.clearcoat, 0.f, 1.f);
-			material_changed |= ImGui::SliderFloat("Clearcoat Gloss", &m.clearcoat_gloss, 0.f, 1.f);
-			material_changed |= ImGui::SliderFloat("IoR", &m.ior, 1.05f, 2.f);
-			material_changed |= ImGui::SliderFloat("Specular Transmission", &m.specular_transmission, 0.f, 1.f);
-			m.ior = glm::clamp(m.ior, 1.05f, 2.f);
-
-			ImGui::TreePop();
-			ImGui::PopID();
-		}
 
 		// We don't instrument inside OSPRay so we don't show these statistics for it
 		if (rays_per_sec > 0.0) {
