@@ -1,4 +1,8 @@
 #include "util.h"
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 std::string pretty_print_count(const double count) {
 	const double giga = 1000000000;
@@ -17,3 +21,4 @@ std::string pretty_print_count(const double count) {
 uint64_t align_to(uint64_t val, uint64_t align) {
 	return ((val + align - 1) / align) * align;
 }
+

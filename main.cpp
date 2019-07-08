@@ -3,9 +3,8 @@
 #include <vector>
 #include <array>
 #include <SDL.h>
-#define TINYOBJLOADER_IMPLEMENTATION
-#include "tiny_obj_loader.h"
 #include "gl_core_4_5.h"
+#include "tiny_obj_loader.h"
 #include "imgui.h"
 #include "imgui_impl_sdl.h"
 #include "imgui_impl_opengl3.h"
@@ -163,6 +162,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	}
 
 	std::vector<float> vertices;
+	std::vector<float> uvs;
 	std::vector<std::vector<uint32_t>> indices;
 	std::vector<uint32_t> material_ids;
 	std::vector<DisneyMaterial> materials;
