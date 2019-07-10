@@ -41,24 +41,26 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 	img.resize(fb_width * fb_height);
 }
 
-void RenderOptiX::set_mesh(const std::vector<float> &verts,
-		const std::vector<uint32_t> &indices)
-{
+void RenderOptiX::set_scene(const Scene &scene) {
 	frame_id = 0;
-	const size_t num_verts = verts.size() / 3;
-	const size_t num_tris = indices.size() / 3;
-	auto vertex_buffer = context->createBuffer(RT_BUFFER_INPUT, RT_FORMAT_FLOAT3, num_verts);
-	std::copy(verts.begin(), verts.end(), static_cast<float*>(vertex_buffer->map()));
+	const auto &mesh = scene.meshes[0];
+
+	auto vertex_buffer = context->createBuffer(RT_BUFFER_INPUT, RT_FORMAT_FLOAT3,
+			mesh.vertices.size());
+	std::copy(mesh.vertices.begin(), mesh.vertices.end(),
+			static_cast<glm::vec3*>(vertex_buffer->map()));
 	vertex_buffer->unmap();
 
-	auto index_buffer = context->createBuffer(RT_BUFFER_INPUT, RT_FORMAT_UNSIGNED_INT3, num_tris);
-	std::copy(indices.begin(), indices.end(), static_cast<uint32_t*>(index_buffer->map()));
+	auto index_buffer = context->createBuffer(RT_BUFFER_INPUT, RT_FORMAT_UNSIGNED_INT3,
+			mesh.indices.size());
+	std::copy(mesh.indices.begin(), mesh.indices.end(),
+			static_cast<glm::uvec3*>(index_buffer->map()));
 	index_buffer->unmap();
 
 	auto geom_tri = context->createGeometryTriangles();
-	geom_tri->setPrimitiveCount(num_tris);
+	geom_tri->setPrimitiveCount(mesh.indices.size());
 	geom_tri->setTriangleIndices(index_buffer, RT_FORMAT_UNSIGNED_INT3);
-	geom_tri->setVertices(num_verts, vertex_buffer, RT_FORMAT_FLOAT3);
+	geom_tri->setVertices(mesh.vertices.size(), vertex_buffer, RT_FORMAT_FLOAT3);
 
 	auto mat = context->createMaterial();
 	mat->setClosestHitProgram(0,
@@ -71,17 +73,14 @@ void RenderOptiX::set_mesh(const std::vector<float> &verts,
 	instance["index_buffer"]->set(index_buffer);
 	instance["vertex_buffer"]->set(vertex_buffer);
 
-	auto scene = context->createGeometryGroup();
-	scene->addChild(instance);
-	scene->setAcceleration(context->createAcceleration("Trbvh"));
+	auto optixscene = context->createGeometryGroup();
+	optixscene->addChild(instance);
+	optixscene->setAcceleration(context->createAcceleration("Trbvh"));
 
-	context["scene"]->set(scene);
-}
+	context["scene"]->set(optixscene);
 
-void RenderOptiX::set_material(const DisneyMaterial &m) {
-	std::memcpy(mat_params->map(), &m, sizeof(DisneyMaterial));
+	std::memcpy(mat_params->map(), &scene.materials[mesh.material_id], sizeof(DisneyMaterial));
 	mat_params->unmap();
-	frame_id = 0;
 }
 
 double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,

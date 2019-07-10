@@ -68,27 +68,22 @@ void RenderEmbree::initialize(const int fb_width, const int fb_height) {
 	}
 }
 
-void RenderEmbree::set_mesh(const std::vector<float> &verts_unaligned,
-		const std::vector<uint32_t> &idx)
-{
+void RenderEmbree::set_scene(const Scene &scene_data) { 
 	frame_id = 0;
-	const size_t nverts = verts_unaligned.size() / 3;
+	auto &mesh = scene_data.meshes[0];
 
-	for (size_t i = 0; i < idx.size() / 3; ++i) {
-		indices.push_back(glm::uvec3(idx[i * 3], idx[i * 3 + 1], idx[i * 3 + 2]));
-	}
+	// TODO: Not really needed now
+	indices = mesh.indices;
 
 	// Pad the vertex buffer to be 16 bytes
-	verts.reserve(nverts);
-	for (size_t i = 0; i < nverts; ++i) {
-		verts.push_back(glm::vec4(verts_unaligned[i * 3],
-					verts_unaligned[i * 3 + 1],
-					verts_unaligned[i * 3 + 2], 0.f));
+	verts.reserve(mesh.vertices.size());
+	for (size_t i = 0; i < mesh.vertices.size(); ++i) {
+		verts.push_back(glm::vec4(mesh.vertices[i], 0.f));
 	}
 
 	RTCGeometry geom = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
 	RTCBuffer vert_buf = rtcNewSharedBuffer(device, verts.data(),
-			nverts * sizeof(glm::vec4));
+			verts.size() * sizeof(glm::vec4));
 	RTCBuffer index_buf = rtcNewSharedBuffer(device, indices.data(),
 			indices.size() * sizeof(glm::uvec3));
 
@@ -104,11 +99,8 @@ void RenderEmbree::set_mesh(const std::vector<float> &verts_unaligned,
 
 	rtcAttachGeometry(scene, geom);
 	rtcCommitScene(scene);
-}
 
-void RenderEmbree::set_material(const DisneyMaterial &m) {
-	material = m;
-	frame_id = 0;
+	material = scene_data.materials[mesh.material_id];
 }
 
 RTCRayHitNp make_ray_hit_soa(RaySoA &rays, HitSoA &hits) {

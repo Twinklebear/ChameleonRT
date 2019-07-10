@@ -91,12 +91,6 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 		D3D12_RESOURCE_STATE_COPY_DEST);
 }
 
-void RenderDXR::set_mesh(const std::vector<float> &verts,
-		const std::vector<uint32_t> &indices)
-{
-//	set_mesh({verts}, {indices});
-}
-
 void RenderDXR::set_scene(const Scene &scene) {
 	frame_id = 0;
 
