@@ -97,64 +97,47 @@ void RenderDXR::set_mesh(const std::vector<float> &verts,
 //	set_mesh({verts}, {indices});
 }
 
-void RenderDXR::set_scene(const std::vector<float> &verts,
-		const std::vector<std::vector<uint32_t>> &all_indices,
-		const std::vector<uint32_t> &material_ids,
-		const std::vector<DisneyMaterial> &materials)
-{
+void RenderDXR::set_scene(const Scene &scene) {
 	frame_id = 0;
 
-	// For the semi-hack w/ tinyobjloader we want a shared big buffer with all the verts,
-	// and this is indexed into by the different shapes
-	// So first upload the vertex buffer
-	Buffer vertex_buf;
-	{
-		Buffer upload_verts = Buffer::upload(device.Get(), verts.size() * sizeof(float),
-				D3D12_RESOURCE_STATE_GENERIC_READ);
-		// Copy vertex and index data into the upload buffers
-		std::memcpy(upload_verts.map(), verts.data(), upload_verts.size());
-		upload_verts.unmap();
-
-		vertex_buf = Buffer::default(device.Get(), upload_verts.size(),
-				D3D12_RESOURCE_STATE_COPY_DEST);
-
-		CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
-		// Enqueue the copy into GPU memory
-		cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
-		auto b = barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-		cmd_list->ResourceBarrier(1, &b);
-
-		CHECK_ERR(cmd_list->Close());
-		std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
-		cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
-		sync_gpu();
-	}
-
-	for (size_t i = 0; i < all_indices.size(); ++i) {
-		auto &indices = all_indices[i];
-
+	// TODO: We can actually run all these uploads and BVH builds in parallel,
+	// as long as the BVH builds don't need so much build + scratch that we run
+	// out of GPU memory.
+	for (const auto &mesh : scene.meshes) {
 		// Upload the mesh to the vertex buffer, build accel structures
 		// Place the data in an upload heap first, then do a GPU-side copy
 		// into a default heap (resident in VRAM)
-		Buffer upload_indices = Buffer::upload(device.Get(), indices.size() * sizeof(uint32_t),
+		Buffer upload_verts = Buffer::upload(device.Get(), mesh.vertices.size() * sizeof(glm::vec3),
+				D3D12_RESOURCE_STATE_GENERIC_READ);
+		Buffer upload_indices = Buffer::upload(device.Get(), mesh.indices.size() * sizeof(glm::uvec3),
 				D3D12_RESOURCE_STATE_GENERIC_READ);
 
-		std::memcpy(upload_indices.map(), indices.data(), upload_indices.size());
+		// Copy vertex and index data into the upload buffers
+		std::memcpy(upload_verts.map(), mesh.vertices.data(), upload_verts.size());
+		std::memcpy(upload_indices.map(), mesh.indices.data(), upload_indices.size());
+
+		upload_verts.unmap();
 		upload_indices.unmap();
 
 		// Allocate GPU side buffers for the data so we can have it resident in VRAM
-		Buffer index_buf = Buffer::default(device.Get(), indices.size() * sizeof(uint32_t),
+		Buffer vertex_buf = Buffer::default(device.Get(), upload_verts.size(),
+				D3D12_RESOURCE_STATE_COPY_DEST);
+		Buffer index_buf = Buffer::default(device.Get(), upload_indices.size(),
 				D3D12_RESOURCE_STATE_COPY_DEST);
 
 		CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 
 		// Enqueue the copy into GPU memory
+		cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
 		cmd_list->CopyResource(index_buf.get(), upload_indices.get());
 
 		// Barriers to wait for the copies to finish before building the accel. structs
 		{
-			auto b = barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-			cmd_list->ResourceBarrier(1, &b);
+			std::array<D3D12_RESOURCE_BARRIER, 2> b = {
+				barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
+				barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+			};
+			cmd_list->ResourceBarrier(b.size(), b.data());
 		}
 
 		meshes.emplace_back(vertex_buf, index_buf);
@@ -190,10 +173,10 @@ void RenderDXR::set_scene(const std::vector<float> &verts,
 		// Write the data about our instance
 		D3D12_RAYTRACING_INSTANCE_DESC *buf =
 			static_cast<D3D12_RAYTRACING_INSTANCE_DESC*>(instance_buf.map());
-		for (size_t i = 0; i < meshes.size(); ++i) {
-			// TODO: Eventually when we move off OBJ we'll need to handle scenes
-			// which can support actual instancing, so we'll want a vector of material IDs
-			buf[i].InstanceID = material_ids[i];
+		for (size_t i = 0; i < scene.meshes.size(); ++i) {
+			// TODO: Need some way to express real instancing one I move off OBJ files and
+			// have scenes with actual instances.
+			buf[i].InstanceID = scene.meshes[i].material_id;
 			// Note: we set the num ray type stride for the hit groups here, I think the
 			// other multiplier is for doing some sort of per-geometry shaders
 			buf[i].InstanceContributionToHitGroupIndex = i * NUM_RAY_TYPES;
@@ -218,9 +201,9 @@ void RenderDXR::set_scene(const std::vector<float> &verts,
 
 	// Upload the material data
 	Buffer mat_upload_buf = Buffer::upload(device.Get(),
-			materials.size() * sizeof(DisneyMaterial),
+			scene.materials.size() * sizeof(DisneyMaterial),
 			D3D12_RESOURCE_STATE_GENERIC_READ);
-	std::memcpy(mat_upload_buf.map(), materials.data(), mat_upload_buf.size());
+	std::memcpy(mat_upload_buf.map(), scene.materials.data(), mat_upload_buf.size());
 	mat_upload_buf.unmap();
 
 	material_param_buf = Buffer::default(device.Get(), mat_upload_buf.size(),

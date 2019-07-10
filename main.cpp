@@ -1,4 +1,6 @@
 #include <iostream>
+#include <algorithm>
+#include <numeric>
 #include <memory>
 #include <vector>
 #include <array>
@@ -11,6 +13,7 @@
 #include "arcball_camera.h"
 #include "shader.h"
 #include "util.h"
+#include "scene.h"
 
 #if ENABLE_OSPRAY
 #include "ospray/render_ospray.h"
@@ -161,86 +164,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 		}
 	}
 
-	std::vector<float> vertices;
-	std::vector<float> uvs;
-	std::vector<std::vector<uint32_t>> indices;
-	std::vector<uint32_t> material_ids;
-	std::vector<DisneyMaterial> materials;
-	std::vector<std::string> material_names;
-	size_t total_tris = 0;
-	{
-		// Load the model w/ tinyobjloader. We just take any OBJ groups etc. stuff
-		// that may be in the file and dump them all into a single OBJ model.
-		tinyobj::attrib_t attrib;
-		std::vector<tinyobj::shape_t> shapes;
-		std::vector<tinyobj::material_t> obj_materials;
-		std::string err, warn;
-		const std::string obj_file = args[2];
-		std::cout << "Loading OBJ: " << obj_file << "\n";
-#ifdef _WIN32
-		const std::string mtl_base_dir = obj_file.substr(0, obj_file.rfind('\\'));
-#else
-		const std::string mtl_base_dir = obj_file.substr(0, obj_file.rfind('/'));
-#endif
-		bool ret = tinyobj::LoadObj(&attrib, &shapes, &obj_materials, &warn, &err,
-				obj_file.c_str(), mtl_base_dir.c_str());
-		if (!warn.empty()) {
-			std::cout << "Warning loading model: " << warn << "\n";
-		}
-		if (!err.empty()) {
-			std::cerr << "Error loading model: " << err << "\n";
-			std::exit(1);
-		}
-		if (!ret) {
-			std::cerr << "Failed to load OBJ model '" << args[2] << "', aborting\n";
-			std::exit(1);
-		}
-
-		vertices = std::move(attrib.vertices);
-		for (size_t s = 0; s < shapes.size(); ++s) {
-			std::vector<uint32_t> shape_indices;
-			const tinyobj::mesh_t &mesh = shapes[s].mesh;
-
-			for (size_t i = 0; i < mesh.indices.size(); ++i) {
-				shape_indices.push_back(mesh.indices[i].vertex_index);
-			}
-			indices.emplace_back(std::move(shape_indices));
-
-			// Note: not supporting per-primitive materials
-			material_ids.push_back(mesh.material_ids[0]);
-			total_tris += mesh.indices.size() / 3;
-		}
-		std::cout << args[2] << " has " << total_tris << " tris, used over "
-			<< shapes.size() << " shapes\n";
-
-		// Parse the materials over to a similar DisneyMaterial representation
-		for (const auto &m : obj_materials) {
-			DisneyMaterial d;
-			d.base_color = glm::vec3(m.diffuse[0], m.diffuse[1], m.diffuse[2]);
-			d.specular = glm::clamp(m.shininess / 500.f, 0.f, 1.f);
-			d.roughness = 1.f - d.specular;
-			d.specular_transmission = glm::clamp(1.f - m.dissolve, 0.f, 1.f);
-			materials.push_back(d);
-			material_names.push_back(m.name);
-		}
-
-		const bool need_default_mat =
-			std::find(material_ids.begin(), material_ids.end(), uint32_t(-1)) != material_ids.end();
-		if (need_default_mat) {
-			std::cout << "No materials assigned for some or all objects, generating a default material\n";
-			const uint32_t default_mat_id = materials.size();
-			materials.push_back(DisneyMaterial());
-			std::replace(material_ids.begin(), material_ids.end(), uint32_t(-1), default_mat_id);
-			material_names.push_back("default");
-		}
-	}
-
-	ArcballCamera camera(eye, center, up);
-
-	const std::string num_tris = pretty_print_count(total_tris);
-
 	std::string rt_backend;
-
 	std::unique_ptr<RenderBackend> renderer = nullptr;
 #if ENABLE_OSPRAY
 	if (args[1] == "-ospray") {
@@ -270,7 +194,14 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 		throw std::runtime_error("Invalid renderer name");
 	}
 	renderer->initialize(win_width, win_height);
-	renderer->set_scene(vertices, indices, material_ids, materials);
+
+	Scene scene = Scene::load_obj(args[2]);
+	ArcballCamera camera(eye, center, up);
+
+	const size_t total_tris = std::accumulate(scene.meshes.begin(), scene.meshes.end(), size_t(0),
+			[](const size_t &s, const Mesh &m) { return s + m.indices.size(); });
+	const std::string num_tris = pretty_print_count(total_tris);
+	renderer->set_scene(scene);
 
 	Shader display_render(fullscreen_quad_vs, display_texture_fs);
 

@@ -10,7 +10,7 @@ struct ViewParams {
 	uint32_t frame_id;
 };
 
-struct Scene {
+struct SceneContext {
 	RTCScene scene;
 	uniform RTCIntersectContext *uniform coherent_context;
 	uniform RTCIntersectContext *uniform incoherent_context;
@@ -23,13 +23,13 @@ struct Tile {
 	float *uniform data;
 };
 
-float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits,
+float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform ray_hits,
 		const DisneyMaterial &mat, uint32_t px, PCGRand &rng);
 
 export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		void *uniform _tile, const void *uniform _view_params, void *uniform _mat)
 {
-	Scene *uniform scene = (Scene *uniform)_scene;
+	SceneContext *uniform scene = (SceneContext *uniform)_scene;
 	const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
 	Tile *uniform tile = (Tile *uniform)_tile;
 	DisneyMaterial *uniform mat = (DisneyMaterial *uniform)_mat;
@@ -93,7 +93,7 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	}
 }
 
-float3 sample_direct_light(const Scene *uniform scene, const DisneyMaterial &mat,
+float3 sample_direct_light(const SceneContext *uniform scene, const DisneyMaterial &mat,
 	const float3 &hit_p, const float3 &n, const float3 &v_x, const float3 &v_y, const float3 &w_o, PCGRand &rng)
 {
 	float3 illum = make_float3(0.f);
@@ -170,7 +170,7 @@ float3 miss_shader(const float3 &dir) {
 	return make_float3(0.1f);
 }
 
-float3 shade_path(const Scene *uniform scene, const RTCRayHitNp *uniform ray_hits,
+float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform ray_hits,
 		const DisneyMaterial &mat, uint32_t px, PCGRand &rng)
 {
 	if (ray_hits->hit.geomID[px] == (uint32_t)-1) {

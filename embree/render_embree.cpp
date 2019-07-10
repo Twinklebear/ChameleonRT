@@ -146,7 +146,7 @@ struct ViewParams {
 	uint32_t frame_id;
 };
 
-struct Scene {
+struct SceneContext {
 	RTCScene scene;
 	RTCIntersectContext *coherent_context;
 	RTCIntersectContext *incoherent_context;
@@ -186,7 +186,7 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	rtcInitIntersectContext(&incoherent);
 	incoherent.flags = RTC_INTERSECT_CONTEXT_FLAG_INCOHERENT;
 
-	Scene ispc_scene;
+	SceneContext ispc_scene;
 	ispc_scene.scene = scene;
 	ispc_scene.coherent_context = &coherent;
 	ispc_scene.incoherent_context = &incoherent;

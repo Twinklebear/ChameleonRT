@@ -11,6 +11,6 @@ Image::Image(const std::string &file) {
 	stbi_image_free(data);
 
 	std::cout << "Img: " << file << ": " << width << "x" << height
-		<< ", " << img.size() "b\n";
+		<< ", " << img.size() << "b\n";
 }
 

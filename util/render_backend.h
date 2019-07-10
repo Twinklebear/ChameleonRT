@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <glm/glm.hpp>
+#include "scene.h"
 
 struct RenderBackend {
 	std::vector<uint32_t> img;
@@ -12,10 +13,7 @@ struct RenderBackend {
 	// TODO: Just a temp thing to learn about setting this up in DXR
 	// kind of tuned to be a bit hacky for tinyobj style of loading the obj files
 	// all in one big buffer
-	virtual void set_scene(const std::vector<float> &verts,
-			const std::vector<std::vector<uint32_t>> &indices,
-			const std::vector<uint32_t> &material_ids,
-			const std::vector<DisneyMaterial> &materials){}
+	virtual void set_scene(const Scene &scene) {}
 	virtual void set_material(const DisneyMaterial &m){}
 	// Returns the rays per-second achieved, or -1 if this is not tracked
 	virtual double render(const glm::vec3 &pos, const glm::vec3 &dir,

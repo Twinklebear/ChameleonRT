@@ -6,6 +6,7 @@ add_library(util
 	util.cpp
 	material.cpp
 	mesh.cpp
+	scene.cpp
 	gl_core_4_5.c)
 
 set_target_properties(util PROPERTIES
