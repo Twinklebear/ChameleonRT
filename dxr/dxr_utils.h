@@ -253,13 +253,13 @@ private:
 	Buffer scratch, post_build_info, post_build_info_readback;
 
 public:
-	Buffer vertex_buf, index_buf, bvh;
+	Buffer vertex_buf, index_buf, uv_buf, bvh;
 
 	TriangleMesh() = default;
 
 	// TODO: Allow other vertex and index formats? Right now this
 	// assumes vec3f verts and uint3 indices
-	TriangleMesh(Buffer vertex_buf, Buffer index_buf,
+	TriangleMesh(Buffer vertex_buf, Buffer index_buf, Buffer uv_buf,
 		D3D12_RAYTRACING_GEOMETRY_FLAGS geom_flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE,
 		D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags =
 			D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE

@@ -741,10 +741,10 @@ size_t RTPipeline::compute_shader_record_size() const {
 	return record_size;
 }
 
-TriangleMesh::TriangleMesh(Buffer vertex_buf, Buffer index_buf,
+TriangleMesh::TriangleMesh(Buffer vertex_buf, Buffer index_buf, Buffer uv_buf,
 	D3D12_RAYTRACING_GEOMETRY_FLAGS geom_flags,
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags)
-	: vertex_buf(vertex_buf), index_buf(index_buf), build_flags(build_flags)
+	: vertex_buf(vertex_buf), index_buf(index_buf), uv_buf(uv_buf), build_flags(build_flags)
 {
 	geom_desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
 	geom_desc.Triangles.VertexBuffer.StartAddress = vertex_buf->GetGPUVirtualAddress();

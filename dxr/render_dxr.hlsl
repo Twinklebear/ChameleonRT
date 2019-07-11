@@ -163,7 +163,6 @@ void RayGen() {
 
 		unpack_material(mat, uint(payload.normal.w));
 		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
-		illum += float3(payload.color_dist.rg, 0);
 
 		float3 w_i;
 		float pdf;
@@ -216,9 +215,14 @@ void AOMiss(inout OcclusionHitInfo occlusion : SV_RayPayload) {
 	occlusion.hit = 0;
 }
 
+// Per-mesh parameters for the closest hit
 StructuredBuffer<float3> vertices : register(t0, space1);
 StructuredBuffer<uint3> indices : register(t1, space1);
-//StructuredBuffer<float2> uvs : register(t2, space1);
+StructuredBuffer<float2> uvs : register(t2, space1);
+
+cbuffer MeshData : register(b0, space1) {
+	uint num_uvs;
+}
 
 [shader("closesthit")] 
 void ClosestHit(inout HitInfo payload, Attributes attrib) {
@@ -229,10 +233,6 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 	float3 n = normalize(cross(vb - va, vc - va));
 
 	float2 uv = float2(0, 0);
-	/*
-	uint num_uvs = 0;
-	uint uv_stride = 0;
-	uvs.GetDimensions(num_uvs, uv_stride);
 	if (num_uvs > 0) {
 		float2 uva = uvs[idx.x];
 		float2 uvb = uvs[idx.y];
@@ -240,9 +240,8 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 		uv = (1.f - attrib.bary.x - attrib.bary.y) * uva
 			+ attrib.bary.x * uvb + attrib.bary.y * uvc;
 	}
-	*/
-	// TODO: For textured meshes we should return the uvs here.
-	payload.color_dist = float4(uv, 1, RayTCurrent());
+
+	payload.color_dist = float4(uv, 0, RayTCurrent());
 	float3x3 inv_transp = float3x3(WorldToObject4x3()[0], WorldToObject4x3()[1], WorldToObject4x3()[2]);
 	payload.normal = float4(normalize(mul(inv_transp, n)), InstanceID());
 }

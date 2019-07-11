@@ -109,9 +109,16 @@ void RenderDXR::set_scene(const Scene &scene) {
 		// Copy vertex and index data into the upload buffers
 		std::memcpy(upload_verts.map(), mesh.vertices.data(), upload_verts.size());
 		std::memcpy(upload_indices.map(), mesh.indices.data(), upload_indices.size());
-
 		upload_verts.unmap();
 		upload_indices.unmap();
+
+		Buffer upload_uvs;
+		if (!mesh.uvs.empty()) {
+			upload_uvs = Buffer::upload(device.Get(), mesh.uvs.size() * sizeof(glm::vec2),
+					D3D12_RESOURCE_STATE_GENERIC_READ);
+			std::memcpy(upload_uvs.map(), mesh.uvs.data(), upload_uvs.size());
+			upload_uvs.unmap();
+		}
 
 		// Allocate GPU side buffers for the data so we can have it resident in VRAM
 		Buffer vertex_buf = Buffer::default(device.Get(), upload_verts.size(),
@@ -125,16 +132,25 @@ void RenderDXR::set_scene(const Scene &scene) {
 		cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
 		cmd_list->CopyResource(index_buf.get(), upload_indices.get());
 
+		Buffer uv_buf;
+		if (!mesh.uvs.empty()) {
+			uv_buf = Buffer::default(device.Get(), upload_uvs.size(),
+				D3D12_RESOURCE_STATE_COPY_DEST);
+			cmd_list->CopyResource(uv_buf.get(), upload_uvs.get());
+		}
+
 		// Barriers to wait for the copies to finish before building the accel. structs
 		{
-			std::array<D3D12_RESOURCE_BARRIER, 2> b = {
-				barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
-				barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+			std::vector<D3D12_RESOURCE_BARRIER> b;
+			b.push_back(barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+			b.push_back(barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+			if (!mesh.uvs.empty()) {
+				b.push_back(barrier_transition(uv_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
 			};
 			cmd_list->ResourceBarrier(b.size(), b.data());
 		}
 
-		meshes.emplace_back(vertex_buf, index_buf);
+		meshes.emplace_back(vertex_buf, index_buf, uv_buf);
 		meshes.back().enqeue_build(device.Get(), cmd_list.Get());
 
 		// TODO: Some possible perf improvements: We can run all the upload of
@@ -346,7 +362,8 @@ void RenderDXR::build_raytracing_pipeline() {
 	RootSignature hitgroup_root_sig = RootSignatureBuilder::local()
 		.add_srv("vertex_buf", 0, 1)
 		.add_srv("index_buf", 1, 1)
-		//.add_srv("uv_buf", 2, 1)
+		.add_srv("uv_buf", 2, 1)
+		.add_constants("MeshData", 0, 1, 1)
 		.create(device.Get());
 
 	RTPipelineBuilder rt_pipeline_builder = RTPipelineBuilder()
@@ -403,11 +420,23 @@ void RenderDXR::build_shader_binding_table() {
 		const std::wstring hg_name = L"HitGroup_inst" + std::to_wstring(i);
 		uint8_t *map = rt_pipeline.shader_record(hg_name);
 		const RootSignature *sig = rt_pipeline.shader_signature(hg_name);
+
 		D3D12_GPU_VIRTUAL_ADDRESS gpu_handle = meshes[i].vertex_buf->GetGPUVirtualAddress();
 		std::memcpy(map + sig->offset("vertex_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 
 		gpu_handle = meshes[i].index_buf->GetGPUVirtualAddress();
 		std::memcpy(map + sig->offset("index_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+
+		if (meshes[i].uv_buf.size() != 0) {
+			gpu_handle = meshes[i].uv_buf->GetGPUVirtualAddress();
+			std::memcpy(map + sig->offset("uv_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+		} else {
+			gpu_handle = 0;
+			std::memcpy(map + sig->offset("uv_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+		}
+
+		const uint32_t num_uvs = meshes[i].uv_buf.size();
+		std::memcpy(map + sig->offset("MeshData"), &num_uvs, sizeof(uint32_t));
 	}
 
 	rt_pipeline.unmap_shader_table();
