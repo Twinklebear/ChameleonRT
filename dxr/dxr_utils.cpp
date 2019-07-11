@@ -594,7 +594,8 @@ RTPipeline::RTPipeline(D3D12_STATE_OBJECT_DESC &desc, RootSignature &global_sig,
 		<< " bytes\n";
 
 	const size_t sbt_size = shader_record_size * (1 + miss_shaders.size() + hit_groups.size());
-	shader_table = Buffer::upload(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
+	cpu_shader_table = Buffer::upload(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
+	shader_table = Buffer::default(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
 
 	// Build the list of offsets into the shader table for each shader record
 	// and write the identifiers into the table. The actual arguments are left to the user
@@ -624,19 +625,30 @@ RTPipeline::RTPipeline(D3D12_STATE_OBJECT_DESC &desc, RootSignature &global_sig,
 
 		offset += shader_record_size;
 	}
-
 	unmap_shader_table();
 }
 
 void RTPipeline::map_shader_table() {
 	assert(sbt_mapping == nullptr);
-	sbt_mapping = static_cast<uint8_t*>(shader_table.map());
+	sbt_mapping = static_cast<uint8_t*>(cpu_shader_table.map());
 }
 
 void RTPipeline::unmap_shader_table() {
 	assert(sbt_mapping);
-	shader_table.unmap();
+	cpu_shader_table.unmap();
 	sbt_mapping = nullptr;
+}
+
+void RTPipeline::upload_shader_table(ID3D12GraphicsCommandList4 *cmd_list) {
+	assert(sbt_mapping == nullptr);
+
+	auto b = barrier_transition(shader_table, D3D12_RESOURCE_STATE_COPY_DEST);
+	cmd_list->ResourceBarrier(1, &b);
+
+	cmd_list->CopyResource(shader_table.get(), cpu_shader_table.get());
+
+	b = barrier_transition(shader_table, D3D12_RESOURCE_STATE_GENERIC_READ);
+	cmd_list->ResourceBarrier(1, &b);
 }
 
 uint8_t* RTPipeline::shader_record(const std::wstring &shader) {

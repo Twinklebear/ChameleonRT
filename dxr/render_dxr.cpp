@@ -438,8 +438,14 @@ void RenderDXR::build_shader_binding_table() {
 		const uint32_t num_uvs = meshes[i].uv_buf.size();
 		std::memcpy(map + sig->offset("MeshData"), &num_uvs, sizeof(uint32_t));
 	}
-
 	rt_pipeline.unmap_shader_table();
+
+	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+	rt_pipeline.upload_shader_table(cmd_list.Get());
+	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
+	CHECK_ERR(cmd_list->Close());
+	cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+	sync_gpu();
 }
 
 void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,

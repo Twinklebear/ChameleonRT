@@ -207,7 +207,7 @@ class RTPipeline {
 	size_t shader_record_size = 0,
 		miss_table_offset = 0,
 		hit_group_table_offset = 0;
-	Buffer shader_table;
+	Buffer cpu_shader_table, shader_table;
 	std::unordered_map<std::wstring, size_t> record_offsets;
 	uint8_t *sbt_mapping = nullptr;
 
@@ -224,6 +224,8 @@ public:
 
 	void map_shader_table();
 	void unmap_shader_table();
+	// Upload the shader table contents to the default heap
+	void upload_shader_table(ID3D12GraphicsCommandList4 *cmd_list);
 
 	// Get the pointer in the table to a specific shader record. The table must be mapped
 	uint8_t* shader_record(const std::wstring &shader);
