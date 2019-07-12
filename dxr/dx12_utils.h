@@ -44,7 +44,9 @@ public:
 	virtual ~Resource();
 
 	ID3D12Resource* operator->();
+	const ID3D12Resource* operator->() const;
 	ID3D12Resource* get();
+	const ID3D12Resource* get() const;
 	D3D12_HEAP_TYPE heap() const;
 	D3D12_RESOURCE_STATES state() const;
 };
@@ -89,11 +91,26 @@ public:
 
 class Texture2D : public Resource {
 	glm::uvec2 tdims = glm::uvec2(0);
+	DXGI_FORMAT format;
 
 public:
 	static Texture2D default(ID3D12Device *device, glm::uvec2 dims,
 		D3D12_RESOURCE_STATES state, DXGI_FORMAT img_format,
 		D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 
+	// Read the texture data back into the provided buffer
+	// buffer size must be aligned to a row pitch of D3D12_TEXTURE_DATA_PITCH_ALIGNMENT
+	void readback(ID3D12GraphicsCommandList4 *cmd_list, Buffer &buf);
+
+	// Upload the buffer into the texture
+	// buffer size must be aligned to a row pitch of D3D12_TEXTURE_DATA_PITCH_ALIGNMENT
+	void upload(ID3D12GraphicsCommandList4 *cmd_list, Buffer &buf);
+	
+	size_t linear_row_pitch() const;
+
+	// Size of one pixel, in bytes
+	size_t pixel_size() const;
+
 	glm::uvec2 dims() const;
 };
+

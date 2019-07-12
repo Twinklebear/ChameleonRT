@@ -87,8 +87,7 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 	
 	// Allocate the readback buffer so we can read the image back to the CPU
 	img_readback_buf = Buffer::readback(device.Get(),
-		align_to(fb_width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT) * fb_height,
-		D3D12_RESOURCE_STATE_COPY_DEST);
+		render_target.linear_row_pitch() * fb_height, D3D12_RESOURCE_STATE_COPY_DEST);
 }
 
 void RenderDXR::set_scene(const Scene &scene) {
@@ -280,42 +279,13 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	{
 		// Render target from UA -> Copy Source
-		D3D12_RESOURCE_BARRIER b = barrier_transition(render_target, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		auto b = barrier_transition(render_target, D3D12_RESOURCE_STATE_COPY_SOURCE);
 		cmd_list->ResourceBarrier(1, &b);
-	}
+
+		render_target.readback(cmd_list.Get(), img_readback_buf);
 	
-	const uint32_t readback_row_pitch = align_to(render_target.dims().x * 4,
-			D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
-	{
-		// Copy the rendered image to the readback buf so we can access it on the CPU
-		D3D12_TEXTURE_COPY_LOCATION dst_desc = { 0 };
-		dst_desc.pResource = img_readback_buf.get();
-		dst_desc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-		dst_desc.PlacedFootprint.Offset = 0;
-		dst_desc.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		dst_desc.PlacedFootprint.Footprint.Width = render_target.dims().x;
-		dst_desc.PlacedFootprint.Footprint.Height = render_target.dims().y;
-		dst_desc.PlacedFootprint.Footprint.Depth = 1;
-		dst_desc.PlacedFootprint.Footprint.RowPitch = readback_row_pitch;
-
-		D3D12_TEXTURE_COPY_LOCATION src_desc = { 0 };
-		src_desc.pResource = render_target.get();
-		src_desc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-		src_desc.SubresourceIndex = 0;
-
-		D3D12_BOX region = { 0 };
-		region.left = 0;
-		region.right = render_target.dims().x;
-		region.top = 0;
-		region.bottom = render_target.dims().y;
-		region.front = 0;
-		region.back = 1;
-		cmd_list->CopyTextureRegion(&dst_desc, 0, 0, 0, &src_desc, &region);
-	}
-
-	// Transition the render target back to UA so we can write to it in the next frame
-	{
-		D3D12_RESOURCE_BARRIER b = barrier_transition(render_target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		// Transition the render target back to UA so we can write to it in the next frame
+		b = barrier_transition(render_target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 		cmd_list->ResourceBarrier(1, &b);
 	}
 
@@ -328,13 +298,14 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	// Map the readback buf and copy out the rendered image
 	// We may have needed some padding for the readback buffer, so we might have to read
 	// row by row.
-	if (readback_row_pitch == render_target.dims().x * 4) {
+	if (render_target.linear_row_pitch() == render_target.dims().x * render_target.pixel_size()) {
 		std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
 	} else {
 		uint8_t *buf = static_cast<uint8_t*>(img_readback_buf.map());
 		for (uint32_t y = 0; y < render_target.dims().y; ++y) {
 			std::memcpy(img.data() + y * render_target.dims().x,
-				buf + y * readback_row_pitch, render_target.dims().x * 4);
+				buf + y * render_target.linear_row_pitch(),
+				render_target.dims().x * render_target.pixel_size());
 		}
 	}
 	img_readback_buf.unmap();

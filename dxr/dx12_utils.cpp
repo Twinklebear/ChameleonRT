@@ -1,4 +1,5 @@
 #include <cassert>
+#include "util.h"
 #include "dx12_utils.h"
 
 using Microsoft::WRL::ComPtr;
@@ -74,7 +75,13 @@ Resource::~Resource() {}
 ID3D12Resource* Resource::operator->() {
 	return get();
 }
+const ID3D12Resource* Resource::operator->() const {
+	return get();
+}
 ID3D12Resource* Resource::get() {
+	return res.Get();
+}
+const ID3D12Resource* Resource::get() const {
 	return res.Get();
 }
 D3D12_HEAP_TYPE Resource::heap() const {
@@ -176,11 +183,79 @@ Texture2D Texture2D::default(ID3D12Device *device, glm::uvec2 dims,
 	t.tdims = dims;
 	t.rstate = state;
 	t.rheap = D3D12_HEAP_TYPE_DEFAULT;
+	t.format = img_format;
 	CHECK_ERR(device->CreateCommittedResource(&DEFAULT_HEAP_PROPS, D3D12_HEAP_FLAG_NONE,
 		&desc, state, nullptr, IID_PPV_ARGS(&t.res)));
 	return t;
 }
 
+void Texture2D::readback(ID3D12GraphicsCommandList4 *cmd_list, Buffer &buf) {
+	D3D12_TEXTURE_COPY_LOCATION dst_desc = { 0 };
+	dst_desc.pResource = buf.get();
+	dst_desc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	dst_desc.PlacedFootprint.Offset = 0;
+	dst_desc.PlacedFootprint.Footprint.Format = format;
+	dst_desc.PlacedFootprint.Footprint.Width = tdims.x;
+	dst_desc.PlacedFootprint.Footprint.Height = tdims.y;
+	dst_desc.PlacedFootprint.Footprint.Depth = 1;
+	dst_desc.PlacedFootprint.Footprint.RowPitch = linear_row_pitch();
+
+	D3D12_TEXTURE_COPY_LOCATION src_desc = { 0 };
+	src_desc.pResource = get();
+	src_desc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	src_desc.SubresourceIndex = 0;
+
+	D3D12_BOX region = { 0 };
+	region.left = 0;
+	region.right = tdims.x;
+	region.top = 0;
+	region.bottom = tdims.y;
+	region.front = 0;
+	region.back = 1;
+	cmd_list->CopyTextureRegion(&dst_desc, 0, 0, 0, &src_desc, &region);
+}
+
+void Texture2D::upload(ID3D12GraphicsCommandList4 *cmd_list, Buffer &buf) {
+	D3D12_TEXTURE_COPY_LOCATION dst_desc = { 0 };
+	dst_desc.pResource = get();
+	dst_desc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	dst_desc.SubresourceIndex = 0;
+
+	D3D12_TEXTURE_COPY_LOCATION src_desc = { 0 };
+	src_desc.pResource = buf.get();
+	src_desc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	src_desc.PlacedFootprint.Offset = 0;
+	src_desc.PlacedFootprint.Footprint.Format = format;
+	src_desc.PlacedFootprint.Footprint.Width = tdims.x;
+	src_desc.PlacedFootprint.Footprint.Height = tdims.y;
+	src_desc.PlacedFootprint.Footprint.Depth = 1;
+	src_desc.PlacedFootprint.Footprint.RowPitch = linear_row_pitch();
+
+	D3D12_BOX region = { 0 };
+	region.left = 0;
+	region.right = tdims.x;
+	region.top = 0;
+	region.bottom = tdims.y;
+	region.front = 0;
+	region.back = 1;
+	cmd_list->CopyTextureRegion(&dst_desc, 0, 0, 0, &src_desc, &region);
+}
+
+size_t Texture2D::linear_row_pitch() const {
+	return align_to(tdims.x * pixel_size(), D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+}
+
+size_t Texture2D::pixel_size() const {
+	// Just the common formats I plan to use
+	switch (format) {
+		case DXGI_FORMAT_R8G8B8A8_UNORM: return 4;
+		case DXGI_FORMAT_R32G32B32A32_FLOAT: return 16;
+		default: throw std::runtime_error("Unhandled format in pixel_size!");
+				 return -1;
+	};
+}
+
 glm::uvec2 Texture2D::dims() const {
 	return tdims;
 }
+
