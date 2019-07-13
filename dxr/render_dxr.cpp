@@ -91,9 +91,9 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 void RenderDXR::set_scene(const Scene &scene) {
 	frame_id = 0;
 
-	// TODO: We can actually run all these uploads and BVH builds in parallel,
-	// as long as the BVH builds don't need so much build + scratch that we run
-	// out of GPU memory.
+	// TODO: We can actually run all these uploads and BVH builds in parallel
+	// using multiple command lists, as long as the BVH builds don't need so
+	// much build + scratch that we run out of GPU memory.
 	for (const auto &mesh : scene.meshes) {
 		// Upload the mesh to the vertex buffer, build accel structures
 		// Place the data in an upload heap first, then do a GPU-side copy
@@ -229,7 +229,7 @@ void RenderDXR::set_scene(const Scene &scene) {
 			uint8_t *buf = static_cast<uint8_t*>(tex_upload.map());
 			for (uint32_t y = 0; y < img->height; ++y) {
 				std::memcpy(buf + y * tex.linear_row_pitch(),
-						img->img.data() + y * img->width,
+						img->img.data() + y * img->width * tex.pixel_size(),
 						img->width * tex.pixel_size());
 			}
 		}
