@@ -3,9 +3,7 @@
 #include "stb_image.h"
 
 Image::Image(const std::string &file) {
-	// TODO WILL: For now we force 4 channels for dx12 to have RGBA, but
-	// does it have some built in conversion support? Or I should write a converson
-	// step before uploading
+	stbi_set_flip_vertically_on_load(1);
 	uint8_t *data = stbi_load(file.c_str(), &width, &height, &channels, 4);
 	channels = 4;
 	if (!data) {

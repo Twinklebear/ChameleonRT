@@ -20,7 +20,8 @@ struct DisneyMaterial {
 
 	float ior = 1.5;
 	float specular_transmission = 0;
-	glm::vec2 pad = glm::vec2(0.f);
+	int32_t color_tex_id = -1;
+	int32_t pad = 0;
 };
 
 struct Image {

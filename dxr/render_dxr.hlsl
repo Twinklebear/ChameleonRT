@@ -25,7 +25,8 @@ struct MaterialParams {
 	float4 basecolor_metallic;
 	float4 spec_rough_spectint_aniso;
 	float4 sheen_sheentint_clearc_ccgloss;
-	float4 ior_spectrans;
+	float2 ior_spectrans;
+	int2 color_tex;
 };
 
 // Instance ID = Material ID
@@ -49,9 +50,8 @@ void unpack_material(inout DisneyMaterial mat, uint id, float2 uv_coords) {
 	mat.clearcoat_gloss = p.sheen_sheentint_clearc_ccgloss.a;
 	mat.ior = p.ior_spectrans.r;
 	mat.specular_transmission = p.ior_spectrans.g;
-	// TODO Better track per-mat if it uses textures and which ones
-	mat.base_color = textures[1]
-		.SampleLevel(tex_sampler_state, uv_coords, 0).rgb;
+	// TODO track per-mat if it uses textures and which ones
+	mat.base_color = textures[0].SampleLevel(tex_sampler_state, uv_coords, 0).rgb;
 		/*
 	mat.base_color = mats[NonUniformResourceIndex(id)]
 		.SampleLevel(texture_sampler_state, float2(0.5, 0.5), 0).rgb;
