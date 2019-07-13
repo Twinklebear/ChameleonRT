@@ -112,10 +112,11 @@ Scene Scene::load_obj(const std::string &file) {
 
 		if (!m.diffuse_texname.empty()) {
 			if (scene.textures.find(m.diffuse_texname) == scene.textures.end()) {
-				scene.textures[m.diffuse_texname] = Image(obj_base_dir + "/" + m.diffuse_texname);
+				scene.textures[m.diffuse_texname] =
+					std::make_shared<Image>(obj_base_dir + "/" + m.diffuse_texname, m.diffuse_texname);
 			}
+			d.color_texture = scene.textures[m.diffuse_texname];
 		}
-
 		scene.materials.push_back(d);
 	}
 

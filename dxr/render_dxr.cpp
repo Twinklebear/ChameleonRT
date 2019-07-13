@@ -205,22 +205,6 @@ void RenderDXR::set_scene(const Scene &scene) {
 
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	scene_bvh.enqeue_build(device.Get(), cmd_list.Get());
-
-	// Upload the material data
-	Buffer mat_upload_buf = Buffer::upload(device.Get(),
-			scene.materials.size() * sizeof(DisneyMaterial),
-			D3D12_RESOURCE_STATE_GENERIC_READ);
-	std::memcpy(mat_upload_buf.map(), scene.materials.data(), mat_upload_buf.size());
-	mat_upload_buf.unmap();
-
-	material_param_buf = Buffer::default(device.Get(), mat_upload_buf.size(),
-			D3D12_RESOURCE_STATE_COPY_DEST);
-
-	cmd_list->CopyResource(material_param_buf.get(), mat_upload_buf.get());
-	{
-		D3D12_RESOURCE_BARRIER b = barrier_transition(material_param_buf, D3D12_RESOURCE_STATE_GENERIC_READ);
-		cmd_list->ResourceBarrier(1, &b);
-	}
 	CHECK_ERR(cmd_list->Close());
 
 	std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
@@ -230,23 +214,23 @@ void RenderDXR::set_scene(const Scene &scene) {
 	scene_bvh.finalize();
 
 	// Upload the textures
-	// TODO: Need to setup some mapping from what mats use which textures
-	// to the index in the array they get uploaded with
+	std::unordered_map<std::string, int32_t> texture_ids;
 	for (const auto &t : scene.textures) {
-		const Image &img = t.second;
-		Texture2D tex = Texture2D::default(device.Get(), glm::uvec2(img.width, img.height),
+		const auto &img = t.second;
+		Texture2D tex = Texture2D::default(device.Get(), glm::uvec2(img->width, img->height),
 				D3D12_RESOURCE_STATE_COPY_DEST, DXGI_FORMAT_R8G8B8A8_UNORM);
-		Buffer tex_upload = Buffer::upload(device.Get(), tex.linear_row_pitch() * img.height,
+		Buffer tex_upload = Buffer::upload(device.Get(), tex.linear_row_pitch() * img->height,
 				D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		// TODO: Some better texture upload handling here, and readback for handling the row pitch stuff
-		if (tex.linear_row_pitch() == img.width * tex.pixel_size()) {
-			std::memcpy(tex_upload.map(), img.img.data(), tex_upload.size());
+		if (tex.linear_row_pitch() == img->width * tex.pixel_size()) {
+			std::memcpy(tex_upload.map(), img->img.data(), tex_upload.size());
 		} else {
+			std::cout << "uploading hard way for " << img->name << "\n";
 			uint8_t *buf = static_cast<uint8_t*>(tex_upload.map());
-			for (uint32_t y = 0; y < img.height; ++y) {
+			for (uint32_t y = 0; y < img->height; ++y) {
 				std::memcpy(buf + y * tex.linear_row_pitch(),
-						img.img.data() + y * img.width,
+						img->img.data() + y * img->width,
 						render_target.dims().x * render_target.pixel_size());
 			}
 		}
@@ -260,11 +244,42 @@ void RenderDXR::set_scene(const Scene &scene) {
 		cmd_list->ResourceBarrier(1, &b);
 
 		CHECK_ERR(cmd_list->Close());
-		std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
 		cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
 		sync_gpu();
 
+		texture_ids[img->name] = textures.size();
 		textures.push_back(tex);
+	}
+
+	// Upload the material data
+	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+	{
+		Buffer mat_upload_buf = Buffer::upload(device.Get(),
+				scene.materials.size() * sizeof(GPUDisneyMaterial),
+				D3D12_RESOURCE_STATE_GENERIC_READ);
+
+		GPUDisneyMaterial *mat_buf = static_cast<GPUDisneyMaterial*>(mat_upload_buf.map());
+		for (size_t i = 0; i < scene.materials.size(); ++i) {
+			mat_buf[i] = scene.materials[i];
+			if (scene.materials[i].color_texture) {
+				mat_buf[i].tex_ids.x = texture_ids[scene.materials[i].color_texture->name];
+				std::cout << "material " << i << " has texture id "
+					<< mat_buf[i].tex_ids.x << " for texture "
+					<< scene.materials[i].color_texture->name << "\n";
+			}
+		}
+		mat_upload_buf.unmap();
+
+		material_param_buf = Buffer::default(device.Get(), mat_upload_buf.size(),
+				D3D12_RESOURCE_STATE_COPY_DEST);
+
+		cmd_list->CopyResource(material_param_buf.get(), mat_upload_buf.get());
+		auto b = barrier_transition(material_param_buf, D3D12_RESOURCE_STATE_GENERIC_READ);
+		cmd_list->ResourceBarrier(1, &b);
+
+		CHECK_ERR(cmd_list->Close());
+		cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+		sync_gpu();
 	}
 
 	build_shader_resource_heap();
@@ -523,8 +538,8 @@ void RenderDXR::update_descriptor_heap() {
 		srv_desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 		srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		srv_desc.Buffer.FirstElement = 0;
-		srv_desc.Buffer.NumElements = material_param_buf.size() / sizeof(DisneyMaterial);
-		srv_desc.Buffer.StructureByteStride = sizeof(DisneyMaterial);
+		srv_desc.Buffer.NumElements = material_param_buf.size() / sizeof(GPUDisneyMaterial);
+		srv_desc.Buffer.StructureByteStride = sizeof(GPUDisneyMaterial);
 		srv_desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 		device->CreateShaderResourceView(material_param_buf.get(), &srv_desc, heap_handle);
 		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -551,9 +566,9 @@ void RenderDXR::update_descriptor_heap() {
 	// Write the sampler to the sampler heap
 	D3D12_SAMPLER_DESC sampler_desc = {0};
 	sampler_desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-	sampler_desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	sampler_desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	sampler_desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	sampler_desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler_desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	sampler_desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
 	sampler_desc.MinLOD = 0;
 	sampler_desc.MaxLOD = 0;
 	sampler_desc.MipLODBias = 0.0f;
