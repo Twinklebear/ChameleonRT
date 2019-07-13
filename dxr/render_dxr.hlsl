@@ -44,7 +44,6 @@ void unpack_material(inout DisneyMaterial mat, uint id, float2 uv_coords) {
 		mat.base_color = textures[NonUniformResourceIndex(p.tex_ids.x)]
 			.SampleLevel(tex_sampler, uv_coords, 0).rgb;
 	}
-
 	mat.metallic = p.basecolor_metallic.a;
 	mat.specular = p.spec_rough_spectint_aniso.r;
 	mat.roughness = p.spec_rough_spectint_aniso.g;
@@ -162,6 +161,16 @@ void RayGen() {
 		const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
 		float3 v_x, v_y;
 		float3 v_z = normalize(payload.normal.xyz);
+		// TODO: This is a hack and will screw up transparency, but
+		// for thin objects like quads it's necessary to have the normal face
+		// the right way all the time. Maybe the best thing to do is to add the "thin"
+		// parameter for the Disney BSDF and also use this to determine if we
+		// should force the normals to face-forward.
+		/*
+		if (dot(w_o, v_z) < 0.0) {
+			v_z = -v_z;
+		}
+		*/
 		ortho_basis(v_x, v_y, v_z);
 
 		unpack_material(mat, uint(payload.normal.w), payload.color_dist.rg);
