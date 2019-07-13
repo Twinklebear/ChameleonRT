@@ -226,12 +226,11 @@ void RenderDXR::set_scene(const Scene &scene) {
 		if (tex.linear_row_pitch() == img->width * tex.pixel_size()) {
 			std::memcpy(tex_upload.map(), img->img.data(), tex_upload.size());
 		} else {
-			std::cout << "uploading hard way for " << img->name << "\n";
 			uint8_t *buf = static_cast<uint8_t*>(tex_upload.map());
 			for (uint32_t y = 0; y < img->height; ++y) {
 				std::memcpy(buf + y * tex.linear_row_pitch(),
 						img->img.data() + y * img->width,
-						render_target.dims().x * render_target.pixel_size());
+						img->width * tex.pixel_size());
 			}
 		}
 		tex_upload.unmap();
@@ -263,9 +262,6 @@ void RenderDXR::set_scene(const Scene &scene) {
 			mat_buf[i] = scene.materials[i];
 			if (scene.materials[i].color_texture) {
 				mat_buf[i].tex_ids.x = texture_ids[scene.materials[i].color_texture->name];
-				std::cout << "material " << i << " has texture id "
-					<< mat_buf[i].tex_ids.x << " for texture "
-					<< scene.materials[i].color_texture->name << "\n";
 			}
 		}
 		mat_upload_buf.unmap();

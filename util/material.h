@@ -59,7 +59,7 @@ struct GPUDisneyMaterial {
 	
 	GPUDisneyMaterial() = default;
 
-	// Note: these do not set the color tex id, as this dependents on
+	// Note: these do not set the color tex id, as this depends on
 	// the backend's ordering of textures in memory
 	GPUDisneyMaterial(const DisneyMaterial &d);
 	GPUDisneyMaterial& operator=(const DisneyMaterial &d);

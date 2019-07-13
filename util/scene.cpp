@@ -99,8 +99,6 @@ Scene Scene::load_obj(const std::string &file) {
 		total_tris += mesh.num_tris();
 		scene.meshes.push_back(std::move(mesh));
 	}
-	std::cout << file << " has " << total_tris << " tris, used over "
-		<< shapes.size() << " shapes\n";
 
 	// Parse the materials over to a similar DisneyMaterial representation
 	for (const auto &m : obj_materials) {
@@ -133,6 +131,12 @@ Scene Scene::load_obj(const std::string &file) {
 			}
 		}
 	}
+
+	std::cout << "Scene '" << file << "' loaded:\n"
+		<< "# Triangles: " << total_tris << "\n"
+		<< "# Meshes: " << scene.meshes.size() << "\n"
+		<< "# Materials: " << scene.materials.size() << "\n"
+		<< "# Textures: " << scene.textures.size() << "\n";
 
 	return scene;
 }

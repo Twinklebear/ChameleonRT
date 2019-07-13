@@ -1,4 +1,3 @@
-#include <iostream>
 #include "material.h"
 #include "stb_image.h"
 
@@ -11,9 +10,6 @@ Image::Image(const std::string &file, const std::string &name) : name(name) {
 	}
 	img = std::vector<uint8_t>(data, data + width * height * channels);
 	stbi_image_free(data);
-
-	std::cout << "Img: " << file << ": " << width << "x" << height
-		<< ", " << img.size() << "b\n";
 }
 
 GPUDisneyMaterial::GPUDisneyMaterial(const DisneyMaterial &d)
