@@ -107,10 +107,9 @@ public:
 	void upload(ID3D12GraphicsCommandList4 *cmd_list, Buffer &buf);
 	
 	size_t linear_row_pitch() const;
-
 	// Size of one pixel, in bytes
 	size_t pixel_size() const;
-
+	DXGI_FORMAT pixel_format() const;
 	glm::uvec2 dims() const;
 };
 

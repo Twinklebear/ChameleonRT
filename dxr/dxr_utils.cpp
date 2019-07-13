@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <limits>
+#include <numeric>
 #include <array>
 #include "util.h"
 #include "dxr_utils.h"
@@ -17,6 +18,103 @@ bool dxr_available(ComPtr<ID3D12Device5> &device) {
 RootParam::RootParam(D3D12_ROOT_PARAMETER param, const std::string &name)
 	: param(param), name(name)
 {}
+
+DescriptorHeap::DescriptorHeap(D3D12_DESCRIPTOR_HEAP_DESC desc, std::vector<D3D12_DESCRIPTOR_RANGE> ranges,
+		Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap)
+	: desc(desc), ranges(ranges), heap(heap)
+{}
+
+D3D12_ROOT_PARAMETER DescriptorHeap::root_param() const {
+	D3D12_ROOT_PARAMETER param = { 0 };
+	param.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	param.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	param.DescriptorTable.NumDescriptorRanges = ranges.size();
+	param.DescriptorTable.pDescriptorRanges = ranges.data();
+	return param;
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE DescriptorHeap::gpu_desc_handle() {
+	return heap->GetGPUDescriptorHandleForHeapStart();
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE DescriptorHeap::cpu_desc_handle() {
+	return heap->GetCPUDescriptorHandleForHeapStart();
+}
+
+ID3D12DescriptorHeap* DescriptorHeap::operator->() {
+	return heap.Get();
+}
+
+ID3D12DescriptorHeap* DescriptorHeap::get() {
+	return heap.Get();
+}
+
+void DescriptorHeapBuilder::add_range(D3D12_DESCRIPTOR_RANGE_TYPE type,
+	uint32_t size, uint32_t base_register, uint32_t space)
+{
+	D3D12_DESCRIPTOR_RANGE r = { 0 };
+	r.RangeType = type;
+	r.NumDescriptors = size;
+	r.BaseShaderRegister = base_register;
+	r.RegisterSpace = space;
+	r.OffsetInDescriptorsFromTableStart = num_descriptors();
+	ranges.push_back(r);
+}
+
+bool DescriptorHeapBuilder::contains_range_type(D3D12_DESCRIPTOR_RANGE_TYPE type) {
+	return std::find_if(ranges.begin(), ranges.end(),
+			[&](const D3D12_DESCRIPTOR_RANGE &r) { return r.RangeType == type; }) != ranges.end();
+}
+
+uint32_t DescriptorHeapBuilder::num_descriptors() {
+	return std::accumulate(ranges.begin(), ranges.end(), 0,
+		[](const uint32_t &n, const D3D12_DESCRIPTOR_RANGE &r) {
+			return n + r.NumDescriptors;
+		});
+}
+
+DescriptorHeapBuilder& DescriptorHeapBuilder::add_srv_range(uint32_t size, uint32_t base_register,
+	uint32_t space)
+{
+	add_range(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, size, base_register, space);
+	return *this;
+}
+DescriptorHeapBuilder& DescriptorHeapBuilder::add_uav_range(uint32_t size, uint32_t base_register,
+	uint32_t space)
+{
+	add_range(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, size, base_register, space);
+	return *this;
+}
+DescriptorHeapBuilder& DescriptorHeapBuilder::add_cbv_range(uint32_t size, uint32_t base_register,
+	uint32_t space)
+{
+	add_range(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, size, base_register, space);
+	return *this;
+}
+DescriptorHeapBuilder& DescriptorHeapBuilder::add_sampler_range(uint32_t size, uint32_t base_register,
+	uint32_t space)
+{
+	add_range(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, size, base_register, space);
+	return *this;
+}
+
+DescriptorHeap DescriptorHeapBuilder::create(ID3D12Device *device) {
+	const bool contains_cbv_srv_uav = contains_range_type(D3D12_DESCRIPTOR_RANGE_TYPE_CBV)
+		|| contains_range_type(D3D12_DESCRIPTOR_RANGE_TYPE_SRV)
+		|| contains_range_type(D3D12_DESCRIPTOR_RANGE_TYPE_UAV);
+	if (contains_cbv_srv_uav && contains_range_type(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER)) {
+		throw std::runtime_error("Error: CBV/SRV/UAV descriptors cannot be in the same heap as samplers");
+	}
+
+	ComPtr<ID3D12DescriptorHeap> heap;
+	D3D12_DESCRIPTOR_HEAP_DESC heap_desc = { 0 };
+	heap_desc.NumDescriptors = num_descriptors();
+	heap_desc.Type = contains_cbv_srv_uav
+		? D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV : D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+	heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	CHECK_ERR(device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&heap)));
+	return DescriptorHeap(heap_desc, ranges, heap);
+}
 
 RootSignature::RootSignature(D3D12_ROOT_SIGNATURE_FLAGS flags, Microsoft::WRL::ComPtr<ID3D12RootSignature> sig,
 	const std::vector<RootParam> &params)
@@ -59,22 +157,10 @@ size_t RootSignature::size(const std::string &name) const {
 	}
 }
 
-size_t RootSignature::descriptor_table_offset() const {
-	return offset("dxr_helper_desc_table");
-}
-
-size_t RootSignature::descriptor_table_size() const {
-	// We know how big this will be, but it's just for convenience
-	return 8;
-}
-
 size_t RootSignature::total_size() const {
 	size_t total = 0;
 	for (const auto &p : param_offsets) {
 		total += p.second.size;
-	}
-	if (param_offsets.find("dxr_helper_desc_table") != param_offsets.end()) {
-		total += descriptor_table_size();
 	}
 	return total;
 }
@@ -110,18 +196,6 @@ void RootSignatureBuilder::add_descriptor(D3D12_ROOT_PARAMETER_TYPE desc_type, c
 	params.push_back(RootParam(p, name));
 }
 
-void RootSignatureBuilder::add_range(D3D12_DESCRIPTOR_RANGE_TYPE type,
-	uint32_t size, uint32_t base_register, uint32_t space, uint32_t table_offset)
-{
-	D3D12_DESCRIPTOR_RANGE r = { 0 };
-	r.RangeType = type;
-	r.NumDescriptors = size;
-	r.BaseShaderRegister = base_register;
-	r.RegisterSpace = space;
-	r.OffsetInDescriptorsFromTableStart = table_offset;
-	ranges.push_back(r);
-}
-
 RootSignatureBuilder& RootSignatureBuilder::add_constants(const std::string &name, uint32_t shader_register,
 	uint32_t space, uint32_t num_vals)
 {
@@ -147,29 +221,8 @@ RootSignatureBuilder& RootSignatureBuilder::add_cbv(const std::string &name, uin
 	add_descriptor(D3D12_ROOT_PARAMETER_TYPE_CBV, name, shader_register, space);
 	return *this;
 }
-
-RootSignatureBuilder& RootSignatureBuilder::add_srv_range(uint32_t size, uint32_t base_register,
-	uint32_t space, uint32_t table_offset)
-{
-	add_range(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, size, base_register, space, table_offset);
-	return *this;
-}
-RootSignatureBuilder& RootSignatureBuilder::add_uav_range(uint32_t size, uint32_t base_register,
-	uint32_t space, uint32_t table_offset)
-{
-	add_range(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, size, base_register, space, table_offset);
-	return *this;
-}
-RootSignatureBuilder& RootSignatureBuilder::add_cbv_range(uint32_t size, uint32_t base_register,
-	uint32_t space, uint32_t table_offset)
-{
-	add_range(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, size, base_register, space, table_offset);
-	return *this;
-}
-RootSignatureBuilder& RootSignatureBuilder::add_sampler_range(uint32_t size, uint32_t base_register,
-	uint32_t space, uint32_t table_offset)
-{
-	add_range(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, size, base_register, space, table_offset);
+RootSignatureBuilder& RootSignatureBuilder::add_desc_heap(const std::string &name, const DescriptorHeap &heap) {
+	params.push_back(RootParam(heap.root_param(), name));
 	return *this;
 }
 
@@ -183,23 +236,10 @@ RootSignature RootSignatureBuilder::create(ID3D12Device *device) {
 	// since we could instead have done:
 	// [constant, constant]
 	// [pointer]
-	// TODO WILL: Now I do need a name to associate with these params, since after I re-shuffle
-	// them all around the order may not the one the add* calls were made, so the shader
-	// record needs this info to setup the params properly
 	std::stable_partition(params.begin(), params.end(),
 		[](const RootParam &p) {
 			return p.param.ParameterType == D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 	});
-
-	if (!ranges.empty()) {
-		// Append table the descriptor table parameter
-		D3D12_ROOT_PARAMETER desc_table = { 0 };
-		desc_table.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		desc_table.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-		desc_table.DescriptorTable.NumDescriptorRanges = ranges.size();
-		desc_table.DescriptorTable.pDescriptorRanges = ranges.data();
-		params.push_back(RootParam(desc_table, "dxr_helper_desc_table"));
-	}
 
 	std::vector<D3D12_ROOT_PARAMETER> all_params;
 	std::transform(params.begin(), params.end(), std::back_inserter(all_params),
@@ -216,7 +256,8 @@ RootSignature RootSignatureBuilder::create(ID3D12Device *device) {
 	auto res = D3D12SerializeRootSignature(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1,
 		&signature_blob, &err_blob);
 	if (FAILED(res)) {
-		std::cout << "Failed to serialize root signature: " << err_blob->GetBufferPointer() << "\n";
+		std::cout << "Failed to serialize root signature: "
+			<< static_cast<char*>(err_blob->GetBufferPointer()) << "\n";
 		throw std::runtime_error("Failed to serialize root signature");
 	}
 

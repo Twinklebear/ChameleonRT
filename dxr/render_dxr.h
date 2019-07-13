@@ -17,13 +17,13 @@ struct RenderDXR : RenderBackend {
 		bottom_level_as, instance_buf, material_param_buf;
 
 	Texture2D render_target, accum_buffer;
+	std::vector<Texture2D> textures;
 
 	std::vector<TriangleMesh> meshes;
 	TopLevelBVH scene_bvh;
 
 	RTPipeline rt_pipeline;
-	
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> raygen_shader_desc_heap;
+	DescriptorHeap raygen_desc_heap, raygen_sampler_heap;
 
 	uint64_t shader_table_entry_size = 0;
 	

@@ -255,7 +255,12 @@ size_t Texture2D::pixel_size() const {
 	};
 }
 
+DXGI_FORMAT Texture2D::pixel_format() const {
+	return format;
+}
+
 glm::uvec2 Texture2D::dims() const {
 	return tdims;
 }
+
 

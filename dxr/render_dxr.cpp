@@ -65,8 +65,6 @@ RenderDXR::RenderDXR() {
 	view_param_buf = Buffer::upload(device.Get(),
 		align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
-
-	build_shader_resource_heap();
 }
 
 RenderDXR::~RenderDXR() {
@@ -231,6 +229,45 @@ void RenderDXR::set_scene(const Scene &scene) {
 
 	scene_bvh.finalize();
 
+	// Upload the textures
+	// TODO: Need to setup some mapping from what mats use which textures
+	// to the index in the array they get uploaded with
+	for (const auto &t : scene.textures) {
+		const Image &img = t.second;
+		Texture2D tex = Texture2D::default(device.Get(), glm::uvec2(img.width, img.height),
+				D3D12_RESOURCE_STATE_COPY_DEST, DXGI_FORMAT_R8G8B8A8_UNORM);
+		Buffer tex_upload = Buffer::upload(device.Get(), tex.linear_row_pitch() * img.height,
+				D3D12_RESOURCE_STATE_GENERIC_READ);
+
+		// TODO: Some better texture upload handling here, and readback for handling the row pitch stuff
+		if (tex.linear_row_pitch() == img.width * tex.pixel_size()) {
+			std::memcpy(tex_upload.map(), img.img.data(), tex_upload.size());
+		} else {
+			uint8_t *buf = static_cast<uint8_t*>(tex_upload.map());
+			for (uint32_t y = 0; y < img.height; ++y) {
+				std::memcpy(buf + y * tex.linear_row_pitch(),
+						img.img.data() + y * img.width,
+						render_target.dims().x * render_target.pixel_size());
+			}
+		}
+		tex_upload.unmap();
+
+		// TODO: We can upload these textures at once as well
+		CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+
+		tex.upload(cmd_list.Get(), tex_upload);
+		auto b = barrier_transition(tex, D3D12_RESOURCE_STATE_GENERIC_READ);
+		cmd_list->ResourceBarrier(1, &b);
+
+		CHECK_ERR(cmd_list->Close());
+		std::array<ID3D12CommandList*, 1> cmd_lists = { cmd_list.Get() };
+		cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+		sync_gpu();
+
+		textures.push_back(tex);
+	}
+
+	build_shader_resource_heap();
 	build_raytracing_pipeline();
 	build_shader_binding_table();
 }
@@ -254,7 +291,10 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 
 	// TODO: We'll need a second desc. heap for the sampler and bind both of them here
-	cmd_list->SetDescriptorHeaps(1, raygen_shader_desc_heap.GetAddressOf());
+	std::array<ID3D12DescriptorHeap*, 2> desc_heaps = {
+		raygen_desc_heap.get(), raygen_sampler_heap.get()
+	};
+	cmd_list->SetDescriptorHeaps(desc_heaps.size(), desc_heaps.data());
 	cmd_list->SetPipelineState1(rt_pipeline.get());
 
 	D3D12_DISPATCH_RAYS_DESC dispatch_rays = rt_pipeline.dispatch_rays(render_target.dims());
@@ -319,14 +359,9 @@ void RenderDXR::build_raytracing_pipeline() {
 		{ L"RayGen", L"Miss", L"ClosestHit", L"OcclusionHit", L"AOMiss" });
 
 	// Create the root signature for our ray gen shader
-	// The raygen program takes three parameters:
-	// the UAVs to the output image buffer and accumulation buffer
-	// the SRV holding the top-level acceleration structure, and the material params
-	// the CBV holding the camera params
 	RootSignature raygen_root_sig = RootSignatureBuilder::local()
-		.add_uav_range(2, 0, 0, 0)
-		.add_srv_range(2, 0, 0, 2)
-		.add_cbv_range(1, 0, 0, 4)
+		.add_desc_heap("cbv_srv_uav_heap", raygen_desc_heap)
+		.add_desc_heap("sampler_heap", raygen_sampler_heap)
 		.create(device.Get());
 
 	// Create the root signature for our closest hit function
@@ -364,26 +399,32 @@ void RenderDXR::build_raytracing_pipeline() {
 }
 
 void RenderDXR::build_shader_resource_heap() {
-	// The resource heap has the pointers/views things to our output image buffer
-	// and the top level acceleration structure
-	D3D12_DESCRIPTOR_HEAP_DESC heap_desc = { 0 };
-	heap_desc.NumDescriptors = 5;
-	heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	CHECK_ERR(device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&raygen_shader_desc_heap)));
+	// The CBV/SRV/UAV resource heap has the pointers/views things to our output image buffer
+	// and the top level acceleration structure, and any textures
+	raygen_desc_heap = DescriptorHeapBuilder()
+		.add_uav_range(2, 0, 0)
+		.add_srv_range(2, 0, 0)
+		.add_cbv_range(1, 0, 0)
+		.add_srv_range(!textures.empty() ? textures.size() : 1, 2, 0)
+		.create(device.Get());
+
+	raygen_sampler_heap = DescriptorHeapBuilder()
+		.add_sampler_range(1, 0, 0)
+		.create(device.Get());
 }
 
 void RenderDXR::build_shader_binding_table() {
 	rt_pipeline.map_shader_table();
 	{
-		D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle =
-			raygen_shader_desc_heap->GetGPUDescriptorHandleForHeapStart();
-
 		uint8_t *map = rt_pipeline.shader_record(L"RayGen");
 		const RootSignature *sig = rt_pipeline.shader_signature(L"RayGen");
 
 		// Is writing the descriptor heap handle actually needed? It seems to not matter
 		// if this is written or not
+		// TODO: MAybe this is the index in the list of heaps we bind at render time to use?
+		// Will it find the sampler heap properly if we just have nothing bound here?
+		//D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle =
+		//	raygen_desc_heap->GetGPUDescriptorHandleForHeapStart();
 		//std::memcpy(map + sig->descriptor_table_offset(), &desc_heap_handle,
 		//	sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 	}
@@ -451,7 +492,7 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &di
 
 void RenderDXR::update_descriptor_heap() {
 	D3D12_CPU_DESCRIPTOR_HANDLE heap_handle =
-		raygen_shader_desc_heap->GetCPUDescriptorHandleForHeapStart();
+		raygen_desc_heap.cpu_desc_handle();
 
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = { 0 };
 
@@ -494,6 +535,30 @@ void RenderDXR::update_descriptor_heap() {
 	cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
 	cbv_desc.SizeInBytes = view_param_buf.size();
 	device->CreateConstantBufferView(&cbv_desc, heap_handle);
+	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+	// Write the SRVs for the textures
+	for (auto &t : textures) {
+		D3D12_SHADER_RESOURCE_VIEW_DESC tex_desc = { 0 };
+		tex_desc.Format = t.pixel_format();
+		tex_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		tex_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		tex_desc.Texture2D.MipLevels = 1;
+		device->CreateShaderResourceView(t.get(), &tex_desc, heap_handle);
+		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
+
+	// Write the sampler to the sampler heap
+	D3D12_SAMPLER_DESC sampler_desc = {0};
+	sampler_desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+	sampler_desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	sampler_desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	sampler_desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	sampler_desc.MinLOD = 0;
+	sampler_desc.MaxLOD = 0;
+	sampler_desc.MipLODBias = 0.0f;
+	sampler_desc.MaxAnisotropy = 1;
+	device->CreateSampler(&sampler_desc, raygen_sampler_heap.cpu_desc_handle());
 }
 
 void RenderDXR::sync_gpu() {
@@ -507,3 +572,4 @@ void RenderDXR::sync_gpu() {
 	}
 	++fence_value;
 }
+

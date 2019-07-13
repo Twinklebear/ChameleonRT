@@ -32,10 +32,10 @@ struct MaterialParams {
 // TODO: How would we handle textures in this approach?
 StructuredBuffer<MaterialParams> material_params : register(t1);
 
-//Texture2D mats[] : register(t2);
-//SamplerState texture_sampler_state : register(s0);
+Texture2D textures[] : register(t2);
+SamplerState tex_sampler_state : register(s0);
 
-void unpack_material(inout DisneyMaterial mat, uint id) {
+void unpack_material(inout DisneyMaterial mat, uint id, float2 uv_coords) {
 	MaterialParams p = material_params[id];
 	mat.base_color = p.basecolor_metallic.rgb;
 	mat.metallic = p.basecolor_metallic.a;
@@ -49,7 +49,10 @@ void unpack_material(inout DisneyMaterial mat, uint id) {
 	mat.clearcoat_gloss = p.sheen_sheentint_clearc_ccgloss.a;
 	mat.ior = p.ior_spectrans.r;
 	mat.specular_transmission = p.ior_spectrans.g;
-	/*
+	// TODO Better track per-mat if it uses textures and which ones
+	mat.base_color = textures[1]
+		.SampleLevel(tex_sampler_state, uv_coords, 0).rgb;
+		/*
 	mat.base_color = mats[NonUniformResourceIndex(id)]
 		.SampleLevel(texture_sampler_state, float2(0.5, 0.5), 0).rgb;
 		*/
@@ -161,7 +164,7 @@ void RayGen() {
 		float3 v_z = normalize(payload.normal.xyz);
 		ortho_basis(v_x, v_y, v_z);
 
-		unpack_material(mat, uint(payload.normal.w));
+		unpack_material(mat, uint(payload.normal.w), payload.color_dist.rg);
 		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
 
 		float3 w_i;

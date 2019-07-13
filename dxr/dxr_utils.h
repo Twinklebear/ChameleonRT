@@ -10,6 +10,7 @@
 bool dxr_available(Microsoft::WRL::ComPtr<ID3D12Device5> &device);
 
 class RootSignatureBuilder;
+class DescriptorHeapBuilder;
 
 struct RootParam {
 	D3D12_ROOT_PARAMETER param = { 0 };
@@ -19,6 +20,47 @@ struct RootParam {
 
 	RootParam() = default;
 	RootParam(D3D12_ROOT_PARAMETER param, const std::string &name);
+};
+
+class DescriptorHeap : RootParam {
+	D3D12_DESCRIPTOR_HEAP_DESC desc = {0};
+	std::vector<D3D12_DESCRIPTOR_RANGE> ranges;
+	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap = nullptr;
+
+	friend class DescriptorHeapBuilder;
+
+	DescriptorHeap(D3D12_DESCRIPTOR_HEAP_DESC desc, std::vector<D3D12_DESCRIPTOR_RANGE> ranges,
+			Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap);
+public:
+	DescriptorHeap() = default;
+
+	D3D12_ROOT_PARAMETER root_param() const;
+	D3D12_GPU_DESCRIPTOR_HANDLE gpu_desc_handle();
+	D3D12_CPU_DESCRIPTOR_HANDLE cpu_desc_handle();
+
+	ID3D12DescriptorHeap* operator->();
+	ID3D12DescriptorHeap* get();
+};
+
+class DescriptorHeapBuilder {
+	std::vector<D3D12_DESCRIPTOR_RANGE> ranges;
+
+	void add_range(D3D12_DESCRIPTOR_RANGE_TYPE type,
+		uint32_t size, uint32_t base_register, uint32_t space);
+
+	bool contains_range_type(D3D12_DESCRIPTOR_RANGE_TYPE type);
+	uint32_t num_descriptors();
+
+public:
+	// TODO: We can autocompute the table offsets based on the order that add_* is called if we use
+	// the root sig to also guide the desc. heap write
+	// TODO: Each range can be assigned a name
+	DescriptorHeapBuilder& add_srv_range(uint32_t size, uint32_t base_register, uint32_t space);
+	DescriptorHeapBuilder& add_uav_range(uint32_t size, uint32_t base_register, uint32_t space);
+	DescriptorHeapBuilder& add_cbv_range(uint32_t size, uint32_t base_register, uint32_t space);
+	DescriptorHeapBuilder& add_sampler_range(uint32_t size, uint32_t base_register, uint32_t space);
+
+	DescriptorHeap create(ID3D12Device *device);
 };
 
 class RootSignature {
@@ -43,9 +85,6 @@ public:
 	size_t offset(const std::string &name) const;
 	size_t size(const std::string &name) const;
 
-	size_t descriptor_table_offset() const;
-	size_t descriptor_table_size() const;
-
 	// Return the total size of the root signature arguments
 	size_t total_size() const;
 
@@ -63,12 +102,9 @@ public:
 class RootSignatureBuilder {
 	D3D12_ROOT_SIGNATURE_FLAGS flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
 	std::vector<RootParam> params;
-	std::vector<D3D12_DESCRIPTOR_RANGE> ranges;
 
 	void add_descriptor(D3D12_ROOT_PARAMETER_TYPE desc_type, const std::string &name,
 		uint32_t shader_register, uint32_t space);
-	void add_range(D3D12_DESCRIPTOR_RANGE_TYPE type,
-		uint32_t size, uint32_t base_register, uint32_t space, uint32_t table_offset);
 
 public:
 	static RootSignatureBuilder global();
@@ -80,15 +116,7 @@ public:
 	RootSignatureBuilder& add_srv(const std::string &name, uint32_t shader_register, uint32_t space);
 	RootSignatureBuilder& add_uav(const std::string &name, uint32_t shader_register, uint32_t space);
 	RootSignatureBuilder& add_cbv(const std::string &name, uint32_t shader_register, uint32_t space);
-
-	RootSignatureBuilder& add_srv_range(uint32_t size, uint32_t base_register, uint32_t space,
-		uint32_t table_offset);
-	RootSignatureBuilder& add_uav_range(uint32_t size, uint32_t base_register, uint32_t space,
-		uint32_t table_offset);
-	RootSignatureBuilder& add_cbv_range(uint32_t size, uint32_t base_register, uint32_t space,
-		uint32_t table_offset);
-	RootSignatureBuilder& add_sampler_range(uint32_t size, uint32_t base_register, uint32_t space,
-		uint32_t table_offset);
+	RootSignatureBuilder& add_desc_heap(const std::string &name, const DescriptorHeap &heap);
 
 	RootSignature create(ID3D12Device *device);
 };
