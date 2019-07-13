@@ -165,7 +165,8 @@ void RayGen() {
 		// for thin objects like quads it's necessary to have the normal face
 		// the right way all the time. Maybe the best thing to do is to add the "thin"
 		// parameter for the Disney BSDF and also use this to determine if we
-		// should force the normals to face-forward.
+		// should force the normals to face-forward. Or maybe for non-transparent
+		// objects we could also always force this?
 		/*
 		if (dot(w_o, v_z) < 0.0) {
 			v_z = -v_z;
