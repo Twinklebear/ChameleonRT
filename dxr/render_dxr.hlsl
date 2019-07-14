@@ -159,22 +159,16 @@ void RayGen() {
 
 		const float3 w_o = -ray.Direction;
 		const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
+		unpack_material(mat, uint(payload.normal.w), payload.color_dist.rg);
+
 		float3 v_x, v_y;
 		float3 v_z = normalize(payload.normal.xyz);
-		// TODO: This is a hack and will screw up transparency, but
-		// for thin objects like quads it's necessary to have the normal face
-		// the right way all the time. Maybe the best thing to do is to add the "thin"
-		// parameter for the Disney BSDF and also use this to determine if we
-		// should force the normals to face-forward. Or maybe for non-transparent
-		// objects we could also always force this?
-		/*
-		if (dot(w_o, v_z) < 0.0) {
+		// For opaque objects (or in the future, thin ones) make the normal face forward
+		if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
 			v_z = -v_z;
 		}
-		*/
 		ortho_basis(v_x, v_y, v_z);
 
-		unpack_material(mat, uint(payload.normal.w), payload.color_dist.rg);
 		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
 
 		float3 w_i;
