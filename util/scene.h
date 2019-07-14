@@ -9,7 +9,7 @@
 struct Scene {
 	std::vector<Mesh> meshes;
 	std::vector<DisneyMaterial> materials;
-	std::unordered_map<std::string, std::shared_ptr<Image>> textures;
+	std::vector<Image> textures;
 
 	static Scene load_obj(const std::string &file);
 };

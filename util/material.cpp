@@ -12,39 +12,3 @@ Image::Image(const std::string &file, const std::string &name) : name(name) {
 	stbi_image_free(data);
 }
 
-GPUDisneyMaterial::GPUDisneyMaterial(const DisneyMaterial &d)
-	: base_color(d.base_color),
-	metallic(d.metallic),
-	specular(d.specular),
-	roughness(d.roughness),
-	specular_tint(d.specular_tint),
-	anisotropy(d.anisotropy),
-	sheen(d.sheen),
-	sheen_tint(d.sheen_tint),
-	clearcoat(d.clearcoat),
-	clearcoat_gloss(d.clearcoat_gloss),
-	ior(d.ior),
-	specular_transmission(d.specular_transmission)
-{}
-
-GPUDisneyMaterial& GPUDisneyMaterial::operator=(const DisneyMaterial &d) {
-	base_color = d.base_color;
-	metallic = d.metallic;
-
-	specular = d.specular;
-	roughness = d.roughness;
-	specular_tint = d.specular_tint;
-	anisotropy = d.anisotropy;
-
-	sheen = d.sheen;
-	sheen_tint = d.sheen_tint;
-	clearcoat = d.clearcoat;
-	clearcoat_gloss = d.clearcoat_gloss;
-
-	ior = d.ior;
-	specular_transmission = d.specular_transmission;
-
-	tex_ids = glm::ivec4(-1);
-	return *this;
-}
-

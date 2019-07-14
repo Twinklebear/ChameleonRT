@@ -100,6 +100,7 @@ Scene Scene::load_obj(const std::string &file) {
 		scene.meshes.push_back(std::move(mesh));
 	}
 
+	std::unordered_map<std::string, int32_t> texture_ids;
 	// Parse the materials over to a similar DisneyMaterial representation
 	for (const auto &m : obj_materials) {
 		DisneyMaterial d;
@@ -109,11 +110,11 @@ Scene Scene::load_obj(const std::string &file) {
 		d.specular_transmission = glm::clamp(1.f - m.dissolve, 0.f, 1.f);
 
 		if (!m.diffuse_texname.empty()) {
-			if (scene.textures.find(m.diffuse_texname) == scene.textures.end()) {
-				scene.textures[m.diffuse_texname] =
-					std::make_shared<Image>(obj_base_dir + "/" + m.diffuse_texname, m.diffuse_texname);
+			if (texture_ids.find(m.diffuse_texname) == texture_ids.end()) {
+				texture_ids[m.diffuse_texname] = scene.textures.size();
+				scene.textures.emplace_back(obj_base_dir + "/" + m.diffuse_texname, m.diffuse_texname);
 			}
-			d.color_texture = scene.textures[m.diffuse_texname];
+			d.color_tex_id = texture_ids[m.diffuse_texname];
 		}
 		scene.materials.push_back(d);
 	}

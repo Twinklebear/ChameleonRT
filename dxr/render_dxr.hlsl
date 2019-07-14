@@ -22,12 +22,25 @@ cbuffer ViewParams : register(b0) {
 }
 
 struct MaterialParams {
-	// TODO is this packing into the float4 needed? it's not going through a cbuffer now
-	float4 basecolor_metallic;
-	float4 spec_rough_spectint_aniso;
-	float4 sheen_sheentint_clearc_ccgloss;
-	float4 ior_spectrans;
-	int4 tex_ids;
+	float3 base_color;
+	float metallic;
+
+	float specular;
+	float roughness;
+	float specular_tint;
+	float anisotropy;
+
+	float sheen;
+	float sheen_tint;
+	float clearcoat;
+	float clearcoat_gloss;
+
+	float ior;
+	float specular_transmission;
+	float2 pad;
+
+	int color_tex_id;
+	int3 tex_pad;
 };
 
 // Instance ID = Material ID
@@ -38,23 +51,23 @@ SamplerState tex_sampler : register(s0);
 
 void unpack_material(inout DisneyMaterial mat, uint id, float2 uv_coords) {
 	MaterialParams p = material_params[id];
-	if (p.tex_ids.x < 0) {
-		mat.base_color = p.basecolor_metallic.rgb;
+	if (p.color_tex_id < 0) {
+		mat.base_color = p.base_color;
 	} else {
-		mat.base_color = textures[NonUniformResourceIndex(p.tex_ids.x)]
+		mat.base_color = textures[NonUniformResourceIndex(p.color_tex_id)]
 			.SampleLevel(tex_sampler, uv_coords, 0).rgb;
 	}
-	mat.metallic = p.basecolor_metallic.a;
-	mat.specular = p.spec_rough_spectint_aniso.r;
-	mat.roughness = p.spec_rough_spectint_aniso.g;
-	mat.specular_tint = p.spec_rough_spectint_aniso.b;
-	mat.anisotropy = p.spec_rough_spectint_aniso.a;
-	mat.sheen = p.sheen_sheentint_clearc_ccgloss.r;
-	mat.sheen_tint = p.sheen_sheentint_clearc_ccgloss.g;
-	mat.clearcoat = p.sheen_sheentint_clearc_ccgloss.b;
-	mat.clearcoat_gloss = p.sheen_sheentint_clearc_ccgloss.a;
-	mat.ior = p.ior_spectrans.r;
-	mat.specular_transmission = p.ior_spectrans.g;
+	mat.metallic = p.metallic;
+	mat.specular = p.specular;
+	mat.roughness = p.roughness;
+	mat.specular_tint = p.specular_tint;
+	mat.anisotropy = p.anisotropy;
+	mat.sheen = p.sheen;
+	mat.sheen_tint = p.sheen_tint;
+	mat.clearcoat = p.clearcoat;
+	mat.clearcoat_gloss = p.clearcoat_gloss;
+	mat.ior = p.ior;
+	mat.specular_transmission = p.specular_transmission;
 }
 
 float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, in const float3 n,
