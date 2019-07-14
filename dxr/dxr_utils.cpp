@@ -143,6 +143,8 @@ size_t RootSignature::offset(const std::string &name) const {
 	if (fnd != param_offsets.end()) {
 		return fnd->second.offset;
 	} else {
+		throw std::runtime_error("Request for offset to " + name
+				+ " which is not in the root signature");
 		return std::numeric_limits<size_t>::max();
 	}
 }
@@ -158,11 +160,8 @@ size_t RootSignature::size(const std::string &name) const {
 }
 
 size_t RootSignature::total_size() const {
-	size_t total = 0;
-	for (const auto &p : param_offsets) {
-		total += p.second.size;
-	}
-	return total;
+	return std::accumulate(param_offsets.begin(), param_offsets.end(), size_t(0),
+			[](const size_t &n, const auto &p) { return n + p.second.size; });
 }
 
 ID3D12RootSignature* RootSignature::operator->() {
@@ -197,7 +196,7 @@ void RootSignatureBuilder::add_descriptor(D3D12_ROOT_PARAMETER_TYPE desc_type, c
 }
 
 RootSignatureBuilder& RootSignatureBuilder::add_constants(const std::string &name, uint32_t shader_register,
-	uint32_t space, uint32_t num_vals)
+	uint32_t num_vals, uint32_t space)
 {
 	D3D12_ROOT_PARAMETER p = { 0 };
 	p.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
@@ -770,15 +769,13 @@ size_t RTPipeline::compute_shader_record_size() const {
 	// as the largest shader record
 	auto add_shader_record = [&](const std::wstring &shader) {
 		size_t shader_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-
 		// Size of the shader's local root sig, if any
-		auto *sig = shader_signature(ray_gen);
+		auto *sig = shader_signature(shader);
 		if (sig) {
 			shader_size += sig->total_size();
 		}
 		shader_size = align_to(shader_size, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 		record_size = std::max(shader_size, record_size);
-
 	};
 
 	add_shader_record(ray_gen);
@@ -794,10 +791,10 @@ size_t RTPipeline::compute_shader_record_size() const {
 	return record_size;
 }
 
-TriangleMesh::TriangleMesh(Buffer vertex_buf, Buffer index_buf, Buffer uv_buf,
+TriangleMesh::TriangleMesh(Buffer vertex_buf, Buffer index_buf, Buffer normal_buf, Buffer uv_buf,
 	D3D12_RAYTRACING_GEOMETRY_FLAGS geom_flags,
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags)
-	: vertex_buf(vertex_buf), index_buf(index_buf), uv_buf(uv_buf), build_flags(build_flags)
+	: vertex_buf(vertex_buf), index_buf(index_buf), normal_buf(normal_buf), uv_buf(uv_buf), build_flags(build_flags)
 {
 	geom_desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
 	geom_desc.Triangles.VertexBuffer.StartAddress = vertex_buf->GetGPUVirtualAddress();

@@ -82,9 +82,10 @@ Scene Scene::load_obj(const std::string &file) {
 							attrib.vertices[3 * idx.x + 2]);
 
 					if (idx.y != -1) {
-						mesh.normals.emplace_back(attrib.normals[3 * idx.y],
+						glm::vec3 n(attrib.normals[3 * idx.y],
 								attrib.normals[3 * idx.y + 1],
 								attrib.normals[3 * idx.y + 2]);
+						mesh.normals.push_back(glm::normalize(n));
 					}
 
 					if (idx.z != -1) {

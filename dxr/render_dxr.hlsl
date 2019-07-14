@@ -175,7 +175,7 @@ void RayGen() {
 		unpack_material(mat, uint(payload.normal.w), payload.color_dist.rg);
 
 		float3 v_x, v_y;
-		float3 v_z = normalize(payload.normal.xyz);
+		float3 v_z = payload.normal.xyz;
 		// For opaque objects (or in the future, thin ones) make the normal face forward
 		if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
 			v_z = -v_z;
@@ -224,7 +224,7 @@ void Miss(inout HitInfo payload : SV_RayPayload) {
 	int check_y = v * 10.f;
 
 	if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
-		payload.color_dist.rgb = 0.5f;// * (1.f + normalize(dir)) * 0.5f;
+		payload.color_dist.rgb = 0.5f;
 	} else {
 		payload.color_dist.rgb = 0.1f;
 	}
@@ -238,19 +238,35 @@ void AOMiss(inout OcclusionHitInfo occlusion : SV_RayPayload) {
 // Per-mesh parameters for the closest hit
 StructuredBuffer<float3> vertices : register(t0, space1);
 StructuredBuffer<uint3> indices : register(t1, space1);
-StructuredBuffer<float2> uvs : register(t2, space1);
+StructuredBuffer<float3> normals : register(t2, space1);
+StructuredBuffer<float2> uvs : register(t3, space1);
 
 cbuffer MeshData : register(b0, space1) {
+	uint num_normals;
 	uint num_uvs;
 }
 
 [shader("closesthit")] 
 void ClosestHit(inout HitInfo payload, Attributes attrib) {
 	uint3 idx = indices[PrimitiveIndex()];
+
 	float3 va = vertices[idx.x];
 	float3 vb = vertices[idx.y];
 	float3 vc = vertices[idx.z];
-	float3 n = normalize(cross(vb - va, vc - va));
+	float3 ng = normalize(cross(vb - va, vc - va));
+
+	float3 n = ng;
+	// TODO per-vertex normals seems to give some pretty bad silhouetting,
+	// even on some models which do seem well tesselated?
+	/*
+	if (num_normals > 0) {
+		float3 na = normals[idx.x];
+		float3 nb = normals[idx.y];
+		float3 nc = normals[idx.z];
+		n = normalize((1.f - attrib.bary.x - attrib.bary.y) * na
+			+ attrib.bary.x * nb + attrib.bary.y * nc);
+	}
+	*/
 
 	float2 uv = float2(0, 0);
 	if (num_uvs > 0) {
