@@ -3,24 +3,6 @@
 #include "disney_bsdf.hlsl"
 #include "lights.hlsl"
 
-// Raytracing output texture, accessed as a UAV
-RWTexture2D<float4> output : register(u0);
-
-// Accumulation buffer for progressive refinement
-RWTexture2D<float4> accum_buffer : register(u1);
-
-// Raytracing acceleration structure, accessed as a SRV
-RaytracingAccelerationStructure scene : register(t0);
-
-// View params buffer
-cbuffer ViewParams : register(b0) {
-	float4 cam_pos;
-	float4 cam_du;
-	float4 cam_dv;
-	float4 cam_dir_top_left;
-	uint32_t frame_id;
-}
-
 struct MaterialParams {
 	float3 base_color;
 	float metallic;
@@ -43,10 +25,34 @@ struct MaterialParams {
 	int3 tex_pad;
 };
 
+// Raytracing output texture, accessed as a UAV
+RWTexture2D<float4> output : register(u0);
+
+// Accumulation buffer for progressive refinement
+RWTexture2D<float4> accum_buffer : register(u1);
+
+// View params buffer
+cbuffer ViewParams : register(b0) {
+	float4 cam_pos;
+	float4 cam_du;
+	float4 cam_dv;
+	float4 cam_dir_top_left;
+	uint32_t frame_id;
+}
+
+cbuffer SceneParams : register(b1) {
+	uint32_t num_lights;
+};
+
+// Raytracing acceleration structure, accessed as a SRV
+RaytracingAccelerationStructure scene : register(t0);
+
 // Instance ID = Material ID
 StructuredBuffer<MaterialParams> material_params : register(t1);
 
-Texture2D textures[] : register(t2);
+StructuredBuffer<QuadLight> lights : register(t2);
+
+Texture2D textures[] : register(t3);
 SamplerState tex_sampler : register(s0);
 
 void unpack_material(inout DisneyMaterial mat, uint id, float2 uv_coords) {
@@ -75,15 +81,9 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 {
 	float3 illum = 0.f;
 
-	QuadLight light;
-	light.emission = 5.f;
-	light.normal.xyz = normalize(float3(0.5, -0.8, -0.5));
-	light.position.xyz = 10.f * -light.normal.xyz;
-	// TODO: This would be input from the scene telling us how the light is placed
-	// For now we don't care
-	ortho_basis(light.v_x.xyz, light.v_y.xyz, light.normal.xyz);
-	light.v_x.w = 5.f;
-	light.v_y.w = 5.f;
+	uint32_t light_id = pcg32_randomf(rng) * num_lights;
+	light_id = clamp(light_id, 0, num_lights - 1);
+	QuadLight light = lights[light_id];
 
 	OcclusionHitInfo shadow_hit;
 	RayDesc shadow_ray;
@@ -242,8 +242,8 @@ StructuredBuffer<float3> normals : register(t2, space1);
 StructuredBuffer<float2> uvs : register(t3, space1);
 
 cbuffer MeshData : register(b0, space1) {
-	uint num_normals;
-	uint num_uvs;
+	uint32_t num_normals;
+	uint32_t num_uvs;
 }
 
 [shader("closesthit")] 

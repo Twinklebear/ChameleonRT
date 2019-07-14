@@ -196,6 +196,13 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	renderer->initialize(win_width, win_height);
 
 	Scene scene = Scene::load_obj(args[2]);
+	std::cout << "Scene '" << args[2] << "' loaded:\n"
+		<< "# Triangles: " << scene.total_tris() << "\n"
+		<< "# Meshes: " << scene.meshes.size() << "\n"
+		<< "# Materials: " << scene.materials.size() << "\n"
+		<< "# Textures: " << scene.textures.size() << "\n"
+		<< "# Lights: " << scene.lights.size() << "\n";
+
 	ArcballCamera camera(eye, center, up);
 
 	const size_t total_tris = std::accumulate(scene.meshes.begin(), scene.meshes.end(), size_t(0),

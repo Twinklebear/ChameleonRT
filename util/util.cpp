@@ -1,3 +1,4 @@
+#include <glm/ext.hpp>
 #include "util.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
@@ -20,5 +21,21 @@ std::string pretty_print_count(const double count) {
 
 uint64_t align_to(uint64_t val, uint64_t align) {
 	return ((val + align - 1) / align) * align;
+}
+
+void ortho_basis(glm::vec3 &v_x, glm::vec3 &v_y, const glm::vec3 &n) {
+	v_y = glm::vec3(0);
+
+	if (n.x < 0.6f && n.x > -0.6f) {
+		v_y.x = 1.f;
+	} else if (n.y < 0.6f && n.y > -0.6f) {
+		v_y.y = 1.f;
+	} else if (n.z < 0.6f && n.z > -0.6f) {
+		v_y.z = 1.f;
+	} else {
+		v_y.x = 1.f;
+	}
+	v_x = glm::normalize(glm::cross(v_y, n));
+	v_y = glm::normalize(glm::cross(n, v_x));
 }
 

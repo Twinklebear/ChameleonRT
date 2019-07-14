@@ -1,4 +1,5 @@
 #include <iostream>
+#include <numeric>
 #include <map>
 #include <vector>
 #include <algorithm>
@@ -27,7 +28,6 @@ Scene Scene::load_obj(const std::string &file) {
 
 	std::vector<uint32_t> material_ids;
 	std::vector<DisneyMaterial> materials;
-	size_t total_tris = 0;
 	// Load the model w/ tinyobjloader. We just take any OBJ groups etc. stuff
 	// that may be in the file and dump them all into a single OBJ model.
 	tinyobj::attrib_t attrib;
@@ -97,7 +97,6 @@ Scene Scene::load_obj(const std::string &file) {
 			}
 			mesh.indices.push_back(tri_indices);
 		}
-		total_tris += mesh.num_tris();
 		scene.meshes.push_back(std::move(mesh));
 	}
 
@@ -134,12 +133,22 @@ Scene Scene::load_obj(const std::string &file) {
 		}
 	}
 
-	std::cout << "Scene '" << file << "' loaded:\n"
-		<< "# Triangles: " << total_tris << "\n"
-		<< "# Meshes: " << scene.meshes.size() << "\n"
-		<< "# Materials: " << scene.materials.size() << "\n"
-		<< "# Textures: " << scene.textures.size() << "\n";
+	// OBJ will not have any lights in it, so just generate one
+	std::cout << "Generating light for OBJ scene\n";
+	QuadLight light;
+	light.emission = glm::vec4(5.f);
+	light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);
+	light.position = -10.f * light.normal;
+	ortho_basis(light.v_x, light.v_y, glm::vec3(light.normal));
+	light.width = 5.f;
+	light.height = 5.f;
+	scene.lights.push_back(light);
 
 	return scene;
+}
+
+size_t Scene::total_tris() const {
+	return std::accumulate(meshes.begin(), meshes.end(), size_t(0),
+			[](const size_t &n, const Mesh &m) { return n + m.num_tris(); });
 }
 

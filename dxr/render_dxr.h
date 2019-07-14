@@ -14,7 +14,8 @@ struct RenderDXR : RenderBackend {
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
 	
 	Buffer view_param_buf, img_readback_buf,
-		bottom_level_as, instance_buf, material_param_buf;
+		bottom_level_as, instance_buf, material_param_buf,
+		light_buf;
 
 	Texture2D render_target, accum_buffer;
 	std::vector<Texture2D> textures;

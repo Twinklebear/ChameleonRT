@@ -94,6 +94,8 @@ void RenderDXR::set_scene(const Scene &scene) {
 	// TODO: We can actually run all these uploads and BVH builds in parallel
 	// using multiple command lists, as long as the BVH builds don't need so
 	// much build + scratch that we run out of GPU memory.
+	// Some helpers for managing the temp upload heap buf allocation and queuing of
+	// the commands would help to make it easier to write the parallel load version
 	for (const auto &mesh : scene.meshes) {
 		// Upload the mesh to the vertex buffer, build accel structures
 		// Place the data in an upload heap first, then do a GPU-side copy
@@ -286,6 +288,27 @@ void RenderDXR::set_scene(const Scene &scene) {
 		sync_gpu();
 	}
 
+	// Upload the light data
+	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+	{
+		Buffer light_upload_buf = Buffer::upload(device.Get(),
+				scene.lights.size() * sizeof(QuadLight),
+				D3D12_RESOURCE_STATE_GENERIC_READ);
+		std::memcpy(light_upload_buf.map(), scene.lights.data(), light_upload_buf.size());
+		light_upload_buf.unmap();
+
+		light_buf = Buffer::default(device.Get(), light_upload_buf.size(),
+				D3D12_RESOURCE_STATE_COPY_DEST);
+
+		cmd_list->CopyResource(light_buf.get(), light_upload_buf.get());
+		auto b = barrier_transition(light_buf, D3D12_RESOURCE_STATE_GENERIC_READ);
+		cmd_list->ResourceBarrier(1, &b);
+
+		CHECK_ERR(cmd_list->Close());
+		cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+		sync_gpu();
+	}
+
 	build_shader_resource_heap();
 	build_raytracing_pipeline();
 	build_shader_binding_table();
@@ -379,6 +402,7 @@ void RenderDXR::build_raytracing_pipeline() {
 
 	// Create the root signature for our ray gen shader
 	RootSignature raygen_root_sig = RootSignatureBuilder::local()
+		.add_constants("SceneParams", 1, 1, 0)
 		.add_desc_heap("cbv_srv_uav_heap", raygen_desc_heap)
 		.add_desc_heap("sampler_heap", raygen_sampler_heap)
 		.create(device.Get());
@@ -423,9 +447,9 @@ void RenderDXR::build_shader_resource_heap() {
 	// and the top level acceleration structure, and any textures
 	raygen_desc_heap = DescriptorHeapBuilder()
 		.add_uav_range(2, 0, 0)
-		.add_srv_range(2, 0, 0)
+		.add_srv_range(3, 0, 0)
 		.add_cbv_range(1, 0, 0)
-		.add_srv_range(!textures.empty() ? textures.size() : 1, 2, 0)
+		.add_srv_range(!textures.empty() ? textures.size() : 1, 3, 0)
 		.create(device.Get());
 
 	raygen_sampler_heap = DescriptorHeapBuilder()
@@ -439,9 +463,12 @@ void RenderDXR::build_shader_binding_table() {
 		uint8_t *map = rt_pipeline.shader_record(L"RayGen");
 		const RootSignature *sig = rt_pipeline.shader_signature(L"RayGen");
 
+		const uint32_t num_lights = light_buf.size() / sizeof(QuadLight);
+		std::memcpy(map + sig->offset("SceneParams"), &num_lights, sizeof(uint32_t));
+
 		// Is writing the descriptor heap handle actually needed? It seems to not matter
 		// if this is written or not
-		// TODO: MAybe this is the index in the list of heaps we bind at render time to use?
+		// TODO: Maybe this is the index in the list of heaps we bind at render time to use?
 		// Will it find the sampler heap properly if we just have nothing bound here?
 		//D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle =
 		//	raygen_desc_heap->GetGPUDescriptorHandleForHeapStart();
@@ -558,6 +585,20 @@ void RenderDXR::update_descriptor_heap() {
 		srv_desc.Buffer.StructureByteStride = sizeof(DisneyMaterial);
 		srv_desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 		device->CreateShaderResourceView(material_param_buf.get(), &srv_desc, heap_handle);
+		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
+
+	// Write the light params buffer view
+	{
+		D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = { 0 };
+		srv_desc.Format = DXGI_FORMAT_UNKNOWN;
+		srv_desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srv_desc.Buffer.FirstElement = 0;
+		srv_desc.Buffer.NumElements = light_buf.size() / sizeof(QuadLight);
+		srv_desc.Buffer.StructureByteStride = sizeof(QuadLight);
+		srv_desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+		device->CreateShaderResourceView(light_buf.get(), &srv_desc, heap_handle);
 		heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
 
