@@ -42,8 +42,8 @@ else()
 endif()
 
 if (NOT ENABLE_OSPRAY AND NOT ENABLE_EMBREE AND NOT ENABLE_OPTIX AND NOT ENABLE_DXR)
-	message(FATAL_ERROR "At least one rendering backend (OSPRAY, EMBREE, OPTIX) must be selected\n"
-		"Enable at least one of: ENABLE_OSPRAY, ENABLE_EMBREE, ENABLE_OPTIX") 
+	message(FATAL_ERROR "At least one rendering backend (OSPRAY, EMBREE, OPTIX, DXR) must be selected\n"
+		"Enable at least one of: ENABLE_OSPRAY, ENABLE_EMBREE, ENABLE_OPTIX, ENABLE_DXR") 
 endif()
 
 add_executable(rtobj main.cpp)
