@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <glm/ext.hpp>
 #include "util.h"
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -37,5 +38,9 @@ void ortho_basis(glm::vec3 &v_x, glm::vec3 &v_y, const glm::vec3 &n) {
 	}
 	v_x = glm::normalize(glm::cross(v_y, n));
 	v_y = glm::normalize(glm::cross(n, v_x));
+}
+
+void canonicalize_path(std::string &path) {
+	std::replace(path.begin(), path.end(), '\\', '/');
 }
 

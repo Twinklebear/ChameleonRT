@@ -34,11 +34,7 @@ Scene Scene::load_obj(const std::string &file) {
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> obj_materials;
 	std::string err, warn;
-#ifdef _WIN32
-	const std::string obj_base_dir = file.substr(0, file.rfind('\\'));
-#else
 	const std::string obj_base_dir = file.substr(0, file.rfind('/'));
-#endif
 	bool ret = tinyobj::LoadObj(&attrib, &shapes, &obj_materials, &warn, &err,
 			file.c_str(), obj_base_dir.c_str());
 	if (!warn.empty()) {

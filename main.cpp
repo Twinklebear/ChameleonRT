@@ -195,8 +195,10 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	}
 	renderer->initialize(win_width, win_height);
 
-	Scene scene = Scene::load_obj(args[2]);
-	std::cout << "Scene '" << args[2] << "' loaded:\n"
+	std::string scene_file = args[2];
+	canonicalize_path(scene_file);
+	Scene scene = Scene::load_obj(scene_file);
+	std::cout << "Scene '" << scene_file << "' loaded:\n"
 		<< "# Triangles: " << scene.total_tris() << "\n"
 		<< "# Meshes: " << scene.meshes.size() << "\n"
 		<< "# Materials: " << scene.materials.size() << "\n"
