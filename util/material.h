@@ -30,7 +30,7 @@ struct DisneyMaterial {
 	float clearcoat = 0;
 	float clearcoat_gloss = 0;
 
-	float ior = 0;
+	float ior = 1.5;
 	float specular_transmission = 0;
 	glm::vec2 pad = glm::vec2(0);
 
