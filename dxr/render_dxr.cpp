@@ -326,6 +326,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	update_view_parameters(pos, dir, up, fovy);
 	// Set the render target and TLAS pointers in the descriptor heap
+	// TODO: This should not be done each frame
 	update_descriptor_heap();
 
 	// Now render!
@@ -519,10 +520,8 @@ void RenderDXR::build_shader_binding_table() {
 }
 
 void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,
-	const glm::vec3 &up, const float fovy) {
-	// TODO: Some doc mentioned you can also send 4byte constants directly in the shader table
-	// having them embedded like that might be nice for the camera parameters, but how
-	// does that get setup? How much difference would it make?
+	const glm::vec3 &up, const float fovy)
+{
 	glm::vec2 img_plane_size;
 	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
 	img_plane_size.x = img_plane_size.y
