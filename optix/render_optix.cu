@@ -3,35 +3,30 @@
 #include "disney_bsdf.h"
 #include "lights.h"
 
-rtDeclareVariable(rtObject, scene, , );
-
-rtDeclareVariable(uint2, pixel, rtLaunchIndex, );
-rtDeclareVariable(uint2, screen, rtLaunchDim, );
-
-rtBuffer<uchar4, 2> framebuffer;
-rtBuffer<float4, 2> accum_buffer;
-
-// View params buffer:
-// camera position, dir_du, dir_dv, dir_top_left
-struct ViewParams {
+struct LaunchParams {
 	float4 cam_pos;
 	float4 cam_du;
 	float4 cam_dv;
 	float4 cam_dir_top_left;
-	uint32_t frame_id;
-};
-rtBuffer<ViewParams, 1> view_params;
 
+	uint32_t frame_id;
+
+	uchar4 *framebuffer;
+	float4 *accum_buffer;
+
+	OptixTraversableHandle scene;
+};
+
+extern "C" __constant__ LaunchParams launch_params;
+
+// TODO: This can be made to match the host-side struct nicer since we
+// won't need to worry about any layout/padding weirdness
 struct MaterialParams {
 	float4 basecolor_metallic;
 	float4 spec_rough_spectint_aniso;
 	float4 sheen_sheentint_clearc_ccgloss;
 	float4 ior_spectrans;
 };
-rtBuffer<MaterialParams, 1> mat_params;
-
-rtBuffer<int3, 1> index_buffer;
-rtBuffer<float3, 1> vertex_buffer;
 
 struct RayPayload {
 	// float3 color, float depth
@@ -46,8 +41,6 @@ __device__ RayPayload make_ray_payload() {
 	p.normal_hit = make_float4(0.f);
 	return p;
 }
-
-rtDeclareVariable(RayPayload, ray_payload, rtPayload, );
 
 __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &hit_p,
 		const float3 &n, const float3 &v_x, const float3 &v_y, const float3 &w_o, PCGRand &rng)
@@ -64,8 +57,9 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 	light.width = 5.f;
 	light.height = 5.f;
 
-	optix::Ray shadow_ray(hit_p, make_float3(1.f), OCCLUSION_RAY, EPSILON);
 	RayPayload shadow_payload = make_ray_payload();
+	uint2 payload_ptr;
+	pack_ptr(&shadow_payload, payload_ptr.x, payload_ptr.y);
 
 	// Sample the light to compute an incident light ray to this point
 	{
@@ -77,10 +71,10 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 		float light_pdf = quad_light_pdf(light, light_pos, hit_p, light_dir);
 		float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, v_x, v_y);
 
-		shadow_ray.direction = light_dir;
-		shadow_ray.tmax = light_dist;
-		rtTrace(scene, shadow_ray, shadow_payload, RT_VISIBILITY_ALL,
-				RTrayflags(RT_RAY_FLAG_TERMINATE_ON_FIRST_HIT | RT_RAY_FLAG_DISABLE_ANYHIT));
+		optixTrace(launch_params.scene, hit_p, light_dir, EPSILON, light_dist, 0,
+				0xff, OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
+				OCCLUSION_RAY, 0, OCCLUSION_RAY,
+				payload_ptr.x, payload_ptr.y);
 
 		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_payload.normal_hit.w == 0.f) {
 			float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
@@ -103,10 +97,12 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
 
 				shadow_payload.normal_hit = make_float4(0.f);
-				shadow_ray.direction = w_i;
-				shadow_ray.tmax = light_dist;
-				rtTrace(scene, shadow_ray, shadow_payload, RT_VISIBILITY_ALL,
-						RTrayflags(RT_RAY_FLAG_TERMINATE_ON_FIRST_HIT | RT_RAY_FLAG_DISABLE_ANYHIT));
+
+				optixTrace(launch_params.scene, hit_p, w_i, EPSILON, light_dist, 0,
+						0xff, OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
+						OCCLUSION_RAY, 0, OCCLUSION_RAY,
+						payload_ptr.x, payload_ptr.y);
+
 				if (shadow_payload.normal_hit.w == 0.f) {
 					illum = illum + bsdf * light.emission * abs(dot(w_i, n)) * w / bsdf_pdf;
 				}
@@ -116,30 +112,37 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 	return illum;
 }
 
+struct RayGenParams {
+	MaterialParams *mat_params;
+};
 
-RT_PROGRAM void perspective_camera() {
-	const ViewParams view = view_params[0];
+extern "C" __global__ void __raygen__perspective_camera() {
+	const RayGenParams &params = *(const RayGenParams*)optixGetSbtDataPointer();
 
-	PCGRand rng = get_rng((pixel.x + pixel.y * screen.x) * (view.frame_id + 1));
+	const uint2 pixel = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
+	const uint2 screen = make_uint2(optixGetLaunchDimensions().x, optixGetLaunchDimensions().y);
+	const uint32_t pixel_idx = pixel.x + pixel.y * screen.x;
+
+	PCGRand rng = get_rng((pixel.x + pixel.y * screen.x) * (launch_params.frame_id + 1));
 	const float2 d = make_float2(pixel.x + pcg32_randomf(rng), pixel.y + pcg32_randomf(rng)) / make_float2(screen);
-	const float3 ray_dir = normalize(d.x * make_float3(view.cam_du)
-			+ d.y * make_float3(view.cam_dv) + make_float3(view.cam_dir_top_left));
+	float3 ray_dir = normalize(d.x * make_float3(launch_params.cam_du)
+			+ d.y * make_float3(launch_params.cam_dv) + make_float3(launch_params.cam_dir_top_left));
 
-	optix::Ray ray(make_float3(view.cam_pos), ray_dir, PRIMARY_RAY, 0.0);
+	float3 ray_origin = make_float3(launch_params.cam_pos);
 
 	DisneyMaterial mat;
-	mat.base_color = make_float3(mat_params[0].basecolor_metallic);
-	mat.metallic = mat_params[0].basecolor_metallic.w;
-	mat.specular = mat_params[0].spec_rough_spectint_aniso.x;
-	mat.roughness = mat_params[0].spec_rough_spectint_aniso.y;
-	mat.specular_tint = mat_params[0].spec_rough_spectint_aniso.z;
-	mat.anisotropy = mat_params[0].spec_rough_spectint_aniso.w;
-	mat.sheen = mat_params[0].sheen_sheentint_clearc_ccgloss.x;
-	mat.sheen_tint = mat_params[0].sheen_sheentint_clearc_ccgloss.y;
-	mat.clearcoat = mat_params[0].sheen_sheentint_clearc_ccgloss.z;
-	mat.clearcoat_gloss = mat_params[0].sheen_sheentint_clearc_ccgloss.w;
-	mat.ior = mat_params[0].ior_spectrans.x;
-	mat.specular_transmission = mat_params[0].ior_spectrans.y;
+	mat.base_color = make_float3(params.mat_params[0].basecolor_metallic);
+	mat.metallic = params.mat_params[0].basecolor_metallic.w;
+	mat.specular = params.mat_params[0].spec_rough_spectint_aniso.x;
+	mat.roughness = params.mat_params[0].spec_rough_spectint_aniso.y;
+	mat.specular_tint = params.mat_params[0].spec_rough_spectint_aniso.z;
+	mat.anisotropy = params.mat_params[0].spec_rough_spectint_aniso.w;
+	mat.sheen = params.mat_params[0].sheen_sheentint_clearc_ccgloss.x;
+	mat.sheen_tint = params.mat_params[0].sheen_sheentint_clearc_ccgloss.y;
+	mat.clearcoat = params.mat_params[0].sheen_sheentint_clearc_ccgloss.z;
+	mat.clearcoat_gloss = params.mat_params[0].sheen_sheentint_clearc_ccgloss.w;
+	mat.ior = params.mat_params[0].ior_spectrans.x;
+	mat.specular_transmission = params.mat_params[0].ior_spectrans.y;
 
 	const float3 light_emission = make_float3(1.0);
 	int bounce = 0;
@@ -147,35 +150,25 @@ RT_PROGRAM void perspective_camera() {
 	float3 path_throughput = make_float3(1.0);
 	do {
 		RayPayload payload = make_ray_payload();
-		rtTrace(scene, ray, payload, RT_VISIBILITY_ALL,
-				RTrayflags(RT_RAY_FLAG_DISABLE_ANYHIT));
+		uint2 payload_ptr;
+		pack_ptr(&payload, payload_ptr.x, payload_ptr.y);
+
+		optixTrace(launch_params.scene, ray_origin, ray_dir, EPSILON, 1e20f, 0,
+				0xff, OPTIX_RAY_FLAG_DISABLE_ANYHIT, PRIMARY_RAY, 0, PRIMARY_RAY,
+				payload_ptr.x, payload_ptr.y);
 
 		if (payload.color_dist.w <= 0) {
-			float3 dir = ray.direction;
-			// Apply our miss "shader" to draw the checkerboard background
-			float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
-			float v = acos(dir.y) * M_1_PI;
-
-			int check_x = u * 10.f;
-			int check_y = v * 10.f;
-
-			float3 checker_color;
-			if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
-				checker_color = make_float3(0.5f);// * (1.f + normalize(dir)) * 0.5f;
-			} else {
-				checker_color = make_float3(0.1f);
-			}
-			illum += path_throughput * checker_color;
+			illum = illum + path_throughput * make_float3(payload.color_dist);
 			break;
 		}
 
-		const float3 w_o = -ray.direction;
-		const float3 hit_p = ray.origin + payload.color_dist.w * ray.direction;
+		const float3 w_o = -ray_dir;
+		const float3 hit_p = ray_origin + payload.color_dist.w * ray_dir;
 		float3 v_x, v_y;
 		float3 v_z = make_float3(payload.normal_hit);
 		ortho_basis(v_x, v_y, v_z);
 
-		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
+		illum = illum + path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
 
 		float3 w_i;
 		float pdf;
@@ -183,41 +176,83 @@ RT_PROGRAM void perspective_camera() {
 		if (pdf < EPSILON || all_zero(bsdf)) {
 			break;
 		}
-		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
+		path_throughput = path_throughput * bsdf * abs(dot(w_i, v_z)) / pdf;
 
 		if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
 			break;
 		}
 
-		ray.origin = hit_p;
-		ray.direction = w_i;
-		ray.tmin = 0.0001;
-		ray.tmax = 1e20f;
+		ray_origin = hit_p;
+		ray_dir = w_i;
 
 		++bounce;
 	} while (bounce < MAX_PATH_DEPTH);
 
-	const float4 accum_color = (make_float4(illum, 1.0) + view.frame_id * accum_buffer[pixel]) / (view.frame_id + 1);
-	accum_buffer[pixel] = accum_color;
+#if 1
+	const float4 accum_color = make_float4(illum, 1.f);
+#else
+	// Reading from the buffer doesn't work in CUDA?
+	const float4 accum_color =
+		(make_float4(illum, 1.f) + launch_params.frame_id * launch_params.accum_buffer[pixel_idx])
+		/ (launch_params.frame_id + 1);
+#endif
+	launch_params.accum_buffer[pixel_idx] = accum_color;
 
-	framebuffer[pixel] = make_uchar4(clamp(linear_to_srgb(accum_color.x) * 255.f, 0.f, 255.f),
+	launch_params.framebuffer[pixel_idx] = make_uchar4(
+			clamp(linear_to_srgb(accum_color.x) * 255.f, 0.f, 255.f),
 			clamp(linear_to_srgb(accum_color.y) * 255.f, 0.f, 255.f),
 			clamp(linear_to_srgb(accum_color.z) * 255.f, 0.f, 255.f), 255);
 }
 
-rtDeclareVariable(float, t_hit, rtIntersectionDistance, );
+extern "C" __global__ void __miss__miss() {
+	RayPayload *payload = get_payload<RayPayload>();
+	payload->color_dist.w = -1;
+	float3 dir = optixGetWorldRayDirection();
+	// Apply our miss "shader" to draw the checkerboard background
+	float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
+	float v = acos(dir.y) * M_1_PI;
 
-RT_PROGRAM void closest_hit() {
-	const int3 indices = index_buffer[rtGetPrimitiveIndex()];
-	const float3 v0 = vertex_buffer[indices.x];
-	const float3 v1 = vertex_buffer[indices.y];
-	const float3 v2 = vertex_buffer[indices.z];
-	const float3 normal = normalize(cross(v1 - v0, v2 - v0));
-	ray_payload.color_dist = make_float4(0.9, 0.9, 0.9, t_hit);
-	ray_payload.normal_hit = make_float4(normal, 1.f);
+	int check_x = u * 10.f;
+	int check_y = v * 10.f;
+
+	if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
+		payload->color_dist.x = 0.5f;
+		payload->color_dist.y = 0.5f;
+		payload->color_dist.z = 0.5f;
+	} else {
+		payload->color_dist.x = 0.1f;
+		payload->color_dist.y = 0.1f;
+		payload->color_dist.z = 0.1f;
+	}
 }
 
-RT_PROGRAM void occlusion_hit() {
-	ray_payload.normal_hit.w = 1;
+extern "C" __global__ void __miss__occlusion_miss() {
+	RayPayload *payload = get_payload<RayPayload>();
+	payload->color_dist.w = -1;
+}
+
+struct HitGroupParams {
+	float3 *vertex_buffer;
+	uint3 *index_buffer;
+};
+
+extern "C" __global__ void __closesthit__closest_hit() {
+	const HitGroupParams &params = *(const HitGroupParams*)optixGetSbtDataPointer();
+
+	// TODO: Barycentrics need to be queried via optixGetAttribute_0 & 1
+	const uint3 indices = params.index_buffer[optixGetPrimitiveIndex()];
+	const float3 v0 = params.vertex_buffer[indices.x];
+	const float3 v1 = params.vertex_buffer[indices.y];
+	const float3 v2 = params.vertex_buffer[indices.z];
+	const float3 normal = normalize(cross(v1 - v0, v2 - v0));
+
+	RayPayload *payload = get_payload<RayPayload>();
+	payload->color_dist = make_float4(0.9, 0.9, 0.9, optixGetRayTmax());
+	payload->normal_hit = make_float4(normal, 1.f);
+}
+
+extern "C" __global__ void __closesthit__occlusion_hit() {
+	RayPayload *payload = get_payload<RayPayload>();
+	payload->normal_hit.w = 1;
 }
 

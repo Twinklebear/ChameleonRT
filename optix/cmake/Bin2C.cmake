@@ -22,15 +22,21 @@ function(add_ptx_embed_library)
 		cuda_compile_ptx(ptx_file ${CMAKE_CURRENT_LIST_DIR}/${SRC}
 			OPTIONS ${PTX_COMPILE_DEFINITIONS})
 
-		set(PTX_EMBED_FILE "${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_embedded_ptx.c")
+		set(PTX_EMBED_FILE "${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_embedded_ptx.h")
 		add_custom_command(OUTPUT ${PTX_EMBED_FILE}
 			COMMAND ${bin2c} -c --padd 0 --type char --name "${FNAME}_ptx" ${ptx_file} > ${PTX_EMBED_FILE}
 			DEPENDS ${ptx_file}
-			COMMENT "Compiling and embedding ${SRC} as ${FNAME}_ptx")
+			COMMENT "Compiling and embedding ${SRC} as ${FNAME}_ptx in ${PTX_EMBED_FILE}")
 
 		list(APPEND PTX_SRCS ${PTX_EMBED_FILE})
 	endforeach()
 
-	add_library(${PTX_LIB} ${PTX_SRCS})
+	set(PTX_CMAKE_CUSTOM_WRAPPER ${PTX_LIB}_custom_target)
+	add_custom_target(${PTX_CMAKE_CUSTOM_WRAPPER} ALL DEPENDS ${PTX_SRCS})
+
+	add_library(${PTX_LIB} INTERFACE)
+	add_dependencies(${PTX_LIB} ${PTX_CMAKE_CUSTOM_WRAPPER})
+	target_include_directories(${PTX_LIB} INTERFACE
+		$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 endfunction()
 

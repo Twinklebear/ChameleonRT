@@ -1,6 +1,7 @@
 #pragma once
 
 #include "util.h"
+#include "float3.h"
 #include "pcg_rng.h"
 
 /* Disney BSDF functions, for additional details and examples see:
@@ -227,7 +228,7 @@ __device__ float3 disney_microfacet_isotropic(const DisneyMaterial &mat, const f
 	const float3 &w_o, const float3 &w_i)
 {
 	float3 w_h = normalize(w_i + w_o);
-	float lum = optix::luminance(mat.base_color);
+	float lum = luminance(mat.base_color);
 	float3 tint = lum > 0.f ? mat.base_color / lum : make_float3(1.f);
 	float3 spec = lerp(mat.specular * 0.08 * lerp(make_float3(1.f), tint, mat.specular_tint), mat.base_color, mat.metallic);
 
@@ -271,7 +272,7 @@ __device__ float3 disney_microfacet_anisotropic(const DisneyMaterial &mat, const
 	const float3 &w_o, const float3 &w_i, const float3 &v_x, const float3 &v_y)
 {
 	float3 w_h = normalize(w_i + w_o);
-	float lum = optix::luminance(mat.base_color);
+	float lum = luminance(mat.base_color);
 	float3 tint = lum > 0.f ? mat.base_color / lum : make_float3(1.f);
 	float3 spec = lerp(mat.specular * 0.08 * lerp(make_float3(1.f), tint, mat.specular_tint), mat.base_color, mat.metallic);
 
@@ -300,7 +301,7 @@ __device__ float3 disney_sheen(const DisneyMaterial &mat, const float3 &n,
 	const float3 &w_o, const float3 &w_i)
 {
 	float3 w_h = normalize(w_i + w_o);
-	float lum = optix::luminance(mat.base_color);
+	float lum = luminance(mat.base_color);
 	float3 tint = lum > 0.f ? mat.base_color / lum : make_float3(1, 1, 1);
 	float3 sheen_color = lerp(make_float3(1, 1, 1), tint, mat.sheen_tint);
 	float f = schlick_weight(dot(w_i, n));

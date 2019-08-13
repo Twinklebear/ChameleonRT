@@ -2,30 +2,22 @@
 
 #include <math_constants.h>
 #include <optix.h>
-#include <optix_math.h>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-#ifndef M_1_PI
-#define M_1_PI 0.318309886183790671538
-#endif
-
-#define EPSILON 0.0001
-
-#define PRIMARY_RAY 0
-#define OCCLUSION_RAY 1
-#define MAX_PATH_DEPTH 5
-
-typedef unsigned long long uint64_t;
-typedef unsigned int uint32_t;
+#include "float3.h"
+#include "types.h"
 
 __device__ float linear_to_srgb(float x) {
 	if (x <= 0.0031308f) {
 		return 12.92f * x;
 	}
 	return 1.055f * pow(x, 1.f/2.4f) - 0.055f;
+}
+
+__device__ float luminance(const float3 &c) {
+	return 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z;
+}
+
+__device__ float pow2(float x) {
+	return x * x;
 }
 
 __device__ void ortho_basis(float3 &v_x, float3 &v_y, const float3 &n) {
@@ -44,12 +36,27 @@ __device__ void ortho_basis(float3 &v_x, float3 &v_y, const float3 &n) {
 	v_y = normalize(cross(n, v_x));
 }
 
-__device__ float pow2(float x) {
-	return x * x;
+template<typename T>
+__device__ T clamp(const T &x, const T &lo, const T &hi) {
+	if (x < lo) {
+		return lo;
+	}
+	if (x > hi) {
+		return hi;
+	}
+	return x;
 }
 
-__device__ bool all_zero(const float3 &v) {
-	return v.x == 0.f && v.y == 0.f && v.z == 0.f;
+__device__ float lerp(float x, float y, float s) {
+	return x * (1.f - s) + y * s;
+}
+
+__device__ float3 lerp(float3 x, float3 y, float s) {
+	return x * (1.f - s) + y * s;
+}
+
+__device__ float3 reflect(const float3 &i, const float3 &n) {
+	return i - 2.f * n * dot(i, n);
 }
 
 __device__ float3 refract_ray(const float3 &i, const float3 &n, float eta) {
@@ -59,5 +66,21 @@ __device__ float3 refract_ray(const float3 &i, const float3 &n, float eta) {
 		return make_float3(0.f);
 	}
 	return eta * i - (eta * n_dot_i + sqrt(k)) * n;
+}
+
+__device__ void* unpack_ptr(uint32_t hi, uint32_t lo) {
+	const uint64_t val = static_cast<uint64_t>(hi) << 32 | lo;
+	return reinterpret_cast<void*>(val);
+}
+
+__device__ void pack_ptr(void *ptr, uint32_t &hi, uint32_t &lo) {
+	const uint64_t val = reinterpret_cast<uint64_t>(ptr);
+	hi = val >> 32;
+	lo = val & 0x00000000ffffffff;
+}
+
+template<typename T>
+__device__ T* get_payload() {
+	return reinterpret_cast<T*>(unpack_ptr(optixGetPayload_0(), optixGetPayload_1()));
 }
 
