@@ -1,12 +1,19 @@
 #pragma once
 
-#include <optixu/optixpp_namespace.h>
-#include <optixu/optixu_math_stream_namespace.h>
+#include <optix.h>
 #include "render_backend.h"
 
 struct RenderOptiX : RenderBackend {
-	optix::Context context;
-	optix::Buffer fb, accum_buffer, view_params, mat_params;
+	CUstream cuda_stream;
+	CUcontext cuda_context;
+
+	OptixDeviceContext optix_context;
+
+	void *fb = nullptr;
+	void *accum_buffer = nullptr;
+	void *view_params = nullptr;
+	void *mat_params = nullptr;
+
 	int width, height;
 	uint32_t frame_id = 0;
 

@@ -2,11 +2,64 @@
 #include <cuda.h>
 #include "render_optix.h"
 
+#define CHECK_OPTIX(FN) \
+	{ \
+		auto fn_err = FN; \
+		if (fn_err != OPTIX_SUCCESS) { \
+			std::cout << #FN << " failed due to " \
+				<< optixGetErrorName(fn_err) << ": " << optixGetErrorString(fn_err) \
+				<< std::endl << std::flush; \
+			throw std::runtime_error(#FN); \
+		}\
+	}
+
+#define CHECK_CUDA(FN) \
+	{ \
+		auto fn_err = FN; \
+		if (fn_err != cudaSuccess) { \
+			std::cout << #FN << " failed due to " \
+				<< cudaGetErrorName(fn_err) << ": " << cudaGetErrorString(fn_err) \
+				<< std::endl << std::flush; \
+			throw std::runtime_error(#FN); \
+		}\
+	}
+
 extern "C" const char render_optix_ptx[];
 
-using namespace optix;
+void log_callback(unsigned int level, const char *tag, const char *msg, void *data) {
+	std::cout << "----\nOptiX Log Message (level " << level << "):\n"
+		<< "  Tag: " << tag << "\n"
+		<< "  Msg: " << msg << "\n----\n";
+}
 
 RenderOptiX::RenderOptiX() {
+	// Init CUDA and OptiX
+	cudaFree(0);
+	int num_devices = 0;
+	cudaGetDeviceCount(&num_devices);
+	if (num_devices == 0) {
+		throw std::runtime_error("No CUDA capable devices found!");
+	}
+
+	CHECK_OPTIX(optixInit());
+
+	CHECK_CUDA(cudaSetDevice(0));
+	CHECK_CUDA(cudaStreamCreate(&cuda_stream));
+
+	cudaDeviceProp device_props;
+	cudaGetDeviceProperties(&device_props, 0);
+	std::cout << "OptiX backend running on " << device_props.name << "\n";
+
+	CHECK_CUDA(cuCtxGetCurrent(&cuda_context));
+
+	CHECK_OPTIX(optixDeviceContextCreate(cuda_context, 0, &optix_context));
+#ifdef _DEBUG
+	CHECK_OPTIX(optixDeviceContextSetLogCallback(optix_context, log_callback, nullptr, 4));
+#else
+	CHECK_OPTIX(optixDeviceContextSetLogCallback(optix_context, log_callback, nullptr, 3));
+#endif
+
+	/*
 	context = Context::create();
 	context->setRayTypeCount(2);
 	context->setEntryPointCount(1);
@@ -24,24 +77,25 @@ RenderOptiX::RenderOptiX() {
 	mat_params->setElementSize(4 * sizeof(glm::vec4));
 	mat_params->setSize(1);
 	context["mat_params"]->set(mat_params);
+	*/
 }
 
 void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 	frame_id = 0;
 	width = fb_width;
 	height = fb_height;
-
-	fb = context->createBuffer(RT_BUFFER_OUTPUT, RT_FORMAT_UNSIGNED_BYTE4,
-			fb_width, fb_height);
-	context["framebuffer"]->setBuffer(fb);
-	accum_buffer = context->createBuffer(RT_BUFFER_INPUT_OUTPUT, RT_FORMAT_FLOAT4,
-		fb_width, fb_height);
-
-	context["accum_buffer"]->setBuffer(accum_buffer);
 	img.resize(fb_width * fb_height);
+
+	if (fb) {
+		cudaFree(fb);
+		cudaFree(accum_buffer);
+	}
+	cudaMalloc(&fb, img.size() * sizeof(uint32_t));
+	cudaMalloc(&accum_buffer, img.size() * 4 * sizeof(float));
 }
 
 void RenderOptiX::set_scene(const Scene &scene) {
+	/*
 	frame_id = 0;
 	const auto &mesh = scene.meshes[0];
 
@@ -81,12 +135,14 @@ void RenderOptiX::set_scene(const Scene &scene) {
 
 	std::memcpy(mat_params->map(), &scene.materials[mesh.material_id], sizeof(DisneyMaterial));
 	mat_params->unmap();
+	*/
 }
 
 double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy, const bool camera_changed)
 {
 	using namespace std::chrono;
+	/*
 
 	if (camera_changed) {
 		frame_id = 0;
@@ -135,5 +191,7 @@ double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	fb->unmap();
 	++frame_id;
 	return img.size() / render_time;
+	*/
+	return 0;
 }
 
