@@ -17,7 +17,9 @@ struct LaunchParams {
 	OptixTraversableHandle scene;
 };
 
-extern "C" __constant__ LaunchParams launch_params;
+extern "C" {
+	__constant__ LaunchParams launch_params;
+}
 
 // TODO: This can be made to match the host-side struct nicer since we
 // won't need to worry about any layout/padding weirdness
@@ -188,15 +190,9 @@ extern "C" __global__ void __raygen__perspective_camera() {
 		++bounce;
 	} while (bounce < MAX_PATH_DEPTH);
 
-#if 1
-	const float4 accum_color = make_float4(illum, 1.f);
-#else
-	// Reading from the buffer doesn't work in CUDA?
-	const float4 accum_color =
-		(make_float4(illum, 1.f) + launch_params.frame_id * launch_params.accum_buffer[pixel_idx])
-		/ (launch_params.frame_id + 1);
-#endif
-	launch_params.accum_buffer[pixel_idx] = accum_color;
+	const float3 prev_color = make_float3(launch_params.accum_buffer[pixel_idx]);
+	const float3 accum_color = (illum + launch_params.frame_id * prev_color) / (launch_params.frame_id + 1);
+	launch_params.accum_buffer[pixel_idx] = make_float4(accum_color, 1.f);
 
 	launch_params.framebuffer[pixel_idx] = make_uchar4(
 			clamp(linear_to_srgb(accum_color.x) * 255.f, 0.f, 255.f),

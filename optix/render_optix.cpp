@@ -1,4 +1,5 @@
 #include <chrono>
+#include <array>
 #include <iostream>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -96,7 +97,7 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 		cudaFree(accum_buffer);
 	}
 	cudaMalloc(&framebuffer, img.size() * sizeof(uint32_t));
-	cudaMalloc(&accum_buffer, img.size() * 4 * sizeof(float));
+	cudaMalloc(&accum_buffer, img.size() * sizeof(glm::vec4));
 }
 
 void RenderOptiX::set_scene(const Scene &scene) {
