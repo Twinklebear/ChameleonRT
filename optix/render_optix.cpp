@@ -379,9 +379,9 @@ void RenderOptiX::build_raytracing_pipeline() {
 		CHECK_OPTIX(optixPipelineSetStackSize(pipeline, 2 * 1024, 2 * 1024, 2 * 1024, 2));
 	}
 
-	const size_t raygen_entry_size = align_to(sizeof(RayGenRecord), OPTIX_SBT_RECORD_ALIGNMENT);
-	const size_t miss_entry_size = align_to(sizeof(MissRecord), OPTIX_SBT_RECORD_ALIGNMENT);
-	const size_t hitgroup_entry_size = align_to(sizeof(HitGroupRecord), OPTIX_SBT_RECORD_ALIGNMENT);
+	const size_t raygen_entry_size = align_to(sizeof(RayGenParams), OPTIX_SBT_RECORD_ALIGNMENT);
+	const size_t miss_entry_size = align_to(sizeof(MissParams), OPTIX_SBT_RECORD_ALIGNMENT);
+	const size_t hitgroup_entry_size = align_to(sizeof(HitGroupParams), OPTIX_SBT_RECORD_ALIGNMENT);
 	const size_t sbt_size = raygen_entry_size + 2 * miss_entry_size + 2 * hitgroup_entry_size;
 	std::cout << "SBT size: " << pretty_print_count(sbt_size) << "\n"
 		<< "raygen size: " << raygen_entry_size << "\n"
@@ -391,29 +391,29 @@ void RenderOptiX::build_raytracing_pipeline() {
 	std::vector<uint8_t> host_sbt(sbt_size, 0);
 	uint8_t *sbt_ptr = host_sbt.data();
 	{
-		RayGenRecord rg_rec;
+		RayGenParams rg_rec;
 		optixSbtRecordPackHeader(raygen_prog, &rg_rec);
 		rg_rec.mat_params = reinterpret_cast<CUdeviceptr>(mat_params);
 
-		std::memcpy(sbt_ptr, &rg_rec, sizeof(RayGenRecord));
+		std::memcpy(sbt_ptr, &rg_rec, sizeof(RayGenParams));
 		sbt_ptr += raygen_entry_size;
 	}
 
 	for (size_t i = 0; i < miss_progs.size(); ++i) {
-		MissRecord miss_rec;
+		MissParams miss_rec;
 		optixSbtRecordPackHeader(miss_progs[i], &miss_rec);
 
-		std::memcpy(sbt_ptr, &miss_rec, sizeof(MissRecord));
+		std::memcpy(sbt_ptr, &miss_rec, sizeof(MissParams));
 		sbt_ptr += miss_entry_size;
 	}
 
 	for (size_t i = 0; i < hitgroup_progs.size(); ++i) {
-		HitGroupRecord hit_rec;
+		HitGroupParams hit_rec;
 		optixSbtRecordPackHeader(hitgroup_progs[i], &hit_rec);
 		hit_rec.vertex_buffer = reinterpret_cast<CUdeviceptr>(vertices);
 		hit_rec.index_buffer = reinterpret_cast<CUdeviceptr>(indices);
 
-		std::memcpy(sbt_ptr, &hit_rec, sizeof(HitGroupRecord));
+		std::memcpy(sbt_ptr, &hit_rec, sizeof(HitGroupParams));
 		sbt_ptr += hitgroup_entry_size;
 	}
 

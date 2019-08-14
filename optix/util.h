@@ -80,7 +80,11 @@ __device__ void pack_ptr(void *ptr, uint32_t &hi, uint32_t &lo) {
 }
 
 template<typename T>
-__device__ T* get_payload() {
-	return reinterpret_cast<T*>(unpack_ptr(optixGetPayload_0(), optixGetPayload_1()));
+__device__ T& get_payload() {
+	return *reinterpret_cast<T*>(unpack_ptr(optixGetPayload_0(), optixGetPayload_1()));
 }
 
+template<typename T>
+__device__ const T& get_shader_params() {
+	return *reinterpret_cast<const T*>(optixGetSbtDataPointer());
+}

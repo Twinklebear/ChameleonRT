@@ -2,33 +2,11 @@
 #include "pcg_rng.h"
 #include "disney_bsdf.h"
 #include "lights.h"
-
-struct LaunchParams {
-	float4 cam_pos;
-	float4 cam_du;
-	float4 cam_dv;
-	float4 cam_dir_top_left;
-
-	uint32_t frame_id;
-
-	uchar4 *framebuffer;
-	float4 *accum_buffer;
-
-	OptixTraversableHandle scene;
-};
+#include "optix_params.h"
 
 extern "C" {
 	__constant__ LaunchParams launch_params;
 }
-
-// TODO: This can be made to match the host-side struct nicer since we
-// won't need to worry about any layout/padding weirdness
-struct MaterialParams {
-	float4 basecolor_metallic;
-	float4 spec_rough_spectint_aniso;
-	float4 sheen_sheentint_clearc_ccgloss;
-	float4 ior_spectrans;
-};
 
 struct RayPayload {
 	// float3 color, float depth
@@ -114,12 +92,8 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 	return illum;
 }
 
-struct RayGenParams {
-	MaterialParams *mat_params;
-};
-
 extern "C" __global__ void __raygen__perspective_camera() {
-	const RayGenParams &params = *(const RayGenParams*)optixGetSbtDataPointer();
+	const RayGenParams &params = get_shader_params<RayGenParams>();
 
 	const uint2 pixel = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 	const uint2 screen = make_uint2(optixGetLaunchDimensions().x, optixGetLaunchDimensions().y);
@@ -201,8 +175,8 @@ extern "C" __global__ void __raygen__perspective_camera() {
 }
 
 extern "C" __global__ void __miss__miss() {
-	RayPayload *payload = get_payload<RayPayload>();
-	payload->color_dist.w = -1;
+	RayPayload &payload = get_payload<RayPayload>();
+	payload.color_dist.w = -1;
 	float3 dir = optixGetWorldRayDirection();
 	// Apply our miss "shader" to draw the checkerboard background
 	float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
@@ -212,28 +186,23 @@ extern "C" __global__ void __miss__miss() {
 	int check_y = v * 10.f;
 
 	if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
-		payload->color_dist.x = 0.5f;
-		payload->color_dist.y = 0.5f;
-		payload->color_dist.z = 0.5f;
+		payload.color_dist.x = 0.5f;
+		payload.color_dist.y = 0.5f;
+		payload.color_dist.z = 0.5f;
 	} else {
-		payload->color_dist.x = 0.1f;
-		payload->color_dist.y = 0.1f;
-		payload->color_dist.z = 0.1f;
+		payload.color_dist.x = 0.1f;
+		payload.color_dist.y = 0.1f;
+		payload.color_dist.z = 0.1f;
 	}
 }
 
 extern "C" __global__ void __miss__occlusion_miss() {
-	RayPayload *payload = get_payload<RayPayload>();
-	payload->color_dist.w = -1;
+	RayPayload &payload = get_payload<RayPayload>();
+	payload.color_dist.w = -1;
 }
 
-struct HitGroupParams {
-	float3 *vertex_buffer;
-	uint3 *index_buffer;
-};
-
 extern "C" __global__ void __closesthit__closest_hit() {
-	const HitGroupParams &params = *(const HitGroupParams*)optixGetSbtDataPointer();
+	const HitGroupParams &params = get_shader_params<HitGroupParams>();
 
 	// TODO: Barycentrics need to be queried via optixGetTriangleBarycentrics()
 	const uint3 indices = params.index_buffer[optixGetPrimitiveIndex()];
@@ -242,13 +211,13 @@ extern "C" __global__ void __closesthit__closest_hit() {
 	const float3 v2 = params.vertex_buffer[indices.z];
 	const float3 normal = normalize(cross(v1 - v0, v2 - v0));
 
-	RayPayload *payload = get_payload<RayPayload>();
-	payload->color_dist = make_float4(0.9, 0.9, 0.9, optixGetRayTmax());
-	payload->normal_hit = make_float4(normal, 1.f);
+	RayPayload &payload = get_payload<RayPayload>();
+	payload.color_dist = make_float4(0.9, 0.9, 0.9, optixGetRayTmax());
+	payload.normal_hit = make_float4(normal, 1.f);
 }
 
 extern "C" __global__ void __closesthit__occlusion_hit() {
-	RayPayload *payload = get_payload<RayPayload>();
-	payload->normal_hit.w = 1;
+	RayPayload &payload = get_payload<RayPayload>();
+	payload.normal_hit.w = 1;
 }
 
