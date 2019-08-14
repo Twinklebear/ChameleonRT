@@ -1,4 +1,4 @@
-#include "util.h"
+#include "cuda_utils.h"
 #include "pcg_rng.h"
 #include "disney_bsdf.h"
 #include "lights.h"

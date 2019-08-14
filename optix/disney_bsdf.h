@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util.h"
+#include "cuda_utils.h"
 #include "float3.h"
 #include "pcg_rng.h"
 

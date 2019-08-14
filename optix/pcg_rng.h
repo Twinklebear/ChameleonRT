@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util.h"
+#include "cuda_utils.h"
 
 // http://www.pcg-random.org/download.html
 struct PCGRand {

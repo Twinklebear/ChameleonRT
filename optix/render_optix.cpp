@@ -6,37 +6,27 @@
 #include <optix.h>
 #include <optix_stubs.h>
 #include <optix_function_table_definition.h>
-#include "../util/util.h"
+#include "util.h"
+#include "optix_utils.h"
 #include "render_optix_embedded_ptx.h"
 #include "render_optix.h"
 #include "optix_params.h"
-
-#define CHECK_OPTIX(FN) \
-	{ \
-		auto fn_err = FN; \
-		if (fn_err != OPTIX_SUCCESS) { \
-			std::cout << #FN << " failed due to " \
-				<< optixGetErrorName(fn_err) << ": " << optixGetErrorString(fn_err) \
-				<< std::endl << std::flush; \
-			throw std::runtime_error(#FN); \
-		}\
-	}
-
-#define CHECK_CUDA(FN) \
-	{ \
-		auto fn_err = FN; \
-		if (fn_err != cudaSuccess) { \
-			std::cout << #FN << " failed due to " \
-				<< cudaGetErrorName(fn_err) << ": " << cudaGetErrorString(fn_err) \
-				<< std::endl << std::flush; \
-			throw std::runtime_error(#FN); \
-		}\
-	}
 
 void log_callback(unsigned int level, const char *tag, const char *msg, void*) {
 	std::cout << "----\nOptiX Log Message (level " << level << "):\n"
 		<< "  Tag: " << tag << "\n"
 		<< "  Msg: " << msg << "\n----\n";
+}
+
+std::ostream& operator<<(std::ostream &os, const OptixStackSizes &s) {
+	os << "(cssRG: " << s.cssRG << ", "
+		<< "cssMS: " << s.cssMS << ", "
+		<< "cssCH: " << s.cssCH << ", "
+		<< "cssAH: " << s.cssAH << ", "
+		<< "cssIS: " << s.cssIS << ", "
+		<< "cssCC: " << s.cssCC << ", "
+		<< "dssDC: " << s.dssDC << ")";
+	return os;
 }
 
 RenderOptiX::RenderOptiX() {
@@ -376,6 +366,22 @@ void RenderOptiX::build_raytracing_pipeline() {
 	// In the renderer, the raygen will call the closest hit or miss shader, which
 	// make no further calls.
 	{
+		OptixStackSizes stack_sizes;
+		optixProgramGroupGetStackSize(raygen_prog, &stack_sizes);
+		std::cout << "RayGen: " << stack_sizes << "\n";
+
+		for (size_t i = 0; i < miss_progs.size(); ++i) {
+			optixProgramGroupGetStackSize(miss_progs[i], &stack_sizes);
+			std::cout << "Miss[" << i << "]: " << stack_sizes << "\n";
+		}
+		for (size_t i = 0; i < hitgroup_progs.size(); ++i) {
+			optixProgramGroupGetStackSize(hitgroup_progs[i], &stack_sizes);
+			std::cout << "HitGroup[" << i << "]: " << stack_sizes << "\n";
+		}
+
+		// TODO: It seems like even setting these values to something clearly too small
+		// doesn't crash the renderer like I'd expect it too?
+
 		CHECK_OPTIX(optixPipelineSetStackSize(pipeline, 2 * 1024, 2 * 1024, 2 * 1024, 2));
 	}
 

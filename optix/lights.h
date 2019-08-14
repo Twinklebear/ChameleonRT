@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util.h"
+#include "cuda_utils.h"
 
 // Quad-shaped light source
 struct QuadLight {
