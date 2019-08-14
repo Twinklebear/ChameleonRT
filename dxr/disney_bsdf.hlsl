@@ -369,7 +369,7 @@ float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
 	int component = 0;
 	if (mat.specular_transmission == 0.f) {
 		component = pcg32_randomf(rng) * 3.f;
-		component = clamp(component, 0, 3);
+		component = clamp(component, 0, 2);
 	} else {
 		component = pcg32_randomf(rng) * 4.f;
 		component = clamp(component, 0, 3);
