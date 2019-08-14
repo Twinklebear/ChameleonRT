@@ -88,6 +88,7 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 	}
 	cudaMalloc(&framebuffer, img.size() * sizeof(uint32_t));
 	cudaMalloc(&accum_buffer, img.size() * sizeof(glm::vec4));
+	cudaMemset(accum_buffer, 0, img.size() * sizeof(glm::vec4));
 }
 
 void RenderOptiX::set_scene(const Scene &scene) {
