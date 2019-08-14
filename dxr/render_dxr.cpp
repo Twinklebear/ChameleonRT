@@ -312,6 +312,8 @@ void RenderDXR::set_scene(const Scene &scene) {
 	build_shader_resource_heap();
 	build_raytracing_pipeline();
 	build_shader_binding_table();
+	// Set the render target and TLAS pointers in the descriptor heap
+	build_descriptor_heap();
 }
 
 double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -325,9 +327,6 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	}
 
 	update_view_parameters(pos, dir, up, fovy);
-	// Set the render target and TLAS pointers in the descriptor heap
-	// TODO: This should not be done each frame
-	update_descriptor_heap();
 
 	// Now render!
 	CHECK_ERR(cmd_allocator->Reset());
@@ -547,7 +546,7 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &di
 	view_param_buf.unmap();
 }
 
-void RenderDXR::update_descriptor_heap() {
+void RenderDXR::build_descriptor_heap() {
 	D3D12_CPU_DESCRIPTOR_HANDLE heap_handle =
 		raygen_desc_heap.cpu_desc_handle();
 

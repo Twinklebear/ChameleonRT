@@ -48,6 +48,6 @@ private:
 	void build_shader_binding_table();
 	void update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy);
-	void update_descriptor_heap();
+	void build_descriptor_heap();
 	void sync_gpu();
 };
