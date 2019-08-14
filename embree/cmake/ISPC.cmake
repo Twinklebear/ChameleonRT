@@ -31,7 +31,7 @@ function(add_ispc_library)
 		get_filename_component(FNAME ${SRC} NAME_WE)
 		list(APPEND ISPC_OBJS ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.o)
 
-		message("Writing ISPC dependecy list for ${SRC} to ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep")
+		message("Writing ISPC dependency list for ${SRC} to ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep")
 		execute_process(
 			COMMAND ${ispc} ${CMAKE_CURRENT_LIST_DIR}/${SRC}
 			-MMM ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep
