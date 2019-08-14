@@ -15,12 +15,7 @@ struct RenderOptiX : RenderBackend {
 
 	optix::TriangleMesh mesh;
 
-	optix::Buffer blas_buffer;
-	OptixTraversableHandle blas_handle = 0;
-
-	optix::Buffer instance_buffer;
-	optix::Buffer tlas_buffer;
-	OptixTraversableHandle tlas_handle = 0;
+	optix::TopLevelBVH scene_bvh;
 
 	OptixPipeline pipeline;
 

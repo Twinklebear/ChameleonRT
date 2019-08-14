@@ -79,7 +79,7 @@ TriangleMesh::TriangleMesh(std::shared_ptr<Buffer> vertex_buf, std::shared_ptr<B
 
 void TriangleMesh::enqueue_build(OptixDeviceContext &device, CUstream &stream) {
 	OptixAccelBuildOptions opts = {};
-	opts.buildFlags =  build_flags;
+	opts.buildFlags = build_flags;
 	opts.operation = OPTIX_BUILD_OPERATION_BUILD;
 	opts.motionOptions.numKeys = 1;
 
@@ -129,6 +129,73 @@ size_t TriangleMesh::num_tris() const {
 }
 
 OptixTraversableHandle TriangleMesh::handle() {
+	return as_handle;
+}
+
+TopLevelBVH::TopLevelBVH(std::shared_ptr<Buffer> instance_buf, uint32_t build_flags)
+	: build_flags(build_flags),
+	  instance_buf(instance_buf)
+{
+	geom_desc.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
+	geom_desc.instanceArray.instances = instance_buf->device_ptr();
+	geom_desc.instanceArray.numInstances = instance_buf->size() / sizeof(OptixInstance);
+}
+
+void TopLevelBVH::enqueue_build(OptixDeviceContext &device, CUstream &stream) {
+	// TODO: Compared to DXR this is actually directly the same as the bottomlevel build,
+	// so they can re-use the same code path.
+	OptixAccelBuildOptions opts = {};
+	opts.buildFlags = build_flags;
+	opts.operation = OPTIX_BUILD_OPERATION_BUILD;
+	opts.motionOptions.numKeys = 1;
+
+	OptixAccelBufferSizes buf_sizes;
+	CHECK_OPTIX(optixAccelComputeMemoryUsage(device, &opts, &geom_desc, 1, &buf_sizes));
+
+	std::cout << "BLAS will use output space of "
+		<< pretty_print_count(buf_sizes.outputSizeInBytes)
+		<< " plus scratch of " << pretty_print_count(buf_sizes.tempSizeInBytes) << "\n";
+
+	build_output = Buffer(buf_sizes.outputSizeInBytes);
+	scratch = Buffer(buf_sizes.tempSizeInBytes);
+
+	// Now build the BLAS and query the info about the compacted size
+	post_build_info = Buffer(sizeof(uint64_t));
+	OptixAccelEmitDesc emit_desc = {};
+	emit_desc.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
+	emit_desc.result = post_build_info.device_ptr();
+
+	CHECK_OPTIX(optixAccelBuild(device, stream, &opts, &geom_desc, 1,
+				scratch.device_ptr(), scratch.size(),
+				build_output.device_ptr(), build_output.size(),
+				&as_handle, &emit_desc, 1));
+}
+
+void TopLevelBVH::enqueue_compaction(OptixDeviceContext &device, CUstream &stream){
+	uint64_t compacted_size = 0;
+	post_build_info.download(&compacted_size, sizeof(uint64_t));
+
+	std::cout << "TLAS will compact to " << pretty_print_count(compacted_size) << "\n";
+	bvh = optix::Buffer(compacted_size);
+
+	CHECK_OPTIX(optixAccelCompact(device, stream, as_handle,
+				bvh.device_ptr(), bvh.size(), &as_handle));
+}
+
+
+void TopLevelBVH::finalize() {
+	if (build_flags & OPTIX_BUILD_FLAG_ALLOW_COMPACTION) {
+		build_output = Buffer();
+	}
+	scratch = Buffer();
+	post_build_info = Buffer();
+}
+
+size_t TopLevelBVH::num_instances() const {
+	return geom_desc.instanceArray.numInstances;
+}
+
+OptixTraversableHandle TopLevelBVH::handle() {
 	return as_handle;
 }
 

@@ -126,5 +126,35 @@ public:
 	OptixTraversableHandle handle();
 };
 
+class TopLevelBVH {
+	OptixBuildInput geom_desc = {};
+
+	uint32_t build_flags = OPTIX_BUILD_FLAG_NONE;
+
+	Buffer build_output, scratch, post_build_info, bvh;
+
+	OptixTraversableHandle as_handle;
+
+public:
+	std::shared_ptr<Buffer> instance_buf;
+
+	TopLevelBVH() = default;
+	TopLevelBVH(std::shared_ptr<Buffer> instance_buf,
+			uint32_t build_flags = OPTIX_BUILD_FLAG_NONE);
+
+	// Enqueue the acceleration structure build construction into the passed stream
+	void enqueue_build(OptixDeviceContext &device, CUstream &stream);
+
+	// Enqueue the acceleration structure compaction into the passed stream
+	void enqueue_compaction(OptixDeviceContext &device, CUstream &stream);
+
+	// Finalize the BVH build structures to release any scratch space
+	void finalize();
+
+	size_t num_instances() const;
+
+	OptixTraversableHandle handle();
+};
+
 }
 

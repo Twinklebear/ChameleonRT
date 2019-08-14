@@ -101,6 +101,7 @@ void RenderOptiX::set_scene(const Scene &scene) {
 	// in one bottom-level AS, and use the geometry order indexed hit groups to
 	// set the params properly for each geom. However, eventually I do plan to support
 	// instancing so it's easiest to learn the whole path on a simple case.
+	auto instance_buffer = std::make_shared<optix::Buffer>(sizeof(OptixInstance));
 	{
 		OptixInstance instance = {};
 
@@ -117,55 +118,18 @@ void RenderOptiX::set_scene(const Scene &scene) {
 		instance.traversableHandle = mesh.handle();
 
 		// Upload the instance data to the GPU
-		instance_buffer = optix::Buffer(sizeof(OptixInstance));
-		instance_buffer.upload(&instance, sizeof(OptixInstance));
-
-		OptixBuildInput inputs = {};
-		inputs.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
-		inputs.instanceArray.instances = instance_buffer.device_ptr();
-		inputs.instanceArray.numInstances = 1;
-
-		OptixAccelBuildOptions opts = {};
-		opts.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
-		opts.operation = OPTIX_BUILD_OPERATION_BUILD;
-		opts.motionOptions.numKeys = 1;
-
-		OptixAccelBufferSizes buf_sizes;
-		CHECK_OPTIX(optixAccelComputeMemoryUsage(optix_context, &opts,
-					&inputs, 1, &buf_sizes));
-
-		std::cout << "TLAS will use output space of "
-			<< pretty_print_count(buf_sizes.outputSizeInBytes)
-			<< " plus scratch of " << pretty_print_count(buf_sizes.tempSizeInBytes) << "\n";
-
-		optix::Buffer build_output(buf_sizes.outputSizeInBytes);
-		optix::Buffer build_scratch(buf_sizes.tempSizeInBytes);
-
-		// Now build the TLAS and query the info about the compacted size
-		optix::Buffer compacted_size_info(sizeof(uint64_t));
-		OptixAccelEmitDesc post_info = {};
-		post_info.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
-		post_info.result = compacted_size_info.device_ptr();
-
-		CHECK_OPTIX(optixAccelBuild(optix_context, cuda_stream, &opts, &inputs, 1,
-					build_scratch.device_ptr(), build_scratch.size(),
-					build_output.device_ptr(), build_output.size(),
-					&tlas_handle, &post_info, 1));
-
-		// Wait for the build to complete before compacting
-		sync_gpu();
-
-		uint64_t compacted_size = 0;
-		compacted_size_info.download(&compacted_size, sizeof(uint64_t));
-
-		std::cout << "TLAS will compact to " << pretty_print_count(compacted_size) << "\n";
-		tlas_buffer = optix::Buffer(compacted_size);
-
-		CHECK_OPTIX(optixAccelCompact(optix_context, cuda_stream, tlas_handle,
-					tlas_buffer.device_ptr(), tlas_buffer.size(),
-					&tlas_handle));
-		sync_gpu();
+		instance_buffer->upload(&instance, sizeof(OptixInstance));
 	}
+
+	scene_bvh = optix::TopLevelBVH(instance_buffer, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
+
+	scene_bvh.enqueue_build(optix_context, cuda_stream);
+	sync_gpu();
+
+	scene_bvh.enqueue_compaction(optix_context, cuda_stream);
+	sync_gpu();
+
+	scene_bvh.finalize();
 
 	mat_params = optix::Buffer(sizeof(DisneyMaterial));
 	mat_params.upload(&scene.materials[m.material_id], sizeof(DisneyMaterial));
@@ -415,7 +379,7 @@ void RenderOptiX::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &
 	params.frame_id = frame_id;
 	params.framebuffer = framebuffer.device_ptr();
 	params.accum_buffer = accum_buffer.device_ptr();
-	params.scene = tlas_handle;
+	params.scene = scene_bvh.handle();
 
 	launch_params.upload(&params, sizeof(LaunchParams));
 }
