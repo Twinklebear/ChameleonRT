@@ -235,7 +235,7 @@ struct HitGroupParams {
 extern "C" __global__ void __closesthit__closest_hit() {
 	const HitGroupParams &params = *(const HitGroupParams*)optixGetSbtDataPointer();
 
-	// TODO: Barycentrics need to be queried via optixGetAttribute_0 & 1
+	// TODO: Barycentrics need to be queried via optixGetTriangleBarycentrics()
 	const uint3 indices = params.index_buffer[optixGetPrimitiveIndex()];
 	const float3 v0 = params.vertex_buffer[indices.x];
 	const float3 v1 = params.vertex_buffer[indices.y];
