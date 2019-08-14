@@ -276,7 +276,6 @@ private:
 };
 
 class TriangleMesh {
-private:
 	D3D12_RAYTRACING_GEOMETRY_DESC geom_desc = { 0 };
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags;
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_DESC post_build_info_desc = { 0 };
@@ -300,7 +299,7 @@ public:
 	 * UAV barrier to wait on the completion of the build before other commands are
 	 * run, but does not submit the command list.
 	 */
-	void enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list) ;
+	void enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list);
 
 	/* Enqueue the BVH compaction copy if the BVH was built with compaction enabled.
 	 * The BVH build must have been enqueued and completed so that the post build info is available

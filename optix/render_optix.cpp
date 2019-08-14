@@ -75,75 +75,26 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 
 void RenderOptiX::set_scene(const Scene &scene) {
 	frame_id = 0;
-	const auto &mesh = scene.meshes[0];
+	const auto &m = scene.meshes[0];
 
-	vertices = optix::Buffer(mesh.vertices.size() * sizeof(glm::vec3));
-	vertices.upload(mesh.vertices);
 
-	indices = optix::Buffer(mesh.indices.size() * sizeof(glm::uvec3));
-	indices.upload(mesh.indices);
+	auto vertices = std::make_shared<optix::Buffer>(m.vertices.size() * sizeof(glm::vec3));
+	vertices->upload(m.vertices);
+
+	auto indices = std::make_shared<optix::Buffer>(m.indices.size() * sizeof(glm::uvec3));
+	indices->upload(m.indices);
 
 	// Build the bottom-level acceleration structure
-	{
-		CUdeviceptr d_verts = vertices.device_ptr();
+	mesh = optix::TriangleMesh(vertices, indices, nullptr, nullptr,
+			OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
 
-		OptixBuildInput inputs = {};
-		inputs.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
+	mesh.enqueue_build(optix_context, cuda_stream);
+	sync_gpu();
 
-		inputs.triangleArray.vertexBuffers = &d_verts;
-		inputs.triangleArray.numVertices = mesh.vertices.size();
-		inputs.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
-		inputs.triangleArray.vertexStrideInBytes = sizeof(glm::vec3);
+	mesh.enqueue_compaction(optix_context, cuda_stream);
+	sync_gpu();
 
-		inputs.triangleArray.indexBuffer = indices.device_ptr();
-		inputs.triangleArray.numIndexTriplets = mesh.indices.size();
-		inputs.triangleArray.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
-		inputs.triangleArray.indexStrideInBytes = sizeof(glm::uvec3);
-
-		uint32_t blas_flags = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
-		inputs.triangleArray.flags = &blas_flags;
-		inputs.triangleArray.numSbtRecords = 1;
-
-		OptixAccelBuildOptions opts = {};
-		opts.buildFlags =  OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
-		opts.operation = OPTIX_BUILD_OPERATION_BUILD;
-		opts.motionOptions.numKeys = 1;
-
-		OptixAccelBufferSizes buf_sizes;
-		CHECK_OPTIX(optixAccelComputeMemoryUsage(optix_context, &opts,
-					&inputs, 1, &buf_sizes));
-
-		std::cout << "BLAS will use output space of "
-			<< pretty_print_count(buf_sizes.outputSizeInBytes)
-			<< " plus scratch of " << pretty_print_count(buf_sizes.tempSizeInBytes) << "\n";
-
-		optix::Buffer build_output(buf_sizes.outputSizeInBytes);
-		optix::Buffer build_scratch(buf_sizes.tempSizeInBytes);
-
-		// Now build the BLAS and query the info about the compacted size
-		optix::Buffer compacted_size_info(sizeof(uint64_t));
-		OptixAccelEmitDesc post_info = {};
-		post_info.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
-		post_info.result = compacted_size_info.device_ptr();
-
-		CHECK_OPTIX(optixAccelBuild(optix_context, cuda_stream, &opts, &inputs, 1,
-					build_scratch.device_ptr(), build_scratch.size(),
-					build_output.device_ptr(), build_output.size(),
-					&blas_handle, &post_info, 1));
-
-		// Wait for the build to complete before compacting
-		sync_gpu();
-
-		uint64_t compacted_size = 0;
-		compacted_size_info.download(&compacted_size, sizeof(uint64_t));
-
-		std::cout << "BLAS will compact to " << pretty_print_count(compacted_size) << "\n";
-		blas_buffer = optix::Buffer(compacted_size);
-
-		CHECK_OPTIX(optixAccelCompact(optix_context, cuda_stream, blas_handle,
-					blas_buffer.device_ptr(), blas_buffer.size(), &blas_handle));
-		sync_gpu();
-	}
+	mesh.finalize();
 
 	// Build the top-level acceleration structure over the "instance"
 	// Note: both for DXR and OptiX we can just put all the triangle meshes
@@ -163,7 +114,7 @@ void RenderOptiX::set_scene(const Scene &scene) {
 		instance.sbtOffset = 0;
 		instance.visibilityMask = 0xff;
 		instance.flags = OPTIX_INSTANCE_FLAG_DISABLE_ANYHIT;
-		instance.traversableHandle = blas_handle;
+		instance.traversableHandle = mesh.handle();
 
 		// Upload the instance data to the GPU
 		instance_buffer = optix::Buffer(sizeof(OptixInstance));
@@ -217,7 +168,7 @@ void RenderOptiX::set_scene(const Scene &scene) {
 	}
 
 	mat_params = optix::Buffer(sizeof(DisneyMaterial));
-	mat_params.upload(&scene.materials[mesh.material_id], sizeof(DisneyMaterial));
+	mat_params.upload(&scene.materials[m.material_id], sizeof(DisneyMaterial));
 
 	build_raytracing_pipeline();
 }
@@ -382,8 +333,8 @@ void RenderOptiX::build_raytracing_pipeline() {
 	for (size_t i = 0; i < hitgroup_progs.size(); ++i) {
 		HitGroupParams hit_rec;
 		optixSbtRecordPackHeader(hitgroup_progs[i], &hit_rec);
-		hit_rec.vertex_buffer = vertices.device_ptr();
-		hit_rec.index_buffer = indices.device_ptr();
+		hit_rec.vertex_buffer = mesh.vertex_buf->device_ptr();
+		hit_rec.index_buffer = mesh.index_buf->device_ptr();
 
 		std::memcpy(sbt_ptr, &hit_rec, sizeof(HitGroupParams));
 		sbt_ptr += hitgroup_entry_size;
@@ -403,8 +354,7 @@ void RenderOptiX::build_raytracing_pipeline() {
 	shader_table.hitgroupRecordStrideInBytes = hitgroup_entry_size;
 	shader_table.hitgroupRecordCount = 2;
 
-	// After building the SBT can I destroy the program groups? Or they must be kept
-	// alive as long as the pipeline lives?
+	// After compiling and linking the pipeline we don't need the module or programs
 	optixProgramGroupDestroy(raygen_prog);
 	for (size_t i = 0; i < miss_progs.size(); ++i) {
 		optixProgramGroupDestroy(miss_progs[i]);

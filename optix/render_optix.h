@@ -13,7 +13,7 @@ struct RenderOptiX : RenderBackend {
 	optix::Buffer framebuffer, accum_buffer,
 		launch_params, mat_params;
 
-	optix::Buffer vertices, indices;
+	optix::TriangleMesh mesh;
 
 	optix::Buffer blas_buffer;
 	OptixTraversableHandle blas_handle = 0;

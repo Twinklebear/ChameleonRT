@@ -821,6 +821,7 @@ void TriangleMesh::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS bvh_inputs = { 0 };
 	bvh_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
 	bvh_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+	// TODO: Support for multiple geom in a single bottom level BVH
 	bvh_inputs.NumDescs = 1;
 	bvh_inputs.pGeometryDescs = &geom_desc;
 	bvh_inputs.Flags = build_flags;

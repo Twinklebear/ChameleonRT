@@ -1,9 +1,12 @@
 #pragma once
 
+#include <memory>
 #include <vector>
 #include <array>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
+#include <optix.h>
+#include <glm/glm.hpp>
 
 #define CHECK_OPTIX(FN) \
 	{ \
@@ -86,6 +89,42 @@ template<typename T, size_t N>
 void Buffer::download(std::array<T, N> &data) {
 	download(data.data(), data.size() * sizeof(T));
 }
+
+class TriangleMesh {
+	OptixBuildInput geom_desc = {};
+	CUdeviceptr vertex_ptr;
+
+	uint32_t geom_flags = OPTIX_GEOMETRY_FLAG_NONE;
+	uint32_t build_flags = OPTIX_BUILD_FLAG_NONE;
+
+	Buffer build_output, scratch, post_build_info, bvh;
+
+	OptixTraversableHandle as_handle;
+
+public:
+	std::shared_ptr<Buffer> vertex_buf, index_buf, normal_buf, uv_buf;
+
+	TriangleMesh() = default;
+	// TODO: Allow other vertex and index formats? Right now this
+	// assumes vec3f verts and uint3 indices
+	TriangleMesh(std::shared_ptr<Buffer> vertex_buf, std::shared_ptr<Buffer> index_buf,
+			std::shared_ptr<Buffer> normal_buf, std::shared_ptr<Buffer> uv_buf,
+			uint32_t geom_flags = OPTIX_GEOMETRY_FLAG_NONE,
+			uint32_t build_flags = OPTIX_BUILD_FLAG_NONE);
+
+	// Enqueue the acceleration structure build construction into the passed stream
+	void enqueue_build(OptixDeviceContext &device, CUstream &stream);
+
+	// Enqueue the acceleration structure compaction into the passed stream
+	void enqueue_compaction(OptixDeviceContext &device, CUstream &stream);
+
+	// Finalize the BVH build structures to release any scratch space
+	void finalize();
+
+	size_t num_tris() const;
+
+	OptixTraversableHandle handle();
+};
 
 }
 
