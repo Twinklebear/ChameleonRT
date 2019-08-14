@@ -8,7 +8,7 @@ add_ptx_embed_library(optix_kernels render_optix.cu
 	INCLUDE_DIRECTORIES ${OptiX_INCLUDE}
 	COMPILE_DEFINITIONS --use_fast_math)
 
-add_library(render_optix render_optix.cpp)
+add_library(render_optix render_optix.cpp optix_utils.cpp)
 
 set_target_properties(render_optix PROPERTIES
 	CXX_STANDARD 14

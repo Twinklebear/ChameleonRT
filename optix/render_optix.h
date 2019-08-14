@@ -2,6 +2,7 @@
 
 #include <optix.h>
 #include "render_backend.h"
+#include "optix_utils.h"
 
 struct RenderOptiX : RenderBackend {
 	CUcontext cuda_context;
@@ -9,26 +10,21 @@ struct RenderOptiX : RenderBackend {
 
 	OptixDeviceContext optix_context;
 
-	// TODO: Technically these should all actually be CUdeviceptr
-	void *framebuffer = nullptr;
-	void *accum_buffer = nullptr;
-	void *launch_params = nullptr;
-	void *mat_params = nullptr;
+	optix::Buffer framebuffer, accum_buffer,
+		launch_params, mat_params;
 
-	void *vertices = nullptr;
-	void *indices = nullptr;
+	optix::Buffer vertices, indices;
 
-	void *blas_buffer = nullptr;
+	optix::Buffer blas_buffer;
 	OptixTraversableHandle blas_handle = 0;
 
-	void *instance_buffer = nullptr;
-	void *tlas_buffer = nullptr;
+	optix::Buffer instance_buffer;
+	optix::Buffer tlas_buffer;
 	OptixTraversableHandle tlas_handle = 0;
 
-	OptixModule module;
 	OptixPipeline pipeline;
 
-	void *shader_table_data = nullptr;
+	optix::Buffer shader_table_data;
 	OptixShaderBindingTable shader_table;
 
 	int width, height;

@@ -53,27 +53,13 @@ RenderOptiX::RenderOptiX() {
 	// TODO: set this val. based on the debug level
 	CHECK_OPTIX(optixDeviceContextSetLogCallback(optix_context, log_callback, nullptr, 4));
 
-	// view params holds the camera params, frame id and pointers to the framebuffer and accum buffer
-	cudaMalloc(&launch_params, sizeof(LaunchParams));
+	launch_params = optix::Buffer(sizeof(LaunchParams));
 }
 
 RenderOptiX::~RenderOptiX() {
-	cudaFree(framebuffer);
-	cudaFree(accum_buffer);
-	cudaFree(launch_params);
-	cudaFree(mat_params);
-
-	cudaFree(vertices);
-	cudaFree(indices);
-
-	cudaFree(blas_buffer);
-
-	cudaFree(instance_buffer);
-	cudaFree(tlas_buffer);
-
-	cudaFree(shader_table_data);
-
-	// TODO: also release the accel structs and other stuff.
+	optixPipelineDestroy(pipeline);
+	optixDeviceContextDestroy(optix_context);
+	cudaStreamDestroy(cuda_stream);
 }
 
 void RenderOptiX::initialize(const int fb_width, const int fb_height) {
@@ -82,30 +68,24 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 	height = fb_height;
 	img.resize(fb_width * fb_height);
 
-	if (framebuffer) {
-		cudaFree(framebuffer);
-		cudaFree(accum_buffer);
-	}
-	cudaMalloc(&framebuffer, img.size() * sizeof(uint32_t));
-	cudaMalloc(&accum_buffer, img.size() * sizeof(glm::vec4));
-	cudaMemset(accum_buffer, 0, img.size() * sizeof(glm::vec4));
+	framebuffer = optix::Buffer(img.size() * sizeof(uint32_t));
+	accum_buffer = optix::Buffer(img.size() * sizeof(glm::vec4));
+	accum_buffer.clear();
 }
 
 void RenderOptiX::set_scene(const Scene &scene) {
 	frame_id = 0;
 	const auto &mesh = scene.meshes[0];
 
-	cudaMalloc(&vertices, mesh.vertices.size() * sizeof(glm::vec3));
-	cudaMemcpy(vertices, mesh.vertices.data(), mesh.vertices.size() * sizeof(glm::vec3),
-			cudaMemcpyHostToDevice);
+	vertices = optix::Buffer(mesh.vertices.size() * sizeof(glm::vec3));
+	vertices.upload(mesh.vertices);
 
-	cudaMalloc(&indices, mesh.indices.size() * sizeof(glm::uvec3));
-	cudaMemcpy(indices, mesh.indices.data(), mesh.indices.size() * sizeof(glm::uvec3),
-			cudaMemcpyHostToDevice);
+	indices = optix::Buffer(mesh.indices.size() * sizeof(glm::uvec3));
+	indices.upload(mesh.indices);
 
 	// Build the bottom-level acceleration structure
 	{
-		CUdeviceptr d_verts = reinterpret_cast<CUdeviceptr>(vertices);
+		CUdeviceptr d_verts = vertices.device_ptr();
 
 		OptixBuildInput inputs = {};
 		inputs.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
@@ -115,7 +95,7 @@ void RenderOptiX::set_scene(const Scene &scene) {
 		inputs.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
 		inputs.triangleArray.vertexStrideInBytes = sizeof(glm::vec3);
 
-		inputs.triangleArray.indexBuffer = reinterpret_cast<CUdeviceptr>(indices);
+		inputs.triangleArray.indexBuffer = indices.device_ptr();
 		inputs.triangleArray.numIndexTriplets = mesh.indices.size();
 		inputs.triangleArray.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
 		inputs.triangleArray.indexStrideInBytes = sizeof(glm::uvec3);
@@ -137,40 +117,32 @@ void RenderOptiX::set_scene(const Scene &scene) {
 			<< pretty_print_count(buf_sizes.outputSizeInBytes)
 			<< " plus scratch of " << pretty_print_count(buf_sizes.tempSizeInBytes) << "\n";
 
-		void *build_output = nullptr;
-		void *build_scratch = nullptr;
-		cudaMalloc(&build_output, buf_sizes.outputSizeInBytes);
-		cudaMalloc(&build_scratch, buf_sizes.tempSizeInBytes);
+		optix::Buffer build_output(buf_sizes.outputSizeInBytes);
+		optix::Buffer build_scratch(buf_sizes.tempSizeInBytes);
 
 		// Now build the BLAS and query the info about the compacted size
-		void *compacted_size_info = nullptr;
-		cudaMalloc(&compacted_size_info, sizeof(uint64_t));
+		optix::Buffer compacted_size_info(sizeof(uint64_t));
 		OptixAccelEmitDesc post_info = {};
 		post_info.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
-		post_info.result = reinterpret_cast<CUdeviceptr>(compacted_size_info);
+		post_info.result = compacted_size_info.device_ptr();
 
 		CHECK_OPTIX(optixAccelBuild(optix_context, cuda_stream, &opts, &inputs, 1,
-					reinterpret_cast<CUdeviceptr>(build_scratch), buf_sizes.tempSizeInBytes,
-					reinterpret_cast<CUdeviceptr>(build_output), buf_sizes.outputSizeInBytes,
+					build_scratch.device_ptr(), build_scratch.size(),
+					build_output.device_ptr(), build_output.size(),
 					&blas_handle, &post_info, 1));
 
 		// Wait for the build to complete before compacting
 		sync_gpu();
-		cudaFree(build_scratch);
-		build_scratch = nullptr;
 
 		uint64_t compacted_size = 0;
-		cudaMemcpy(&compacted_size, compacted_size_info, sizeof(uint64_t), cudaMemcpyDeviceToHost);
-		cudaFree(compacted_size_info);
+		compacted_size_info.download(&compacted_size, sizeof(uint64_t));
 
 		std::cout << "BLAS will compact to " << pretty_print_count(compacted_size) << "\n";
-		cudaMalloc(&blas_buffer, compacted_size);
+		blas_buffer = optix::Buffer(compacted_size);
 
 		CHECK_OPTIX(optixAccelCompact(optix_context, cuda_stream, blas_handle,
-					reinterpret_cast<CUdeviceptr>(blas_buffer), compacted_size,
-					&blas_handle));
+					blas_buffer.device_ptr(), blas_buffer.size(), &blas_handle));
 		sync_gpu();
-		cudaFree(build_output);
 	}
 
 	// Build the top-level acceleration structure over the "instance"
@@ -194,12 +166,12 @@ void RenderOptiX::set_scene(const Scene &scene) {
 		instance.traversableHandle = blas_handle;
 
 		// Upload the instance data to the GPU
-		cudaMalloc(&instance_buffer, sizeof(OptixInstance));
-		cudaMemcpy(instance_buffer, &instance, sizeof(OptixInstance), cudaMemcpyHostToDevice);
+		instance_buffer = optix::Buffer(sizeof(OptixInstance));
+		instance_buffer.upload(&instance, sizeof(OptixInstance));
 
 		OptixBuildInput inputs = {};
 		inputs.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
-		inputs.instanceArray.instances = reinterpret_cast<CUdeviceptr>(instance_buffer);
+		inputs.instanceArray.instances = instance_buffer.device_ptr();
 		inputs.instanceArray.numInstances = 1;
 
 		OptixAccelBuildOptions opts = {};
@@ -215,45 +187,37 @@ void RenderOptiX::set_scene(const Scene &scene) {
 			<< pretty_print_count(buf_sizes.outputSizeInBytes)
 			<< " plus scratch of " << pretty_print_count(buf_sizes.tempSizeInBytes) << "\n";
 
-		void *build_output = nullptr;
-		void *build_scratch = nullptr;
-		cudaMalloc(&build_output, buf_sizes.outputSizeInBytes);
-		cudaMalloc(&build_scratch, buf_sizes.tempSizeInBytes);
+		optix::Buffer build_output(buf_sizes.outputSizeInBytes);
+		optix::Buffer build_scratch(buf_sizes.tempSizeInBytes);
 
 		// Now build the TLAS and query the info about the compacted size
-		void *compacted_size_info = nullptr;
-		cudaMalloc(&compacted_size_info, sizeof(uint64_t));
+		optix::Buffer compacted_size_info(sizeof(uint64_t));
 		OptixAccelEmitDesc post_info = {};
 		post_info.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
-		post_info.result = reinterpret_cast<CUdeviceptr>(compacted_size_info);
+		post_info.result = compacted_size_info.device_ptr();
 
 		CHECK_OPTIX(optixAccelBuild(optix_context, cuda_stream, &opts, &inputs, 1,
-					reinterpret_cast<CUdeviceptr>(build_scratch), buf_sizes.tempSizeInBytes,
-					reinterpret_cast<CUdeviceptr>(build_output), buf_sizes.outputSizeInBytes,
+					build_scratch.device_ptr(), build_scratch.size(),
+					build_output.device_ptr(), build_output.size(),
 					&tlas_handle, &post_info, 1));
 
 		// Wait for the build to complete before compacting
 		sync_gpu();
-		cudaFree(build_scratch);
-		build_scratch = nullptr;
 
 		uint64_t compacted_size = 0;
-		cudaMemcpy(&compacted_size, compacted_size_info, sizeof(uint64_t), cudaMemcpyDeviceToHost);
-		cudaFree(compacted_size_info);
+		compacted_size_info.download(&compacted_size, sizeof(uint64_t));
 
 		std::cout << "TLAS will compact to " << pretty_print_count(compacted_size) << "\n";
-		cudaMalloc(&tlas_buffer, compacted_size);
+		tlas_buffer = optix::Buffer(compacted_size);
 
 		CHECK_OPTIX(optixAccelCompact(optix_context, cuda_stream, tlas_handle,
-					reinterpret_cast<CUdeviceptr>(tlas_buffer), compacted_size,
+					tlas_buffer.device_ptr(), tlas_buffer.size(),
 					&tlas_handle));
 		sync_gpu();
-		cudaFree(build_output);
 	}
 
-	cudaMalloc(&mat_params, sizeof(DisneyMaterial));
-	cudaMemcpy(mat_params, &scene.materials[mesh.material_id], sizeof(DisneyMaterial),
-			cudaMemcpyHostToDevice);
+	mat_params = optix::Buffer(sizeof(DisneyMaterial));
+	mat_params.upload(&scene.materials[mesh.material_id], sizeof(DisneyMaterial));
 
 	build_raytracing_pipeline();
 }
@@ -276,6 +240,7 @@ void RenderOptiX::build_raytracing_pipeline() {
 
 	char log[2048] = {0};
 	size_t log_size = sizeof(log);
+	OptixModule module;
 	CHECK_OPTIX(optixModuleCreateFromPTX(optix_context, &module_opts, &pipeline_opts,
 				reinterpret_cast<const char*>(render_optix_ptx), sizeof(render_optix_ptx),
 				log, &log_size, &module));
@@ -400,7 +365,7 @@ void RenderOptiX::build_raytracing_pipeline() {
 	{
 		RayGenParams rg_rec;
 		optixSbtRecordPackHeader(raygen_prog, &rg_rec);
-		rg_rec.mat_params = reinterpret_cast<CUdeviceptr>(mat_params);
+		rg_rec.mat_params = mat_params.device_ptr();
 
 		std::memcpy(sbt_ptr, &rg_rec, sizeof(RayGenParams));
 		sbt_ptr += raygen_entry_size;
@@ -417,18 +382,18 @@ void RenderOptiX::build_raytracing_pipeline() {
 	for (size_t i = 0; i < hitgroup_progs.size(); ++i) {
 		HitGroupParams hit_rec;
 		optixSbtRecordPackHeader(hitgroup_progs[i], &hit_rec);
-		hit_rec.vertex_buffer = reinterpret_cast<CUdeviceptr>(vertices);
-		hit_rec.index_buffer = reinterpret_cast<CUdeviceptr>(indices);
+		hit_rec.vertex_buffer = vertices.device_ptr();
+		hit_rec.index_buffer = indices.device_ptr();
 
 		std::memcpy(sbt_ptr, &hit_rec, sizeof(HitGroupParams));
 		sbt_ptr += hitgroup_entry_size;
 	}
 
-	cudaMalloc(&shader_table_data, sbt_size);
-	CHECK_CUDA(cudaMemcpy(shader_table_data, host_sbt.data(), sbt_size, cudaMemcpyHostToDevice));
+	shader_table_data = optix::Buffer(sbt_size);
+	shader_table_data.upload(host_sbt);
 
 	std::memset(&shader_table, 0, sizeof(OptixShaderBindingTable));
-	shader_table.raygenRecord = reinterpret_cast<CUdeviceptr>(shader_table_data);
+	shader_table.raygenRecord = shader_table_data.device_ptr();
 
 	shader_table.missRecordBase = shader_table.raygenRecord + raygen_entry_size;
 	shader_table.missRecordStrideInBytes = miss_entry_size;
@@ -437,6 +402,18 @@ void RenderOptiX::build_raytracing_pipeline() {
 	shader_table.hitgroupRecordBase = shader_table.missRecordBase + 2 * miss_entry_size;
 	shader_table.hitgroupRecordStrideInBytes = hitgroup_entry_size;
 	shader_table.hitgroupRecordCount = 2;
+
+	// After building the SBT can I destroy the program groups? Or they must be kept
+	// alive as long as the pipeline lives?
+	optixProgramGroupDestroy(raygen_prog);
+	for (size_t i = 0; i < miss_progs.size(); ++i) {
+		optixProgramGroupDestroy(miss_progs[i]);
+	}
+
+	for (size_t i = 0; i < hitgroup_progs.size(); ++i) {
+		optixProgramGroupDestroy(hitgroup_progs[i]);
+	}
+	optixModuleDestroy(module);
 }
 
 double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -453,8 +430,8 @@ double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	auto start = high_resolution_clock::now();
 
 	CHECK_OPTIX(optixLaunch(pipeline, cuda_stream,
-			reinterpret_cast<CUdeviceptr>(launch_params), sizeof(LaunchParams),
-			&shader_table, width, height, 1));
+				launch_params.device_ptr(), launch_params.size(),
+				&shader_table, width, height, 1));
 
 	// Sync with the GPU to ensure it actually finishes rendering
 	sync_gpu();
@@ -462,7 +439,7 @@ double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	const double render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-9;
 
-	cudaMemcpy(img.data(), framebuffer, img.size() * sizeof(uint32_t), cudaMemcpyDeviceToHost);
+	framebuffer.download(img);
 
 	++frame_id;
 	return img.size() / render_time;
@@ -486,11 +463,11 @@ void RenderOptiX::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &
 	params.cam_dv = glm::vec4(dir_dv, 0);
 	params.cam_dir_top_left = glm::vec4(dir_top_left, 0);
 	params.frame_id = frame_id;
-	params.framebuffer = reinterpret_cast<CUdeviceptr>(framebuffer);
-	params.accum_buffer = reinterpret_cast<CUdeviceptr>(accum_buffer);
+	params.framebuffer = framebuffer.device_ptr();
+	params.accum_buffer = accum_buffer.device_ptr();
 	params.scene = tlas_handle;
 
-	cudaMemcpy(launch_params, &params, sizeof(LaunchParams), cudaMemcpyHostToDevice);
+	launch_params.upload(&params, sizeof(LaunchParams));
 }
 
 void RenderOptiX::sync_gpu() {
