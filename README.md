@@ -51,7 +51,7 @@ Embree directory.
 
 ### OptiX
 
-Dependencies: [OptiX 6](https://developer.nvidia.com/optix), [CUDA 10](https://developer.nvidia.com/cuda-zone).
+Dependencies: [OptiX 7](https://developer.nvidia.com/optix), [CUDA 10](https://developer.nvidia.com/cuda-zone).
 
 To build the OptiX backend run CMake with:
 
