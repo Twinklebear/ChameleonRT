@@ -49,16 +49,16 @@ RenderOptiX::RenderOptiX() {
 
 	cuCtxGetCurrent(&cuda_context);
 
-	CHECK_OPTIX(optixDeviceContextCreate(cuda_context, 0, &optix_context));
+	CHECK_OPTIX(optixDeviceContextCreate(cuda_context, 0, &device));
 	// TODO: set this val. based on the debug level
-	CHECK_OPTIX(optixDeviceContextSetLogCallback(optix_context, log_callback, nullptr, 4));
+	CHECK_OPTIX(optixDeviceContextSetLogCallback(device, log_callback, nullptr, 4));
 
 	launch_params = optix::Buffer(sizeof(LaunchParams));
 }
 
 RenderOptiX::~RenderOptiX() {
 	optixPipelineDestroy(pipeline);
-	optixDeviceContextDestroy(optix_context);
+	optixDeviceContextDestroy(device);
 	cudaStreamDestroy(cuda_stream);
 }
 
@@ -87,10 +87,10 @@ void RenderOptiX::set_scene(const Scene &scene) {
 	mesh = optix::TriangleMesh(vertices, indices, nullptr, nullptr,
 			OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
 
-	mesh.enqueue_build(optix_context, cuda_stream);
+	mesh.enqueue_build(device, cuda_stream);
 	sync_gpu();
 
-	mesh.enqueue_compaction(optix_context, cuda_stream);
+	mesh.enqueue_compaction(device, cuda_stream);
 	sync_gpu();
 
 	mesh.finalize();
@@ -122,10 +122,10 @@ void RenderOptiX::set_scene(const Scene &scene) {
 
 	scene_bvh = optix::TopLevelBVH(instance_buffer, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
 
-	scene_bvh.enqueue_build(optix_context, cuda_stream);
+	scene_bvh.enqueue_build(device, cuda_stream);
 	sync_gpu();
 
-	scene_bvh.enqueue_compaction(optix_context, cuda_stream);
+	scene_bvh.enqueue_compaction(device, cuda_stream);
 	sync_gpu();
 
 	scene_bvh.finalize();
@@ -138,11 +138,6 @@ void RenderOptiX::set_scene(const Scene &scene) {
 
 void RenderOptiX::build_raytracing_pipeline() {
 	// Setup the OptiX Module (DXR equivalent is the Shader Library)
-	OptixModuleCompileOptions module_opts = {};
-	module_opts.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT; 
-	// TODO: pick these based on debug level in cmake
-	module_opts.optLevel = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
-	module_opts.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO;
 
 	OptixPipelineCompileOptions pipeline_opts = {};
 	pipeline_opts.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
@@ -152,93 +147,38 @@ void RenderOptiX::build_raytracing_pipeline() {
 	pipeline_opts.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
 	pipeline_opts.pipelineLaunchParamsVariableName = "launch_params";
 
-	char log[2048] = {0};
-	size_t log_size = sizeof(log);
-	OptixModule module;
-	CHECK_OPTIX(optixModuleCreateFromPTX(optix_context, &module_opts, &pipeline_opts,
-				reinterpret_cast<const char*>(render_optix_ptx), sizeof(render_optix_ptx),
-				log, &log_size, &module));
-	if (log_size > 0) {
-		std::cout << log << "\n";
-	}
+	optix::Module module(device, render_optix_ptx, sizeof(render_optix_ptx),
+			optix::DEFAULT_MODULE_COMPILE_OPTIONS, pipeline_opts);
 
 	// Now build the program pipeline
 	OptixProgramGroupOptions prog_opts = {};
 
 	// Make the raygen program
-	OptixProgramGroup raygen_prog;
-	{
-		OptixProgramGroupDesc prog_desc = {};
-		prog_desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-		prog_desc.raygen.module = module;
-		prog_desc.raygen.entryFunctionName = "__raygen__perspective_camera";
-
-		log_size = sizeof(log);
-		CHECK_OPTIX(optixProgramGroupCreate(optix_context, &prog_desc, 1, &prog_opts,
-					log, &log_size, &raygen_prog));
-		if (log_size > 0) {
-			std::cout << log << "\n";
-		}
-	}
+	OptixProgramGroup raygen_prog = module.create_raygen(device, "__raygen__perspective_camera");
 
 	// Make the miss shader programs, one for each ray type
-	std::array<OptixProgramGroup, 2> miss_progs;
-	{
-		std::array<OptixProgramGroupDesc, 2> prog_desc = {};
-		for (auto &g : prog_desc) {
-			g.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
-			g.miss.module = module;
-		}
-		prog_desc[0].miss.entryFunctionName = "__miss__miss";
-		prog_desc[1].miss.entryFunctionName = "__miss__occlusion_miss";
-
-		log_size = sizeof(log);
-		CHECK_OPTIX(optixProgramGroupCreate(optix_context, prog_desc.data(), prog_desc.size(),
-					&prog_opts, log, &log_size, miss_progs.data()));
-		if (log_size > 0) {
-			std::cout << log << "\n";
-		}
-	}
+	std::array<OptixProgramGroup, 2> miss_progs = {
+		module.create_miss(device, "__miss__miss"),
+		module.create_miss(device, "__miss__occlusion_miss")
+	};
 
 	// Make the hit groups, for each ray type
-	std::array<OptixProgramGroup, 2> hitgroup_progs;
-	{
-		std::array<OptixProgramGroupDesc, 2> prog_desc = {};
-		for (auto &g : prog_desc) {
-			g.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
-			g.hitgroup.moduleCH = module;
-		}
-		prog_desc[0].hitgroup.entryFunctionNameCH = "__closesthit__closest_hit";
-		prog_desc[1].hitgroup.entryFunctionNameCH = "__closesthit__occlusion_hit";
-
-		log_size = sizeof(log);
-		CHECK_OPTIX(optixProgramGroupCreate(optix_context, prog_desc.data(), prog_desc.size(),
-					&prog_opts, log, &log_size, hitgroup_progs.data()));
-		if (log_size > 0) {
-			std::cout << log << "\n";
-		}
-	}
+	std::array<OptixProgramGroup, 2> hitgroup_progs = {
+		 module.create_hitgroup(device, "__closesthit__closest_hit"),
+		 module.create_hitgroup(device, "__closesthit__occlusion_hit")
+	};
 	
 	// Combine the programs into a pipeline
-	{
-		std::array<OptixProgramGroup, 5> pipeline_progs = {
-			raygen_prog, miss_progs[0], miss_progs[1], hitgroup_progs[0], hitgroup_progs[1]
-		};
+	std::vector<OptixProgramGroup> pipeline_progs = {
+		raygen_prog, miss_progs[0], miss_progs[1], hitgroup_progs[0], hitgroup_progs[1]
+	};
 
+	OptixPipelineLinkOptions link_opts = {};
+	link_opts.maxTraceDepth = 1;
+	// TODO pick debug level based on compile config
+	link_opts.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
 
-		OptixPipelineLinkOptions link_opts = {};
-		link_opts.maxTraceDepth = 1;
-		// TODO pick debug level based on compile config
-		link_opts.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
-
-		log_size = sizeof(log);
-		CHECK_OPTIX(optixPipelineCreate(optix_context, &pipeline_opts, &link_opts,
-					pipeline_progs.data(), pipeline_progs.size(),
-					log, &log_size, &pipeline));
-		if (log_size > 0) {
-			std::cout << log << "\n";
-		}
-	}
+	pipeline = optix::compile_pipeline(device, pipeline_opts, link_opts, pipeline_progs);
 
 	// TODO: Compute a tight bound on the stack size we need.
 	// Since the path tracer is iterative, we should only need a very small stack,
@@ -265,57 +205,25 @@ void RenderOptiX::build_raytracing_pipeline() {
 		CHECK_OPTIX(optixPipelineSetStackSize(pipeline, 2 * 1024, 2 * 1024, 2 * 1024, 2));
 	}
 
-	const size_t raygen_entry_size = align_to(sizeof(RayGenParams), OPTIX_SBT_RECORD_ALIGNMENT);
-	const size_t miss_entry_size = align_to(sizeof(MissParams), OPTIX_SBT_RECORD_ALIGNMENT);
-	const size_t hitgroup_entry_size = align_to(sizeof(HitGroupParams), OPTIX_SBT_RECORD_ALIGNMENT);
-	const size_t sbt_size = raygen_entry_size + 2 * miss_entry_size + 2 * hitgroup_entry_size;
-	std::cout << "SBT size: " << pretty_print_count(sbt_size) << "\n"
-		<< "raygen size: " << raygen_entry_size << "\n"
-		<< "miss size: " << miss_entry_size << "\n"
-		<< "hit size: " << hitgroup_entry_size << "\n";
+	shader_table = optix::ShaderTableBuilder()
+		.set_raygen("perspective_camera", raygen_prog, sizeof(RayGenParams))
+		.add_miss("miss", miss_progs[0], 0)
+		.add_miss("occlusion_miss", miss_progs[1], 0)
+		.add_hitgroup("closest_hit", hitgroup_progs[0], sizeof(HitGroupParams))
+		.add_hitgroup("occlusion_hit", hitgroup_progs[1], 0)
+		.build();
 
-	std::vector<uint8_t> host_sbt(sbt_size, 0);
-	uint8_t *sbt_ptr = host_sbt.data();
 	{
-		RayGenParams rg_rec;
-		optixSbtRecordPackHeader(raygen_prog, &rg_rec);
-		rg_rec.mat_params = mat_params.device_ptr();
-
-		std::memcpy(sbt_ptr, &rg_rec, sizeof(RayGenParams));
-		sbt_ptr += raygen_entry_size;
+		RayGenParams &params = shader_table.get_shader_params<RayGenParams>("perspective_camera");
+		params.mat_params = mat_params.device_ptr();
+	}
+	{
+		HitGroupParams &params = shader_table.get_shader_params<HitGroupParams>("closest_hit");
+		params.vertex_buffer = mesh.vertex_buf->device_ptr();
+		params.index_buffer = mesh.index_buf->device_ptr();
 	}
 
-	for (size_t i = 0; i < miss_progs.size(); ++i) {
-		MissParams miss_rec;
-		optixSbtRecordPackHeader(miss_progs[i], &miss_rec);
-
-		std::memcpy(sbt_ptr, &miss_rec, sizeof(MissParams));
-		sbt_ptr += miss_entry_size;
-	}
-
-	for (size_t i = 0; i < hitgroup_progs.size(); ++i) {
-		HitGroupParams hit_rec;
-		optixSbtRecordPackHeader(hitgroup_progs[i], &hit_rec);
-		hit_rec.vertex_buffer = mesh.vertex_buf->device_ptr();
-		hit_rec.index_buffer = mesh.index_buf->device_ptr();
-
-		std::memcpy(sbt_ptr, &hit_rec, sizeof(HitGroupParams));
-		sbt_ptr += hitgroup_entry_size;
-	}
-
-	shader_table_data = optix::Buffer(sbt_size);
-	shader_table_data.upload(host_sbt);
-
-	std::memset(&shader_table, 0, sizeof(OptixShaderBindingTable));
-	shader_table.raygenRecord = shader_table_data.device_ptr();
-
-	shader_table.missRecordBase = shader_table.raygenRecord + raygen_entry_size;
-	shader_table.missRecordStrideInBytes = miss_entry_size;
-	shader_table.missRecordCount = 2;
-
-	shader_table.hitgroupRecordBase = shader_table.missRecordBase + 2 * miss_entry_size;
-	shader_table.hitgroupRecordStrideInBytes = hitgroup_entry_size;
-	shader_table.hitgroupRecordCount = 2;
+	shader_table.upload();
 
 	// After compiling and linking the pipeline we don't need the module or programs
 	optixProgramGroupDestroy(raygen_prog);
@@ -326,7 +234,6 @@ void RenderOptiX::build_raytracing_pipeline() {
 	for (size_t i = 0; i < hitgroup_progs.size(); ++i) {
 		optixProgramGroupDestroy(hitgroup_progs[i]);
 	}
-	optixModuleDestroy(module);
 }
 
 double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -344,7 +251,7 @@ double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	CHECK_OPTIX(optixLaunch(pipeline, cuda_stream,
 				launch_params.device_ptr(), launch_params.size(),
-				&shader_table, width, height, 1));
+				&shader_table.table(), width, height, 1));
 
 	// Sync with the GPU to ensure it actually finishes rendering
 	sync_gpu();

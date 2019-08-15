@@ -8,7 +8,7 @@ struct RenderOptiX : RenderBackend {
 	CUcontext cuda_context;
 	CUstream cuda_stream;
 
-	OptixDeviceContext optix_context;
+	OptixDeviceContext device;
 
 	optix::Buffer framebuffer, accum_buffer,
 		launch_params, mat_params;
@@ -19,8 +19,7 @@ struct RenderOptiX : RenderBackend {
 
 	OptixPipeline pipeline;
 
-	optix::Buffer shader_table_data;
-	OptixShaderBindingTable shader_table;
+	optix::ShaderTable shader_table;
 
 	int width, height;
 	uint32_t frame_id = 0;

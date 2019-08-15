@@ -206,7 +206,6 @@ Module::Module(OptixDeviceContext &device,
 {
 	char log[2048] = {0};
 	size_t log_size = sizeof(log);
-	OptixModule module;
 	CHECK_OPTIX(optixModuleCreateFromPTX(device, &compile_opts, &pipeline_opts,
 				reinterpret_cast<const char*>(ptx), ptex_len,
 				log, &log_size, &module));
@@ -254,24 +253,24 @@ OptixProgramGroup Module::create_hitgroup(OptixDeviceContext &device, const std:
 	OptixProgramGroupDesc desc = {};
 	desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
 	desc.hitgroup.moduleCH = module;
-	desc.hitgroup.entryFunctionNameCH = function.c_str();
+	desc.hitgroup.entryFunctionNameCH = closest_hit.c_str();
 
 	if (!any_hit.empty()) {
 		desc.hitgroup.moduleAH = module;
-		desc.hitgroup.entryFunctionNameAH = function.c_str();
+		desc.hitgroup.entryFunctionNameAH = any_hit.c_str();
 	}
 
 	if (!intersection.empty()) {
 		desc.hitgroup.moduleIS = module;
-		desc.hitgroup.entryFunctionNameIS = function.c_str();
+		desc.hitgroup.entryFunctionNameIS = intersection.c_str();
 	}
 
 	return create_program(device, desc);
 }
 
 OptixPipeline compile_pipeline(OptixDeviceContext &device,
-		OptixPipelineCompileOptions &compile_opts,
-		OptixPipelineLinkOptions &link_opts,
+		const OptixPipelineCompileOptions &compile_opts,
+		const OptixPipelineLinkOptions &link_opts,
 		const std::vector<OptixProgramGroup> &programs)
 {
 	OptixPipeline pipeline;
@@ -286,10 +285,102 @@ OptixPipeline compile_pipeline(OptixDeviceContext &device,
 	return pipeline;
 }
 
-ShaderTable::ShaderTable(std::vector<uint8_t> cpu_shader_table,
-		std::unordered_map<std::string, size_t> record_offsets)
+ShaderRecord::ShaderRecord(const std::string &name, OptixProgramGroup program, size_t param_size)
+	: name(name), program(program), param_size(param_size)
+{}
+
+ShaderTable::ShaderTable(const ShaderRecord &raygen_record,
+		const std::vector<ShaderRecord> &miss_records,
+		const std::vector<ShaderRecord> &hitgroup_records)
 {
-	// TODO
+	const size_t raygen_entry_size = align_to(raygen_record.param_size + OPTIX_SBT_RECORD_HEADER_SIZE,
+			OPTIX_SBT_RECORD_ALIGNMENT);
+
+	size_t miss_entry_size = 0;
+	for (const auto &m : miss_records) {
+		miss_entry_size = std::max(miss_entry_size,
+				align_to(m.param_size + OPTIX_SBT_RECORD_HEADER_SIZE, OPTIX_SBT_RECORD_ALIGNMENT));
+	}
+
+	size_t hitgroup_entry_size = 0;
+	for (const auto &h : hitgroup_records) {
+		hitgroup_entry_size = std::max(hitgroup_entry_size,
+				align_to(h.param_size + OPTIX_SBT_RECORD_HEADER_SIZE, OPTIX_SBT_RECORD_ALIGNMENT));
+	}
+
+
+	const size_t sbt_size = raygen_entry_size + miss_records.size() * miss_entry_size
+		+ hitgroup_records.size() * hitgroup_entry_size;
+	std::cout << "SBT will require " << pretty_print_count(sbt_size) << "\n";
+
+	shader_table = Buffer(sbt_size);
+	cpu_shader_table.resize(sbt_size, 0);
+
+	binding_table.raygenRecord = shader_table.device_ptr();
+
+	binding_table.missRecordBase = binding_table.raygenRecord + raygen_entry_size;
+	binding_table.missRecordStrideInBytes = miss_entry_size;
+	binding_table.missRecordCount = miss_records.size();
+
+	binding_table.hitgroupRecordBase = binding_table.missRecordBase + miss_records.size() * miss_entry_size;
+	binding_table.hitgroupRecordStrideInBytes = hitgroup_entry_size;
+	binding_table.hitgroupRecordCount = hitgroup_records.size();
+
+	size_t offset = 0;
+	record_offsets[raygen_record.name] = offset;
+	optixSbtRecordPackHeader(raygen_record.program, &cpu_shader_table[offset]);
+	offset += raygen_entry_size;
+
+	for (const auto &m : miss_records) {
+		record_offsets[m.name] = offset;
+		optixSbtRecordPackHeader(m.program, &cpu_shader_table[offset]);
+		std::cout << "MissRecord '" << m.name << "' at " << offset << "\n";
+		offset += miss_entry_size;
+	}
+
+	for (const auto &h : hitgroup_records) {
+		record_offsets[h.name] = offset;
+		optixSbtRecordPackHeader(h.program, &cpu_shader_table[offset]);
+		std::cout << "HitGroupRecord '" << h.name << "' at " << offset << "\n";
+		offset += hitgroup_entry_size;
+	}
+}
+
+uint8_t* ShaderTable::get_shader_record(const std::string &shader) {
+	return &cpu_shader_table[record_offsets[shader]];;
+}
+
+void ShaderTable::upload() {
+	shader_table.upload(cpu_shader_table);
+}
+
+const OptixShaderBindingTable& ShaderTable::table() {
+	return binding_table;
+}
+
+ShaderTableBuilder& ShaderTableBuilder::set_raygen(const std::string &name,
+		OptixProgramGroup program, size_t param_size)
+{
+	raygen_record = ShaderRecord(name, program, param_size);
+	return *this;
+}
+
+ShaderTableBuilder& ShaderTableBuilder::add_miss(const std::string &name,
+		OptixProgramGroup program, size_t param_size)
+{
+	miss_records.emplace_back(name, program, param_size);
+	return *this;
+}
+
+ShaderTableBuilder& ShaderTableBuilder::add_hitgroup(const std::string &name,
+		OptixProgramGroup program, size_t param_size)
+{
+	hitgroup_records.emplace_back(name, program, param_size);
+	return *this;
+}
+
+ShaderTable ShaderTableBuilder::build() {
+	return ShaderTable(raygen_record, miss_records, hitgroup_records);
 }
 
 }

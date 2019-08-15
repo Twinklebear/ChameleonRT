@@ -46,13 +46,8 @@ struct RayGenParams {
 #ifdef __CUDA_ARCH__
 	MaterialParams *mat_params;
 #else
-	__align__(OPTIX_SBT_RECORD_ALIGNMENT) char header[OPTIX_SBT_RECORD_HEADER_SIZE];
 	CUdeviceptr mat_params;
 #endif
-};
-
-struct MissParams {
-	__align__(OPTIX_SBT_RECORD_ALIGNMENT) char header[OPTIX_SBT_RECORD_HEADER_SIZE];
 };
 
 struct HitGroupParams {
@@ -60,7 +55,6 @@ struct HitGroupParams {
 	float3 *vertex_buffer;
 	uint3 *index_buffer;
 #else
-	__align__(OPTIX_SBT_RECORD_ALIGNMENT) char header[OPTIX_SBT_RECORD_HEADER_SIZE];
 	CUdeviceptr vertex_buffer;
 	CUdeviceptr index_buffer;
 #endif

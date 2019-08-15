@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 #include <array>
+#include <unordered_map>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <optix.h>
@@ -188,11 +189,20 @@ public:
 };
 
 OptixPipeline compile_pipeline(OptixDeviceContext &device,
-		OptixPipelineCompileOptions &compile_opts,
-		OptixPipelineLinkOptions &link_opts,
+		const OptixPipelineCompileOptions &compile_opts,
+		const OptixPipelineLinkOptions &link_opts,
 		const std::vector<OptixProgramGroup> &programs);
 
 class ShaderTableBuilder;
+
+struct ShaderRecord {
+	std::string name;
+	OptixProgramGroup program = {};
+	size_t param_size = 0;
+
+	ShaderRecord() = default;
+	ShaderRecord(const std::string &name, OptixProgramGroup program, size_t param_size);
+};
 
 class ShaderTable {
 	Buffer shader_table;
@@ -202,31 +212,32 @@ class ShaderTable {
 
 	std::unordered_map<std::string, size_t> record_offsets;
 
-	ShaderTable(std::vector<uint8_t> cpu_shader_table,
-			std::unordered_map<std::string, size_t> record_offsets);
-
+	ShaderTable(const ShaderRecord &raygen_record,
+			const std::vector<ShaderRecord> &miss_records,
+			const std::vector<ShaderRecord> &hitgroup_records);
+			
 	friend class ShaderTableBuilder;
 public:
+	ShaderTable() = default;
 	
 	/* Get the pointer to the start of the shader record, where the header
 	 * is written
 	 */
-	void* get_shader_record(const std::string &shader);
+	uint8_t* get_shader_record(const std::string &shader);
 
 	// Get a pointer to the parameters portion of the record for the shader
 	template<typename T>
-	T* get_shader_params(const std::string &shader);
+	T& get_shader_params(const std::string &shader);
 
 	void upload();
 
-	OptixShaderBindingTable table();
+	const OptixShaderBindingTable& table();
 };
 
-struct ShaderRecord {
-	std::string name;
-	OptixProgramGroup program;
-	size_t param_size;
-};
+template<typename T>
+T& ShaderTable::get_shader_params(const std::string &shader) {
+	return *reinterpret_cast<T*>(get_shader_record(shader) + OPTIX_SBT_RECORD_HEADER_SIZE);
+}
 
 class ShaderTableBuilder {
 	ShaderRecord raygen_record;
