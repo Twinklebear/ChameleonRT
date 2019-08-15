@@ -106,9 +106,11 @@ Scene Scene::load_obj(const std::string &file) {
 		d.specular_transmission = glm::clamp(1.f - m.dissolve, 0.f, 1.f);
 
 		if (!m.diffuse_texname.empty()) {
+			std::string path = m.diffuse_texname;
+			canonicalize_path(path);
 			if (texture_ids.find(m.diffuse_texname) == texture_ids.end()) {
 				texture_ids[m.diffuse_texname] = scene.textures.size();
-				scene.textures.emplace_back(obj_base_dir + "/" + m.diffuse_texname, m.diffuse_texname);
+				scene.textures.emplace_back(obj_base_dir + "/" + path, m.diffuse_texname);
 			}
 			d.color_tex_id = texture_ids[m.diffuse_texname];
 		}
