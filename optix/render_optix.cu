@@ -237,6 +237,7 @@ extern "C" __global__ void __closesthit__closest_hit() {
 	payload.uv = uv;
 	payload.t_hit = optixGetRayTmax();
 	payload.material_id = optixGetInstanceId();
+	// TODO: we need to transform the normal back to world-space
 	payload.normal = normal;
 }
 
