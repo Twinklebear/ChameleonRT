@@ -27,7 +27,12 @@ __device__ RayPayload make_ray_payload() {
 }
 
 __device__ void unpack_material(const MaterialParams &p, float2 uv, DisneyMaterial &mat) {
-	mat.base_color = p.base_color;
+	if (p.has_color_tex) {
+		mat.base_color = make_float3(tex2D<float4>(p.color_texture, uv.x, uv.y));
+	} else {
+		mat.base_color = p.base_color;
+	}
+
 	mat.metallic = p.metallic;
 	mat.specular = p.specular;
 	mat.roughness = p.roughness;
@@ -118,7 +123,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
 	const uint2 screen = make_uint2(optixGetLaunchDimensions().x, optixGetLaunchDimensions().y);
 	const uint32_t pixel_idx = pixel.x + pixel.y * screen.x;
 
-	PCGRand rng = get_rng((pixel.x + pixel.y * screen.x) * (launch_params.frame_id + 1));
+	PCGRand rng = get_rng(pixel_idx * (launch_params.frame_id + 1));
 	const float2 d = make_float2(pixel.x + pcg32_randomf(rng), pixel.y + pcg32_randomf(rng)) / make_float2(screen);
 	float3 ray_dir = normalize(d.x * make_float3(launch_params.cam_du)
 			+ d.y * make_float3(launch_params.cam_dv) + make_float3(launch_params.cam_dir_top_left));
@@ -212,14 +217,24 @@ extern "C" __global__ void __miss__occlusion_miss() {
 extern "C" __global__ void __closesthit__closest_hit() {
 	const HitGroupParams &params = get_shader_params<HitGroupParams>();
 
-	// TODO: Barycentrics need to be queried via optixGetTriangleBarycentrics()
+	const float2 bary = optixGetTriangleBarycentrics();
 	const uint3 indices = params.index_buffer[optixGetPrimitiveIndex()];
 	const float3 v0 = params.vertex_buffer[indices.x];
 	const float3 v1 = params.vertex_buffer[indices.y];
 	const float3 v2 = params.vertex_buffer[indices.z];
 	const float3 normal = normalize(cross(v1 - v0, v2 - v0));
 
+	float2 uv = make_float2(0.f);
+	if (params.uv_buffer) {
+		float2 uva = params.uv_buffer[indices.x];
+		float2 uvb = params.uv_buffer[indices.y];
+		float2 uvc = params.uv_buffer[indices.z];
+		uv = (1.f - bary.x - bary.y) * uva
+			+ bary.x * uvb + bary.y * uvc;
+	}
+
 	RayPayload &payload = get_payload<RayPayload>();
+	payload.uv = uv;
 	payload.t_hit = optixGetRayTmax();
 	payload.material_id = optixGetInstanceId();
 	payload.normal = normal;

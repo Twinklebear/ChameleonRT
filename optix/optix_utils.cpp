@@ -49,6 +49,78 @@ void Buffer::clear() {
 	CHECK_CUDA(cudaMemset(ptr, 0, buf_size));
 }
 
+Texture2D::Texture2D(glm::uvec2 dims, cudaChannelFormatDesc channel_format)
+	: tdims(dims), channel_format(channel_format)
+{
+	CHECK_CUDA(cudaMallocArray(&data, &channel_format, dims.x, dims.y));
+
+	cudaResourceDesc res_desc = {};
+	res_desc.resType = cudaResourceTypeArray;
+	res_desc.res.array.array = data;
+
+	cudaTextureDesc tex_desc = {};
+	tex_desc.addressMode[0] = cudaAddressModeWrap;
+	tex_desc.addressMode[1] = cudaAddressModeWrap;
+	tex_desc.filterMode = cudaFilterModeLinear;
+	tex_desc.readMode = cudaReadModeNormalizedFloat;
+	tex_desc.sRGB = 0;
+	tex_desc.normalizedCoords = 1;
+	tex_desc.maxAnisotropy = 1;
+	tex_desc.maxMipmapLevelClamp = 1;
+	tex_desc.minMipmapLevelClamp = 1;
+	tex_desc.mipmapFilterMode = cudaFilterModePoint;
+
+	CHECK_CUDA(cudaCreateTextureObject(&texture, &res_desc, &tex_desc, nullptr));
+}
+
+Texture2D::~Texture2D() {
+	if (data) {
+		cudaFreeArray(data);
+		cudaDestroyTextureObject(texture);
+	}
+}
+
+Texture2D::Texture2D(Texture2D &&t)
+	: tdims(t.tdims),
+	channel_format(t.channel_format),
+	data(t.data),
+	texture(t.texture)
+{
+	t.tdims = glm::uvec2(0);
+	t.data = 0;
+	t.texture = 0;
+}
+
+Texture2D& Texture2D::operator=(Texture2D &&t) {
+	if (data) {
+		cudaFreeArray(data);
+		cudaDestroyTextureObject(texture);
+	}
+	tdims = t.tdims;
+	channel_format = t.channel_format;
+	data = t.data;
+	texture = t.texture;
+
+	t.tdims = glm::uvec2(0);
+	t.data = 0;
+	t.texture = 0;
+	return *this;
+}
+
+void Texture2D::upload(const uint8_t *buf) {
+	const size_t pixel_size = (channel_format.x + channel_format.y + channel_format.z + channel_format.w) / 8;
+	const size_t pitch = pixel_size * tdims.x;
+	CHECK_CUDA(cudaMemcpy2DToArray(data, 0, 0, buf, pitch, pitch, tdims.y, cudaMemcpyHostToDevice));
+}
+
+cudaTextureObject_t Texture2D::handle() {
+	return texture;
+}
+
+glm::uvec2 Texture2D::dims() const {
+	return tdims;
+}
+
 TriangleMesh::TriangleMesh(std::shared_ptr<Buffer> vertex_buf, std::shared_ptr<Buffer> index_buf,
 		std::shared_ptr<Buffer> normal_buf, std::shared_ptr<Buffer> uv_buf,
 		uint32_t g_flags, uint32_t build_flags)
@@ -86,9 +158,11 @@ void TriangleMesh::enqueue_build(OptixDeviceContext &device, CUstream &stream) {
 	OptixAccelBufferSizes buf_sizes;
 	CHECK_OPTIX(optixAccelComputeMemoryUsage(device, &opts, &geom_desc, 1, &buf_sizes));
 
+#if 0
 	std::cout << "BLAS will use output space of "
 		<< pretty_print_count(buf_sizes.outputSizeInBytes)
 		<< " plus scratch of " << pretty_print_count(buf_sizes.tempSizeInBytes) << "\n";
+#endif
 
 	build_output = Buffer(buf_sizes.outputSizeInBytes);
 	scratch = Buffer(buf_sizes.tempSizeInBytes);
@@ -109,7 +183,9 @@ void TriangleMesh::enqueue_compaction(OptixDeviceContext &device, CUstream &stre
 	uint64_t compacted_size = 0;
 	post_build_info.download(&compacted_size, sizeof(uint64_t));
 
+#if 0
 	std::cout << "BLAS will compact to " << pretty_print_count(compacted_size) << "\n";
+#endif
 	bvh = optix::Buffer(compacted_size);
 
 	CHECK_OPTIX(optixAccelCompact(device, stream, as_handle,
@@ -175,7 +251,9 @@ void TopLevelBVH::enqueue_compaction(OptixDeviceContext &device, CUstream &strea
 	uint64_t compacted_size = 0;
 	post_build_info.download(&compacted_size, sizeof(uint64_t));
 
+#if 0
 	std::cout << "TLAS will compact to " << pretty_print_count(compacted_size) << "\n";
+#endif
 	bvh = optix::Buffer(compacted_size);
 
 	CHECK_OPTIX(optixAccelCompact(device, stream, as_handle,
@@ -308,7 +386,6 @@ ShaderTable::ShaderTable(const ShaderRecord &raygen_record,
 				align_to(h.param_size + OPTIX_SBT_RECORD_HEADER_SIZE, OPTIX_SBT_RECORD_ALIGNMENT));
 	}
 
-
 	const size_t sbt_size = raygen_entry_size + miss_records.size() * miss_entry_size
 		+ hitgroup_records.size() * hitgroup_entry_size;
 	std::cout << "SBT will require " << pretty_print_count(sbt_size) << "\n";
@@ -334,14 +411,12 @@ ShaderTable::ShaderTable(const ShaderRecord &raygen_record,
 	for (const auto &m : miss_records) {
 		record_offsets[m.name] = offset;
 		optixSbtRecordPackHeader(m.program, &cpu_shader_table[offset]);
-		std::cout << "MissRecord '" << m.name << "' at " << offset << "\n";
 		offset += miss_entry_size;
 	}
 
 	for (const auto &h : hitgroup_records) {
 		record_offsets[h.name] = offset;
 		optixSbtRecordPackHeader(h.program, &cpu_shader_table[offset]);
-		std::cout << "HitGroupRecord '" << h.name << "' at " << offset << "\n";
 		offset += hitgroup_entry_size;
 	}
 }

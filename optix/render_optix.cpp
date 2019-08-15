@@ -89,8 +89,20 @@ void RenderOptiX::set_scene(const Scene &scene) {
 		auto indices = std::make_shared<optix::Buffer>(mesh.indices.size() * sizeof(glm::uvec3));
 		indices->upload(mesh.indices);
 
+		std::shared_ptr<optix::Buffer> uvs = nullptr;
+		if (!mesh.uvs.empty()) {
+			uvs = std::make_shared<optix::Buffer>(mesh.uvs.size() * sizeof(glm::vec2));
+			uvs->upload(mesh.uvs);
+		}
+
+		std::shared_ptr<optix::Buffer> normals = nullptr;
+		if (!mesh.normals.empty()) {
+			normals = std::make_shared<optix::Buffer>(mesh.normals.size() * sizeof(glm::vec3));
+			normals->upload(mesh.normals);
+		}
+
 		// Build the bottom-level acceleration structure
-		meshes.emplace_back(vertices, indices, nullptr, nullptr,
+		meshes.emplace_back(vertices, indices, normals, uvs,
 				OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
 
 		meshes.back().enqueue_build(device, cuda_stream);
@@ -141,9 +153,42 @@ void RenderOptiX::set_scene(const Scene &scene) {
 
 	scene_bvh.finalize();
 
-	std::cout << "mat param size: " << sizeof(MaterialParams) << ", sizeof disney: " << sizeof(DisneyMaterial) << "\n";
-	mat_params = optix::Buffer(scene.materials.size() * sizeof(DisneyMaterial));
-	mat_params.upload(scene.materials);
+	const cudaChannelFormatDesc channel_format = cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
+	for (const auto &t : scene.textures) {
+		textures.emplace_back(glm::uvec2(t.width, t.height), channel_format);
+		textures.back().upload(t.img.data());
+	}
+
+	std::vector<MaterialParams> material_params;
+	material_params.reserve(scene.materials.size());
+	for (const auto &m : scene.materials) {
+		MaterialParams p;
+
+		p.base_color = m.base_color;
+		p.metallic = m.metallic;
+		p.specular = m.specular;
+		p.roughness = m.roughness;
+		p.specular_tint = m.specular_tint;
+		p.anisotropy = m.anisotropy;
+		p.sheen = m.sheen;
+		p.sheen_tint = m.sheen_tint;
+		p.clearcoat = m.clearcoat;
+		p.clearcoat_gloss = m.clearcoat_gloss;
+		p.ior = m.ior;
+		p.specular_transmission = m.specular_transmission;
+
+		if (m.color_tex_id != -1) {
+			p.has_color_tex = 1;
+			p.color_texture = textures[m.color_tex_id].handle();
+		} else {
+			p.has_color_tex = 0;
+		}
+
+		material_params.push_back(p);
+	}
+
+	mat_params = optix::Buffer(material_params.size() * sizeof(MaterialParams));
+	mat_params.upload(material_params);
 
 	build_raytracing_pipeline();
 }
@@ -198,6 +243,7 @@ void RenderOptiX::build_raytracing_pipeline() {
 	// In the renderer, the raygen will call the closest hit or miss shader, which
 	// make no further calls.
 	{
+#if 0
 		OptixStackSizes stack_sizes;
 		optixProgramGroupGetStackSize(raygen_prog, &stack_sizes);
 		std::cout << "RayGen: " << stack_sizes << "\n";
@@ -210,10 +256,9 @@ void RenderOptiX::build_raytracing_pipeline() {
 			optixProgramGroupGetStackSize(hitgroup_progs[i], &stack_sizes);
 			std::cout << "HitGroup[" << i << "]: " << stack_sizes << "\n";
 		}
-
+#endif
 		// TODO: It seems like even setting these values to something clearly too small
 		// doesn't crash the renderer like I'd expect it too?
-
 		CHECK_OPTIX(optixPipelineSetStackSize(pipeline, 2 * 1024, 2 * 1024, 2 * 1024, 2));
 	}
 
@@ -239,6 +284,18 @@ void RenderOptiX::build_raytracing_pipeline() {
 		HitGroupParams &params = shader_table.get_shader_params<HitGroupParams>("closest_hit_" + std::to_string(i));
 		params.vertex_buffer = meshes[i].vertex_buf->device_ptr();
 		params.index_buffer = meshes[i].index_buf->device_ptr();
+
+		if (meshes[i].uv_buf) {
+			params.uv_buffer = meshes[i].uv_buf->device_ptr();
+		} else {
+			params.uv_buffer = 0;
+		}
+
+		if (meshes[i].normal_buf) {
+			params.normal_buffer = meshes[i].normal_buf->device_ptr();
+		} else {
+			params.normal_buffer = 0;
+		}
 	}
 
 	shader_table.upload();

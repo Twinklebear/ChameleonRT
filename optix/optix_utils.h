@@ -91,6 +91,29 @@ void Buffer::download(std::array<T, N> &data) {
 	download(data.data(), data.size() * sizeof(T));
 }
 
+class Texture2D {
+	glm::uvec2 tdims = glm::uvec2(0);
+	cudaChannelFormatDesc channel_format;
+	cudaArray_t data = 0;
+	cudaTextureObject_t texture = 0;
+
+public:
+	Texture2D(glm::uvec2 dims, cudaChannelFormatDesc channel_format);
+	~Texture2D();
+
+	Texture2D(Texture2D &&t);
+	Texture2D& operator=(Texture2D &&t);
+
+	Texture2D(const Texture2D &) = delete;
+	Texture2D& operator=(const Texture2D &) = delete;
+
+	void upload(const uint8_t *buf);
+
+	cudaTextureObject_t handle();
+
+	glm::uvec2 dims() const;
+};
+
 class TriangleMesh {
 	OptixBuildInput geom_desc = {};
 	CUdeviceptr vertex_ptr;

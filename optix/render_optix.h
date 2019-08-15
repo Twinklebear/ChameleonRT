@@ -14,6 +14,7 @@ struct RenderOptiX : RenderBackend {
 		launch_params, mat_params;
 
 	std::vector<optix::TriangleMesh> meshes;
+	std::vector<optix::Texture2D> textures;
 
 	optix::TopLevelBVH scene_bvh;
 

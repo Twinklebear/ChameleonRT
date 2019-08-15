@@ -24,9 +24,8 @@ struct MaterialParams {
 	float specular_transmission;
 	float pad1, pad2;
 
-	float pad3,pad4,pad5,pad6;
-	//int32_t color_tex_id;
-	//glm::ivec3 tex_pad = glm::ivec3(-1);
+	int has_color_tex;
+	cudaTextureObject_t color_texture;
 };
 
 struct LaunchParams {
@@ -67,9 +66,13 @@ struct HitGroupParams {
 #ifdef __CUDA_ARCH__
 	float3 *vertex_buffer;
 	uint3 *index_buffer;
+	float2 *uv_buffer;
+	float3 *normal_buffer;
 #else
 	CUdeviceptr vertex_buffer;
 	CUdeviceptr index_buffer;
+	CUdeviceptr uv_buffer;
+	CUdeviceptr normal_buffer;
 #endif
 };
 
