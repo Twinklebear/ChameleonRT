@@ -10,6 +10,7 @@
 #include "optix_utils.h"
 #include "render_optix_embedded_ptx.h"
 #include "render_optix.h"
+#include "types.h"
 #include "optix_params.h"
 
 void log_callback(unsigned int level, const char *tag, const char *msg, void*) {
@@ -75,33 +76,41 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 
 void RenderOptiX::set_scene(const Scene &scene) {
 	frame_id = 0;
-	const auto &m = scene.meshes[0];
+	
+	// TODO: We can actually run all these uploads and BVH builds in parallel
+	// using cudaMemcpyAsync, and the builds in parallel on multiple streams.
+	// Some helpers for managing the temp upload heap buf allocation and queuing of
+	// the commands would help to make it easier to write the parallel load version which
+	// won't exceed the GPU VRAM
+	for (const auto &mesh : scene.meshes) {
+		auto vertices = std::make_shared<optix::Buffer>(mesh.vertices.size() * sizeof(glm::vec3));
+		vertices->upload(mesh.vertices);
 
-	auto vertices = std::make_shared<optix::Buffer>(m.vertices.size() * sizeof(glm::vec3));
-	vertices->upload(m.vertices);
+		auto indices = std::make_shared<optix::Buffer>(mesh.indices.size() * sizeof(glm::uvec3));
+		indices->upload(mesh.indices);
 
-	auto indices = std::make_shared<optix::Buffer>(m.indices.size() * sizeof(glm::uvec3));
-	indices->upload(m.indices);
+		// Build the bottom-level acceleration structure
+		meshes.emplace_back(vertices, indices, nullptr, nullptr,
+				OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
 
-	// Build the bottom-level acceleration structure
-	mesh = optix::TriangleMesh(vertices, indices, nullptr, nullptr,
-			OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
+		meshes.back().enqueue_build(device, cuda_stream);
+		sync_gpu();
 
-	mesh.enqueue_build(device, cuda_stream);
-	sync_gpu();
+		meshes.back().enqueue_compaction(device, cuda_stream);
+		sync_gpu();
 
-	mesh.enqueue_compaction(device, cuda_stream);
-	sync_gpu();
+		meshes.back().finalize();
+	}
 
-	mesh.finalize();
-
-	// Build the top-level acceleration structure over the "instance"
+	// Build the top-level acceleration structure over the instances
+	// For now we don't really have "instances" since OBJ doesn't support this.
 	// Note: both for DXR and OptiX we can just put all the triangle meshes
 	// in one bottom-level AS, and use the geometry order indexed hit groups to
 	// set the params properly for each geom. However, eventually I do plan to support
 	// instancing so it's easiest to learn the whole path on a simple case.
-	auto instance_buffer = std::make_shared<optix::Buffer>(sizeof(OptixInstance));
-	{
+	std::vector<OptixInstance> instances;
+	instances.reserve(meshes.size());
+	for (size_t i = 0; i < meshes.size(); ++ i) {
 		OptixInstance instance = {};
 
 		// Same as DXR, the transform is 3x4 row-major
@@ -109,16 +118,18 @@ void RenderOptiX::set_scene(const Scene &scene) {
 		instance.transform[4 + 1] = 1.f;
 		instance.transform[2 * 4 + 2] = 1.f;
 
-		instance.instanceId = 0;
-		// sbt offset = DXR instanceContributionToHitGroupIndex
-		instance.sbtOffset = 0;
+		instance.instanceId = i;
+		instance.sbtOffset = i * NUM_RAY_TYPES;
 		instance.visibilityMask = 0xff;
 		instance.flags = OPTIX_INSTANCE_FLAG_DISABLE_ANYHIT;
-		instance.traversableHandle = mesh.handle();
+		instance.traversableHandle = meshes[i].handle();
 
-		// Upload the instance data to the GPU
-		instance_buffer->upload(&instance, sizeof(OptixInstance));
+		instances.push_back(instance);
 	}
+
+	// Upload the instance data to the GPU
+	auto instance_buffer = std::make_shared<optix::Buffer>(instances.size() * sizeof(OptixInstance));
+	instance_buffer->upload(instances);
 
 	scene_bvh = optix::TopLevelBVH(instance_buffer, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
 
@@ -130,8 +141,8 @@ void RenderOptiX::set_scene(const Scene &scene) {
 
 	scene_bvh.finalize();
 
-	mat_params = optix::Buffer(sizeof(DisneyMaterial));
-	mat_params.upload(&scene.materials[m.material_id], sizeof(DisneyMaterial));
+	mat_params = optix::Buffer(scene.materials.size() * sizeof(DisneyMaterial));
+	mat_params.upload(scene.materials);
 
 	build_raytracing_pipeline();
 }
@@ -205,22 +216,28 @@ void RenderOptiX::build_raytracing_pipeline() {
 		CHECK_OPTIX(optixPipelineSetStackSize(pipeline, 2 * 1024, 2 * 1024, 2 * 1024, 2));
 	}
 
-	shader_table = optix::ShaderTableBuilder()
+	auto shader_table_builder = optix::ShaderTableBuilder()
 		.set_raygen("perspective_camera", raygen_prog, sizeof(RayGenParams))
 		.add_miss("miss", miss_progs[0], 0)
-		.add_miss("occlusion_miss", miss_progs[1], 0)
-		.add_hitgroup("closest_hit", hitgroup_progs[0], sizeof(HitGroupParams))
-		.add_hitgroup("occlusion_hit", hitgroup_progs[1], 0)
-		.build();
+		.add_miss("occlusion_miss", miss_progs[1], 0);
+
+	// Hitgroups for each instance
+	for (size_t i = 0; i < meshes.size(); ++i) {
+		shader_table_builder.add_hitgroup("closest_hit_" + std::to_string(i), hitgroup_progs[0], sizeof(HitGroupParams))
+			.add_hitgroup("occlusion_hit_" + std::to_string(i), hitgroup_progs[1], 0);
+	}
+
+	shader_table = shader_table_builder.build();
 
 	{
 		RayGenParams &params = shader_table.get_shader_params<RayGenParams>("perspective_camera");
 		params.mat_params = mat_params.device_ptr();
 	}
-	{
-		HitGroupParams &params = shader_table.get_shader_params<HitGroupParams>("closest_hit");
-		params.vertex_buffer = mesh.vertex_buf->device_ptr();
-		params.index_buffer = mesh.index_buf->device_ptr();
+
+	for (size_t i = 0; i < meshes.size(); ++i) {
+		HitGroupParams &params = shader_table.get_shader_params<HitGroupParams>("closest_hit_" + std::to_string(i));
+		params.vertex_buffer = meshes[i].vertex_buf->device_ptr();
+		params.index_buffer = meshes[i].index_buf->device_ptr();
 	}
 
 	shader_table.upload();

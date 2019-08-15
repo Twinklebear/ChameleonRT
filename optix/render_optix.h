@@ -13,7 +13,7 @@ struct RenderOptiX : RenderBackend {
 	optix::Buffer framebuffer, accum_buffer,
 		launch_params, mat_params;
 
-	optix::TriangleMesh mesh;
+	std::vector<optix::TriangleMesh> meshes;
 
 	optix::TopLevelBVH scene_bvh;
 
