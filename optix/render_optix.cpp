@@ -208,7 +208,6 @@ void RenderOptiX::build_raytracing_pipeline() {
 			optix::DEFAULT_MODULE_COMPILE_OPTIONS, pipeline_opts);
 
 	// Now build the program pipeline
-	OptixProgramGroupOptions prog_opts = {};
 
 	// Make the raygen program
 	OptixProgramGroup raygen_prog = module.create_raygen(device, "__raygen__perspective_camera");
