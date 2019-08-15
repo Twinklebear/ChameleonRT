@@ -142,6 +142,9 @@ extern "C" __global__ void __raygen__perspective_camera() {
 		const float3 hit_p = ray_origin + payload.color_dist.w * ray_dir;
 		float3 v_x, v_y;
 		float3 v_z = make_float3(payload.normal_hit);
+		if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
+			v_z = -v_z;
+		}
 		ortho_basis(v_x, v_y, v_z);
 
 		illum = illum + path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
