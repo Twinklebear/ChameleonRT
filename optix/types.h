@@ -15,11 +15,8 @@
 #define NUM_RAY_TYPES 2
 #define MAX_PATH_DEPTH 5
 
-#ifndef uint64_t
+#ifdef __CUDA_ARCH__
 typedef unsigned long long uint64_t;
-#endif
-
-#ifndef uint32_t
 typedef unsigned int uint32_t;
 #endif
 
