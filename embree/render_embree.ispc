@@ -10,10 +10,22 @@ struct ViewParams {
 	uint32_t frame_id;
 };
 
+struct Instance {
+	const float4 *uniform vertex_buf;
+	const int3 *uniform index_buf;
+	const float3 *uniform normal_buf;
+	const float2 *uniform uv_buf;
+	const float *uniform transform;
+	const float *uniform inv_transform;
+	const uniform uint32_t material_id;
+};
+
 struct SceneContext {
 	RTCScene scene;
-	uniform RTCIntersectContext *uniform coherent_context;
-	uniform RTCIntersectContext *uniform incoherent_context;
+	RTCIntersectContext *uniform coherent_context;
+	RTCIntersectContext *uniform incoherent_context;
+	Instance *uniform instances;
+	DisneyMaterial *uniform materials;
 };
 
 struct Tile {
@@ -23,16 +35,15 @@ struct Tile {
 	float *uniform data;
 };
 
-float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform ray_hits,
-		const DisneyMaterial &mat, uint32_t px, PCGRand &rng);
+float3 shade_path(const SceneContext *uniform scene,
+		const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng);
 
 export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
-		void *uniform _tile, const void *uniform _view_params, void *uniform _mat)
+		void *uniform _tile, const void *uniform _view_params)
 {
 	SceneContext *uniform scene = (SceneContext *uniform)_scene;
 	const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
 	Tile *uniform tile = (Tile *uniform)_tile;
-	DisneyMaterial *uniform mat = (DisneyMaterial *uniform)_mat;
 
 	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
@@ -82,10 +93,7 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		const uint32_t pixel = ray * 3;
 		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 2));
 
-		// TODO: Bit of a hack to make the single material a "varying" b/c in the future we'll have multiple
-		// materials, so it will be varying
-		DisneyMaterial dmat = *mat;
-		const float3 color = shade_path(scene, ray_hit, dmat, ray, rng);
+		const float3 color = shade_path(scene, ray_hit, ray, rng);
 		
 		tile->data[pixel] = (color.x + view_params->frame_id * tile->data[pixel]) / (view_params->frame_id + 1);
 		tile->data[pixel + 1] = (color.y + view_params->frame_id * tile->data[pixel + 1]) / (view_params->frame_id + 1);
@@ -93,8 +101,9 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	}
 }
 
-float3 sample_direct_light(const SceneContext *uniform scene, const DisneyMaterial &mat,
-	const float3 &hit_p, const float3 &n, const float3 &v_x, const float3 &v_y, const float3 &w_o, PCGRand &rng)
+float3 sample_direct_light(const SceneContext *uniform scene,
+		const DisneyMaterial &mat, const float3 &hit_p, const float3 &n,
+		const float3 &v_x, const float3 &v_y, const float3 &w_o, PCGRand &rng)
 {
 	float3 illum = make_float3(0.f);
 
@@ -170,8 +179,8 @@ float3 miss_shader(const float3 &dir) {
 	return make_float3(0.1f);
 }
 
-float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform ray_hits,
-		const DisneyMaterial &mat, uint32_t px, PCGRand &rng)
+float3 shade_path(const SceneContext *uniform scene,
+		const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng)
 {
 	if (ray_hits->hit.geomID[px] == (uint32_t)-1) {
 		float3 dir = make_float3(ray_hits->ray.dir_x[px], ray_hits->ray.dir_y[px], ray_hits->ray.dir_z[px]);
@@ -180,9 +189,14 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 
 	// Initial hit data since we're coming from the stream of primary hits
 	float3 hit_p;
-	hit_p.x = ray_hits->ray.org_x[px] + ray_hits->ray.tfar[px] * ray_hits->ray.dir_x[px];
-	hit_p.y = ray_hits->ray.org_y[px] + ray_hits->ray.tfar[px] * ray_hits->ray.dir_y[px];
-	hit_p.z = ray_hits->ray.org_z[px] + ray_hits->ray.tfar[px] * ray_hits->ray.dir_z[px];
+	hit_p.x = ray_hits->ray.org_x[px]
+		+ ray_hits->ray.tfar[px] * ray_hits->ray.dir_x[px];
+
+	hit_p.y = ray_hits->ray.org_y[px]
+		+ ray_hits->ray.tfar[px] * ray_hits->ray.dir_y[px];
+
+	hit_p.z = ray_hits->ray.org_z[px]
+		+ ray_hits->ray.tfar[px] * ray_hits->ray.dir_z[px];
 
 	float3 normal;
 	normal.x = ray_hits->hit.Ng_x[px];
@@ -195,8 +209,7 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 	w_o.y = -ray_hits->ray.dir_y[px];
 	w_o.z = -ray_hits->ray.dir_z[px];
 
-	const float3 light_emission = make_float3(1.0);
-	const float3 light_dir = normalize(make_float3(-0.5, 0.8, 0.5));
+	Instance *instance = &scene->instances[ray_hits->hit.instID[0][px]];
 
 	RTCRayHit path_ray;
 	int bounce = 0;
@@ -204,10 +217,16 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 	float3 path_throughput = make_float3(1.0);
 	float3 w_i;
 	do {
+		const DisneyMaterial mat = scene->materials[instance->material_id];
+
 		// Direct light sampling
 		float3 v_x, v_y;
+		if (mat.specular_transmission == 0.f && dot(w_o, normal) < 0.0) {
+			normal = neg(normal);
+		}
 		ortho_basis(v_x, v_y, normal);
-		illum = illum + path_throughput * sample_direct_light(scene, mat, hit_p, normal, v_x, v_y, w_o, rng);
+		illum = illum + path_throughput
+			* sample_direct_light(scene, mat, hit_p, normal, v_x, v_y, w_o, rng);
 
 		// Sample the BSDF to continue the ray
 		float pdf;
@@ -217,7 +236,9 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 		}
 		path_throughput = path_throughput * bsdf * abs(dot(w_i, normal)) / pdf;
 
-		if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
+		if (path_throughput.x < EPSILON && path_throughput.y < EPSILON
+				&& path_throughput.z < EPSILON)
+		{
 			break;
 		}
 
@@ -239,6 +260,8 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 			normal.y = path_ray.hit.Ng_y;
 			normal.z = path_ray.hit.Ng_z;
 			normal = normalize(normal);
+
+			instance = &scene->instances[path_ray.hit.instID[0]];
 
 			w_o = neg(w_i);
 		}

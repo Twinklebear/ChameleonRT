@@ -4,6 +4,14 @@ struct float3 {
 	float x, y, z;
 };
 
+struct float4 {
+	float x, y, z, w;
+};
+
+struct int3 {
+	int x, y, z;
+};
+
 float3 make_float3(float x, float y, float z) {
 	float3 v;
 	v.x = x;

@@ -6,7 +6,7 @@ add_ispc_library(ispc_kernels render_embree.ispc
 	INCLUDE_DIRECTORIES ${EMBREE_INCLUDE_DIRS} ${CMAKE_CURRENT_LIST_DIR}
 	COMPILE_DEFINITIONS -O2)
 
-add_library(render_embree render_embree.cpp)
+add_library(render_embree render_embree.cpp embree_utils.cpp)
 
 set_target_properties(render_embree PROPERTIES
 	CXX_STANDARD 14
