@@ -156,5 +156,95 @@ public:
 	OptixTraversableHandle handle();
 };
 
+const static OptixModuleCompileOptions DEFAULT_MODULE_COMPILE_OPTIONS = {
+	OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
+	OPTIX_COMPILE_OPTIMIZATION_DEFAULT,
+	OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO
+};
+
+class Module {
+	OptixModule module;
+
+	OptixProgramGroup create_program(OptixDeviceContext &device, OptixProgramGroupDesc &desc);
+
+public:
+	Module(OptixDeviceContext &device,
+			const unsigned char *ptx, size_t ptex_len,
+			const OptixModuleCompileOptions &compile_opts,
+			const OptixPipelineCompileOptions &pipeline_opts);
+
+	~Module();
+
+	Module(const Module &) = delete;
+	Module& operator=(const Module &) = delete;
+	
+	OptixProgramGroup create_raygen(OptixDeviceContext &device, const std::string &function);
+
+	OptixProgramGroup create_miss(OptixDeviceContext &device, const std::string &function);
+
+	OptixProgramGroup create_hitgroup(OptixDeviceContext &device, const std::string &closest_hit,
+			const std::string &any_hit = "",
+			const std::string &intersection = "");
+};
+
+OptixPipeline compile_pipeline(OptixDeviceContext &device,
+		OptixPipelineCompileOptions &compile_opts,
+		OptixPipelineLinkOptions &link_opts,
+		const std::vector<OptixProgramGroup> &programs);
+
+class ShaderTableBuilder;
+
+class ShaderTable {
+	Buffer shader_table;
+	std::vector<uint8_t> cpu_shader_table;
+
+	OptixShaderBindingTable binding_table = {};
+
+	std::unordered_map<std::string, size_t> record_offsets;
+
+	ShaderTable(std::vector<uint8_t> cpu_shader_table,
+			std::unordered_map<std::string, size_t> record_offsets);
+
+	friend class ShaderTableBuilder;
+public:
+	
+	/* Get the pointer to the start of the shader record, where the header
+	 * is written
+	 */
+	void* get_shader_record(const std::string &shader);
+
+	// Get a pointer to the parameters portion of the record for the shader
+	template<typename T>
+	T* get_shader_params(const std::string &shader);
+
+	void upload();
+
+	OptixShaderBindingTable table();
+};
+
+struct ShaderRecord {
+	std::string name;
+	OptixProgramGroup program;
+	size_t param_size;
+};
+
+class ShaderTableBuilder {
+	ShaderRecord raygen_record;
+	std::vector<ShaderRecord> miss_records;
+	std::vector<ShaderRecord> hitgroup_records;
+
+public:
+	ShaderTableBuilder& set_raygen(const std::string &name,
+			OptixProgramGroup program, size_t param_size);
+
+	ShaderTableBuilder& add_miss(const std::string &name,
+			OptixProgramGroup program, size_t param_size);
+
+	ShaderTableBuilder& add_hitgroup(const std::string &name,
+			OptixProgramGroup program, size_t param_size);
+
+	ShaderTable build();
+};
+
 }
 

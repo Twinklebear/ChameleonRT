@@ -77,7 +77,6 @@ void RenderOptiX::set_scene(const Scene &scene) {
 	frame_id = 0;
 	const auto &m = scene.meshes[0];
 
-
 	auto vertices = std::make_shared<optix::Buffer>(m.vertices.size() * sizeof(glm::vec3));
 	vertices->upload(m.vertices);
 

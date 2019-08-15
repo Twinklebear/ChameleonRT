@@ -199,5 +199,98 @@ OptixTraversableHandle TopLevelBVH::handle() {
 	return as_handle;
 }
 
+Module::Module(OptixDeviceContext &device,
+		const unsigned char *ptx, size_t ptex_len,
+		const OptixModuleCompileOptions &compile_opts,
+		const OptixPipelineCompileOptions &pipeline_opts)
+{
+	char log[2048] = {0};
+	size_t log_size = sizeof(log);
+	OptixModule module;
+	CHECK_OPTIX(optixModuleCreateFromPTX(device, &compile_opts, &pipeline_opts,
+				reinterpret_cast<const char*>(ptx), ptex_len,
+				log, &log_size, &module));
+	if (log_size > 0) {
+		std::cout << log << "\n";
+	}
+}
+
+
+Module::~Module() {
+	optixModuleDestroy(module);
+}
+
+OptixProgramGroup Module::create_program(OptixDeviceContext &device, OptixProgramGroupDesc &desc) {
+	OptixProgramGroupOptions opts = {};
+	OptixProgramGroup prog;
+	char log[2048];
+	size_t log_size = sizeof(log);
+	CHECK_OPTIX(optixProgramGroupCreate(device, &desc, 1, &opts, log, &log_size, &prog));
+	if (log_size > 0) {
+		std::cout << log << "\n";
+	}
+	return prog;
+}
+
+OptixProgramGroup Module::create_raygen(OptixDeviceContext &device, const std::string &function) {
+	OptixProgramGroupDesc desc = {};
+	desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+	desc.raygen.module = module;
+	desc.raygen.entryFunctionName = function.c_str();
+	return create_program(device, desc);
+}
+
+OptixProgramGroup Module::create_miss(OptixDeviceContext &device, const std::string &function) {
+	OptixProgramGroupDesc desc = {};
+	desc.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
+	desc.miss.module = module;
+	desc.miss.entryFunctionName = function.c_str();
+	return create_program(device, desc);
+}
+
+OptixProgramGroup Module::create_hitgroup(OptixDeviceContext &device, const std::string &closest_hit,
+		const std::string &any_hit, const std::string &intersection)
+{
+	OptixProgramGroupDesc desc = {};
+	desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+	desc.hitgroup.moduleCH = module;
+	desc.hitgroup.entryFunctionNameCH = function.c_str();
+
+	if (!any_hit.empty()) {
+		desc.hitgroup.moduleAH = module;
+		desc.hitgroup.entryFunctionNameAH = function.c_str();
+	}
+
+	if (!intersection.empty()) {
+		desc.hitgroup.moduleIS = module;
+		desc.hitgroup.entryFunctionNameIS = function.c_str();
+	}
+
+	return create_program(device, desc);
+}
+
+OptixPipeline compile_pipeline(OptixDeviceContext &device,
+		OptixPipelineCompileOptions &compile_opts,
+		OptixPipelineLinkOptions &link_opts,
+		const std::vector<OptixProgramGroup> &programs)
+{
+	OptixPipeline pipeline;
+	char log[2048];
+	size_t log_size = sizeof(log);
+	CHECK_OPTIX(optixPipelineCreate(device, &compile_opts, &link_opts,
+				programs.data(), programs.size(),
+				log, &log_size, &pipeline));
+	if (log_size > 0) {
+		std::cout << log << "\n";
+	}
+	return pipeline;
+}
+
+ShaderTable::ShaderTable(std::vector<uint8_t> cpu_shader_table,
+		std::unordered_map<std::string, size_t> record_offsets)
+{
+	// TODO
+}
+
 }
 
