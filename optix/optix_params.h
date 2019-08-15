@@ -4,16 +4,29 @@
 // won't need to worry about any layout/padding weirdness
 struct MaterialParams {
 #ifdef __CUDA_ARCH__
-	float4 basecolor_metallic;
-	float4 spec_rough_spectint_aniso;
-	float4 sheen_sheentint_clearc_ccgloss;
-	float4 ior_spectrans;
+	float3 base_color;
 #else
-	glm::vec4 basecolor_metallic;
-	glm::vec4 spec_rough_spectint_aniso;
-	glm::vec4 sheen_sheentint_clearc_ccgloss;
-	glm::vec4 ior_spectrans;
+	glm::vec3 base_color;
 #endif
+	float metallic;
+
+	float specular;
+	float roughness;
+	float specular_tint;
+	float anisotropy;
+
+	float sheen;
+	float sheen_tint;
+	float clearcoat;
+	float clearcoat_gloss;
+
+	float ior;
+	float specular_transmission;
+	float pad1, pad2;
+
+	float pad3,pad4,pad5,pad6;
+	//int32_t color_tex_id;
+	//glm::ivec3 tex_pad = glm::ivec3(-1);
 };
 
 struct LaunchParams {

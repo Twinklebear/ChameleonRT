@@ -9,17 +9,36 @@ extern "C" {
 }
 
 struct RayPayload {
-	// float3 color, float depth
-	float4 color_dist;
-	// float3 normal, float 1/0 if occlusion hit
-	float4 normal_hit;
+	float2 uv;
+	float t_hit;
+	uint32_t material_id;
+
+	float3 normal;
+	float pad;
 };
 
 __device__ RayPayload make_ray_payload() {
 	RayPayload p;
-	p.color_dist = make_float4(0.f);
-	p.normal_hit = make_float4(0.f);
+	p.uv = make_float2(0.f);
+	p.t_hit = -1.f;
+	p.material_id = 0;
+	p.normal = make_float3(0.f);
 	return p;
+}
+
+__device__ void unpack_material(const MaterialParams &p, float2 uv, DisneyMaterial &mat) {
+	mat.base_color = p.base_color;
+	mat.metallic = p.metallic;
+	mat.specular = p.specular;
+	mat.roughness = p.roughness;
+	mat.specular_tint = p.specular_tint;
+	mat.anisotropy = p.anisotropy;
+	mat.sheen = p.sheen;
+	mat.sheen_tint = p.sheen_tint;
+	mat.clearcoat = p.clearcoat;
+	mat.clearcoat_gloss = p.clearcoat_gloss;
+	mat.ior = p.ior;
+	mat.specular_transmission = p.specular_transmission;
 }
 
 __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &hit_p,
@@ -56,7 +75,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 				OCCLUSION_RAY, 0, OCCLUSION_RAY,
 				payload_ptr.x, payload_ptr.y);
 
-		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_payload.normal_hit.w == 0.f) {
+		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_payload.t_hit <= 0.f) {
 			float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
 			float w = power_heuristic(1.f, light_pdf, 1.f, bsdf_pdf);
 			illum = bsdf * light.emission * abs(dot(light_dir, n)) * w / light_pdf;
@@ -76,14 +95,14 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 			if (light_pdf >= EPSILON) {
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
 
-				shadow_payload.normal_hit = make_float4(0.f);
+				shadow_payload.t_hit = -1.f;
 
 				optixTrace(launch_params.scene, hit_p, w_i, EPSILON, light_dist, 0,
 						0xff, OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
 						OCCLUSION_RAY, 0, OCCLUSION_RAY,
 						payload_ptr.x, payload_ptr.y);
 
-				if (shadow_payload.normal_hit.w == 0.f) {
+				if (shadow_payload.t_hit <= 0.f) {
 					illum = illum + bsdf * light.emission * abs(dot(w_i, n)) * w / bsdf_pdf;
 				}
 			}
@@ -107,18 +126,6 @@ extern "C" __global__ void __raygen__perspective_camera() {
 	float3 ray_origin = make_float3(launch_params.cam_pos);
 
 	DisneyMaterial mat;
-	mat.base_color = make_float3(params.mat_params[0].basecolor_metallic);
-	mat.metallic = params.mat_params[0].basecolor_metallic.w;
-	mat.specular = params.mat_params[0].spec_rough_spectint_aniso.x;
-	mat.roughness = params.mat_params[0].spec_rough_spectint_aniso.y;
-	mat.specular_tint = params.mat_params[0].spec_rough_spectint_aniso.z;
-	mat.anisotropy = params.mat_params[0].spec_rough_spectint_aniso.w;
-	mat.sheen = params.mat_params[0].sheen_sheentint_clearc_ccgloss.x;
-	mat.sheen_tint = params.mat_params[0].sheen_sheentint_clearc_ccgloss.y;
-	mat.clearcoat = params.mat_params[0].sheen_sheentint_clearc_ccgloss.z;
-	mat.clearcoat_gloss = params.mat_params[0].sheen_sheentint_clearc_ccgloss.w;
-	mat.ior = params.mat_params[0].ior_spectrans.x;
-	mat.specular_transmission = params.mat_params[0].ior_spectrans.y;
 
 	const float3 light_emission = make_float3(1.0);
 	int bounce = 0;
@@ -133,15 +140,17 @@ extern "C" __global__ void __raygen__perspective_camera() {
 				0xff, OPTIX_RAY_FLAG_DISABLE_ANYHIT, PRIMARY_RAY, 0, PRIMARY_RAY,
 				payload_ptr.x, payload_ptr.y);
 
-		if (payload.color_dist.w <= 0) {
-			illum = illum + path_throughput * make_float3(payload.color_dist);
+		if (payload.t_hit <= 0.f) {
+			illum = illum + path_throughput * payload.normal;
 			break;
 		}
 
+		unpack_material(params.mat_params[payload.material_id], payload.uv, mat);
+
 		const float3 w_o = -ray_dir;
-		const float3 hit_p = ray_origin + payload.color_dist.w * ray_dir;
+		const float3 hit_p = ray_origin + payload.t_hit * ray_dir;
 		float3 v_x, v_y;
-		float3 v_z = make_float3(payload.normal_hit);
+		float3 v_z = payload.normal;
 		if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
 			v_z = -v_z;
 		}
@@ -179,7 +188,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
 
 extern "C" __global__ void __miss__miss() {
 	RayPayload &payload = get_payload<RayPayload>();
-	payload.color_dist.w = -1;
+	payload.t_hit = -1.f;
 	float3 dir = optixGetWorldRayDirection();
 	// Apply our miss "shader" to draw the checkerboard background
 	float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
@@ -189,19 +198,15 @@ extern "C" __global__ void __miss__miss() {
 	int check_y = v * 10.f;
 
 	if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
-		payload.color_dist.x = 0.5f;
-		payload.color_dist.y = 0.5f;
-		payload.color_dist.z = 0.5f;
+		payload.normal = make_float3(0.5f);
 	} else {
-		payload.color_dist.x = 0.1f;
-		payload.color_dist.y = 0.1f;
-		payload.color_dist.z = 0.1f;
+		payload.normal = make_float3(0.1f);
 	}
 }
 
 extern "C" __global__ void __miss__occlusion_miss() {
 	RayPayload &payload = get_payload<RayPayload>();
-	payload.color_dist.w = -1;
+	payload.t_hit = -1.f;
 }
 
 extern "C" __global__ void __closesthit__closest_hit() {
@@ -215,12 +220,13 @@ extern "C" __global__ void __closesthit__closest_hit() {
 	const float3 normal = normalize(cross(v1 - v0, v2 - v0));
 
 	RayPayload &payload = get_payload<RayPayload>();
-	payload.color_dist = make_float4(0.9, 0.9, 0.9, optixGetRayTmax());
-	payload.normal_hit = make_float4(normal, 1.f);
+	payload.t_hit = optixGetRayTmax();
+	payload.material_id = optixGetInstanceId();
+	payload.normal = normal;
 }
 
 extern "C" __global__ void __closesthit__occlusion_hit() {
 	RayPayload &payload = get_payload<RayPayload>();
-	payload.normal_hit.w = 1;
+	payload.t_hit = optixGetRayTmax();
 }
 

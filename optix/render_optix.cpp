@@ -118,7 +118,7 @@ void RenderOptiX::set_scene(const Scene &scene) {
 		instance.transform[4 + 1] = 1.f;
 		instance.transform[2 * 4 + 2] = 1.f;
 
-		instance.instanceId = i;
+		instance.instanceId = scene.meshes[i].material_id;
 		instance.sbtOffset = i * NUM_RAY_TYPES;
 		instance.visibilityMask = 0xff;
 		instance.flags = OPTIX_INSTANCE_FLAG_DISABLE_ANYHIT;
@@ -141,6 +141,7 @@ void RenderOptiX::set_scene(const Scene &scene) {
 
 	scene_bvh.finalize();
 
+	std::cout << "mat param size: " << sizeof(MaterialParams) << ", sizeof disney: " << sizeof(DisneyMaterial) << "\n";
 	mat_params = optix::Buffer(scene.materials.size() * sizeof(DisneyMaterial));
 	mat_params.upload(scene.materials);
 
