@@ -91,10 +91,8 @@ TopLevelBVH::TopLevelBVH(RTCDevice &device, const std::vector<std::shared_ptr<In
 	: handle(rtcNewScene(device)),
 	instances(inst)
 {
-	int id = 0;
 	for (const auto &i : instances) {
-		int x = rtcAttachGeometry(handle, i->handle);
-		++id;
+		rtcAttachGeometry(handle, i->handle);
 		ispc_instances.push_back(*i);
 	}
 	rtcCommitScene(handle);
