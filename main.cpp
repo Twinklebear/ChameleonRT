@@ -195,23 +195,26 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	}
 	renderer->initialize(win_width, win_height);
 
-	std::string scene_file = args[2];
-	canonicalize_path(scene_file);
-	Scene scene = Scene::load_obj(scene_file);
-	std::cout << "Scene '" << scene_file << "' loaded:\n"
-		<< "# Triangles: " << scene.total_tris() << "\n"
-		<< "# Meshes: " << scene.meshes.size() << "\n"
-		<< "# Materials: " << scene.materials.size() << "\n"
-		<< "# Textures: " << scene.textures.size() << "\n"
-		<< "# Lights: " << scene.lights.size() << "\n";
+	size_t total_tris = 0;
+	std::string num_tris;
+	{
+		std::string scene_file = args[2];
+		canonicalize_path(scene_file);
+		Scene scene = Scene::load_obj(scene_file);
+		std::cout << "Scene '" << scene_file << "' loaded:\n"
+			<< "# Triangles: " << scene.total_tris() << "\n"
+			<< "# Meshes: " << scene.meshes.size() << "\n"
+			<< "# Materials: " << scene.materials.size() << "\n"
+			<< "# Textures: " << scene.textures.size() << "\n"
+			<< "# Lights: " << scene.lights.size() << "\n";
+
+		total_tris = std::accumulate(scene.meshes.begin(), scene.meshes.end(), size_t(0),
+				[](const size_t &s, const Mesh &m) { return s + m.indices.size(); });
+		num_tris = pretty_print_count(total_tris);
+		renderer->set_scene(scene);
+	}
 
 	ArcballCamera camera(eye, center, up);
-
-	const size_t total_tris = std::accumulate(scene.meshes.begin(), scene.meshes.end(), size_t(0),
-			[](const size_t &s, const Mesh &m) { return s + m.indices.size(); });
-	const std::string num_tris = pretty_print_count(total_tris);
-	renderer->set_scene(scene);
-
 	Shader display_render(fullscreen_quad_vs, display_texture_fs);
 
 	GLuint render_texture;
