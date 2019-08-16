@@ -252,7 +252,6 @@ float3 disney_microfacet_transmission_isotropic(in const DisneyMaterial mat, in 
 	float eta_o = entering ? 1.f : mat.ior;
 	float eta_i = entering ? mat.ior : 1.f;
 	float3 w_h = normalize(w_o + w_i * eta_i / eta_o);
-	float3 spec = mat.specular_transmission * mat.base_color;
 
 	float alpha = max(0.001, mat.roughness * mat.roughness);
 	float d = gtr_2(abs(dot(n, w_h)), alpha);
@@ -266,7 +265,7 @@ float3 disney_microfacet_transmission_isotropic(in const DisneyMaterial mat, in 
 	float c = abs(o_dot_h) / abs(dot(w_o, n)) * abs(i_dot_h) / abs(dot(w_i, n))
 		* pow2(eta_o) / pow2(eta_o * o_dot_h + eta_i * i_dot_h);
 
-	return spec * c * (1.f - f) * g * d;
+	return mat.base_color * c * (1.f - f) * g * d;
 }
 
 float3 disney_microfacet_anisotropic(in const DisneyMaterial mat, in const float3 n,
