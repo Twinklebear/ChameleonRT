@@ -60,7 +60,6 @@ struct ISPCInstance {
 	const float *transform = nullptr;
 	const float *inv_transform = nullptr;
 	uint32_t material_id = 0;
-	uint32_t num_tris = 0;
 
 	ISPCInstance() = default;
 	ISPCInstance(const Instance &instance);

@@ -1,5 +1,4 @@
 #include <limits>
-#include <iostream>
 #include <algorithm>
 #include <glm/ext.hpp>
 #include "embree_utils.h"
@@ -78,8 +77,7 @@ ISPCInstance::ISPCInstance(const Instance &instance)
 	index_buf(instance.mesh->index_buf.data()),
 	transform(glm::value_ptr(instance.transform)),
 	inv_transform(glm::value_ptr(instance.inv_transform)),
-	material_id(instance.material_id),
-	num_tris(instance.mesh->index_buf.size())
+	material_id(instance.material_id)
 {
 	if (!instance.mesh->normal_buf.empty()) {
 		normal_buf = instance.mesh->normal_buf.data();

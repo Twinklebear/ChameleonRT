@@ -39,7 +39,6 @@ struct ISPCInstance {
 	const float *uniform transform;
 	const float *uniform inv_transform;
 	const uniform uint32_t material_id;
-	const uniform uint32_t num_tris;
 };
 
 struct SceneContext {
@@ -276,14 +275,7 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 		const ISPCInstance *instance = &scene->instances[inst];
 
 		float2 uv = make_float2(0.f, 0.f);
-		if (prim >= instance->num_tris) {
-			print("=====\n");
-			print("Prim % >= num tris % on bounce %!??\n", prim, instance->num_tris, bounce);
-			print("inst: %, geom %\n", inst, geom);
-			print("====\n");
-			break;
-		}
-		uint3 indices = instance->index_buf[prim];
+		const uint3 indices = instance->index_buf[prim];
 
 		if (instance->uv_buf) {
 			float2 uva = instance->uv_buf[indices.x];

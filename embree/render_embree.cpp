@@ -107,7 +107,6 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	auto start = high_resolution_clock::now();
 
 	uint8_t *color = reinterpret_cast<uint8_t*>(img.data());
-	//for (uint32_t tile_id = 0; tile_id < ntiles.x * ntiles.y; ++tile_id) {
 	tbb::parallel_for(uint32_t(0), ntiles.x * ntiles.y, [&](uint32_t tile_id) {
 		const glm::uvec2 tile = glm::uvec2(tile_id % ntiles.x, tile_id / ntiles.x);
 		const glm::uvec2 tile_pos = tile * tile_size;
