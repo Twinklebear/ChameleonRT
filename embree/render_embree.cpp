@@ -2,14 +2,18 @@
 #include <algorithm>
 #include <iostream>
 #include <chrono>
+#include <xmmintrin.h>
+#include <pmmintrin.h>
 #include <tbb/parallel_for.h>
 #include <glm/ext.hpp>
 #include "render_embree.h"
 #include "render_embree_ispc.h"
 
-RenderEmbree::RenderEmbree()
-	: device(rtcNewDevice(NULL))
-{}
+RenderEmbree::RenderEmbree() {
+	_MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+	_MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+	device = rtcNewDevice(NULL);
+}
 
 void RenderEmbree::initialize(const int fb_width, const int fb_height) {
 	frame_id = 0;
@@ -30,14 +34,13 @@ void RenderEmbree::initialize(const int fb_width, const int fb_height) {
 void RenderEmbree::set_scene(const Scene &scene_data) { 
 	frame_id = 0;
 
-	std::vector<embree::Instance> instances;
+	std::vector<std::shared_ptr<embree::Instance>> instances;
 	for (const auto &m : scene_data.meshes) {
-		meshes.emplace_back(std::make_shared<embree::TriangleMesh>(device,
-					m.vertices, m.indices, m.normals, m.uvs));
+		auto trimesh = std::make_shared<embree::TriangleMesh>(device, m.vertices, m.indices, m.normals, m.uvs);
 
-		instances.emplace_back(device, meshes.back(), m.material_id, glm::mat4(1.f));
+		instances.push_back(std::make_shared<embree::Instance>(device, trimesh, m.material_id, glm::mat4(1.f)));
 	}
-	scene = std::make_shared<embree::TopLevelBVH>(device, std::move(instances));
+	scene = std::make_shared<embree::TopLevelBVH>(device, instances);
 
 	textures = scene_data.textures;
 	ispc_textures.reserve(textures.size());
@@ -112,7 +115,29 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	auto start = high_resolution_clock::now();
 
+	static bool once = false;
+	if (once) {
+		size_t inst_id = 0;
+		for (const auto &inst : scene->instances) {
+			std::cout << "Inst " << inst_id << ": # verts: " << inst->mesh->vertex_buf.size()
+				<< "\n# indices: " << inst->mesh->index_buf.size()
+				<< "\n# uvs: " << inst->mesh->uv_buf.size() << "\n";
+
+			for (size_t i = 0; i < inst->mesh->vertex_buf.size(); ++i) {
+				std::cout << "vrt[" << i << "] = " << glm::to_string(scene->ispc_instances[inst_id].vertex_buf[i])
+					<< "\n";
+			}
+			for (size_t i = 0; i < inst->mesh->index_buf.size(); ++i) {
+				std::cout << "idx[" << i << "] = " << glm::to_string(scene->ispc_instances[inst_id].index_buf[i])
+					<< "\n";
+			}
+			++inst_id;
+		}
+		once = false;
+	}
+
 	uint8_t *color = reinterpret_cast<uint8_t*>(img.data());
+	//for (uint32_t tile_id = 0; tile_id < ntiles.x * ntiles.y; ++tile_id) {
 	tbb::parallel_for(uint32_t(0), ntiles.x * ntiles.y, [&](uint32_t tile_id) {
 		const glm::uvec2 tile = glm::uvec2(tile_id % ntiles.x, tile_id / ntiles.x);
 		const glm::uvec2 tile_pos = tile * tile_size;

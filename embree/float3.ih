@@ -70,13 +70,6 @@ float3 normalize(const float3 v) {
 	return make_float3(v.x * c, v.y * c, v.z * c);
 }
 
-void normalize(uniform float *x, uniform float *y, uniform float *z) {
-	const float len = sqrt(*x * *x + *y * *y + *z * *z);
-	*x /= len;
-	*y /= len;
-	*z /= len;
-}
-
 float3 cross(const float3 a, const float3 b) {
 	float3 c;
 	c.x = a.y * b.z - a.z * b.y;

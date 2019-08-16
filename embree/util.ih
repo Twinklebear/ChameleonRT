@@ -109,9 +109,9 @@ void set_ray_hit(RTCRayHit &ray_hit, const float3 &pos, const float3 &dir, const
 	ray_hit.ray.id = 0;
 	ray_hit.ray.flags = 0;
 
-	ray_hit.hit.primID = -1;
-	ray_hit.hit.geomID = -1;
-	ray_hit.hit.instID[0] = -1;
+	ray_hit.hit.primID = RTC_INVALID_GEOMETRY_ID;
+	ray_hit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+	ray_hit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
 }
 
 RTCRayHit make_ray_hit(const float3 &pos, const float3 &dir, const float tnear) {

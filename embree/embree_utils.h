@@ -48,9 +48,6 @@ struct Instance {
 			const glm::mat4 &transform = glm::mat4(1.f));
 	~Instance();
 
-	Instance(Instance &&i);
-	Instance& operator=(Instance &&i);
-
 	Instance(const Instance &) = delete;
 	Instance& operator=(const Instance &) = delete;
 };
@@ -63,6 +60,7 @@ struct ISPCInstance {
 	const float *transform = nullptr;
 	const float *inv_transform = nullptr;
 	uint32_t material_id = 0;
+	uint32_t num_tris = 0;
 
 	ISPCInstance() = default;
 	ISPCInstance(const Instance &instance);
@@ -70,11 +68,11 @@ struct ISPCInstance {
 
 struct TopLevelBVH {
 	RTCScene handle = 0;
-	std::vector<Instance> instances;
+	std::vector<std::shared_ptr<Instance>> instances;
 	std::vector<ISPCInstance> ispc_instances;
 
 	TopLevelBVH() = default;
-	TopLevelBVH(RTCDevice &device, std::vector<Instance> instances);
+	TopLevelBVH(RTCDevice &device, const std::vector<std::shared_ptr<Instance>> &instances);
 	~TopLevelBVH();
 
 	TopLevelBVH(const TopLevelBVH &) = delete;

@@ -12,7 +12,6 @@ struct RenderEmbree : RenderBackend {
 	RTCDevice device;
 	glm::uvec2 fb_dims;
 
-	std::vector<std::shared_ptr<embree::TriangleMesh>> meshes;
 	std::shared_ptr<embree::TopLevelBVH> scene;
 
 	std::vector<embree::MaterialParams> material_params;

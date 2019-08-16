@@ -1,4 +1,5 @@
 #include <limits>
+#include <iostream>
 #include <algorithm>
 #include <glm/ext.hpp>
 #include "embree_utils.h"
@@ -17,8 +18,7 @@ TriangleMesh::TriangleMesh(RTCDevice &device,
 	uv_buf(uvs)
 {
 	vertex_buf.reserve(verts.size());
-	std::transform(verts.begin(), verts.end(),
-			std::back_inserter(vertex_buf),
+	std::transform(verts.begin(), verts.end(), std::back_inserter(vertex_buf),
 			[](const glm::vec3 &v) { return glm::vec4(v, 0.f); });
 
 	vbuf = rtcNewSharedBuffer(device, vertex_buf.data(),
@@ -54,10 +54,10 @@ RTCScene TriangleMesh::handle() {
 
 Instance::Instance(RTCDevice &device, std::shared_ptr<TriangleMesh> &mesh,
 		uint32_t material_id,
-		const glm::mat4 &transform)
+		const glm::mat4 &xfm)
 	: handle(rtcNewGeometry(device, RTC_GEOMETRY_TYPE_INSTANCE)),
 	mesh(mesh),
-	transform(transform),
+	transform(xfm),
 	inv_transform(glm::inverse(inv_transform)),
 	material_id(material_id)
 {
@@ -73,31 +73,13 @@ Instance::~Instance() {
 	}
 }
 
-Instance::Instance(Instance &&i)
-	: handle(i.handle), mesh(i.mesh)
-{
-	i.mesh = nullptr;
-	i.handle = 0;
-}
-
-Instance& Instance::operator=(Instance &&i) {
-	if (handle) {
-		rtcReleaseGeometry(handle);
-	}
-	handle = i.handle;
-	mesh = i.mesh;
-
-	i.handle = 0;
-	i.mesh = nullptr;
-	return *this;
-}
-
 ISPCInstance::ISPCInstance(const Instance &instance)
 	: vertex_buf(instance.mesh->vertex_buf.data()),
 	index_buf(instance.mesh->index_buf.data()),
 	transform(glm::value_ptr(instance.transform)),
 	inv_transform(glm::value_ptr(instance.inv_transform)),
-	material_id(instance.material_id)
+	material_id(instance.material_id),
+	num_tris(instance.mesh->index_buf.size())
 {
 	if (!instance.mesh->normal_buf.empty()) {
 		normal_buf = instance.mesh->normal_buf.data();
@@ -107,13 +89,16 @@ ISPCInstance::ISPCInstance(const Instance &instance)
 	}
 }
 
-TopLevelBVH::TopLevelBVH(RTCDevice &device, std::vector<Instance> inst)
+TopLevelBVH::TopLevelBVH(RTCDevice &device, const std::vector<std::shared_ptr<Instance>> &inst)
 	: handle(rtcNewScene(device)),
-	instances(std::move(inst))
+	instances(inst)
 {
+	int id = 0;
 	for (const auto &i : instances) {
-		rtcAttachGeometry(handle, i.handle);
-		ispc_instances.emplace_back(i);
+		int x = rtcAttachGeometry(handle, i->handle);
+		std::cout << "added instance " << id << " got geom id " << x << "\n";
+		++id;
+		ispc_instances.push_back(*i);
 	}
 	rtcCommitScene(handle);
 }

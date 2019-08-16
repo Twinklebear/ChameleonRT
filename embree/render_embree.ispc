@@ -39,6 +39,7 @@ struct ISPCInstance {
 	const float *uniform transform;
 	const float *uniform inv_transform;
 	const uniform uint32_t material_id;
+	const uniform uint32_t num_tris;
 };
 
 struct SceneContext {
@@ -58,8 +59,8 @@ struct Tile {
 
 void unpack_material(DisneyMaterial &mat, const MaterialParams *p, const float2 uv) {
 	if (p->color_texture) {
-		mat.base_color = make_float3(uv.x, uv.y, 0.f);
-		//mat.base_color = make_float3(texture(p->color_texture, uv));
+		//mat.base_color = make_float3(uv.x, uv.y, 0.f);
+		mat.base_color = make_float3(texture(p->color_texture, uv));
 	} else {
 		mat.base_color = p->base_color;
 	}
@@ -107,6 +108,12 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		ray_hit->ray.dir_z[ray] = view_params->dir_du.z * px_x
 			+ view_params->dir_dv.z * px_y + view_params->dir_top_left.z;
 
+		const float len = sqrt(pow2(ray_hit->ray.dir_x[ray]) + pow2(ray_hit->ray.dir_y[ray])
+				+ pow2(ray_hit->ray.dir_z[ray]));
+		ray_hit->ray.dir_x[ray] /= len;
+		ray_hit->ray.dir_y[ray] /= len;
+		ray_hit->ray.dir_z[ray] /= len;
+
 		ray_hit->ray.tfar[ray] = 1e20f;
 
 		ray_hit->hit.Ng_x[ray] = 0.f;
@@ -115,16 +122,11 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		ray_hit->hit.u[ray] = 0.f;
 		ray_hit->hit.v[ray] = 0.f;
 
-		ray_hit->hit.primID[ray] = -1;
-		ray_hit->hit.geomID[ray] = -1;
-		ray_hit->hit.instID[0][ray] = -1;
-
-		normalize(ray_hit->ray.dir_x + ray, ray_hit->ray.dir_y + ray,
-				ray_hit->ray.dir_z + ray);
+		ray_hit->hit.primID[ray] = RTC_INVALID_GEOMETRY_ID;
+		ray_hit->hit.geomID[ray] = RTC_INVALID_GEOMETRY_ID;
+		ray_hit->hit.instID[0][ray] = RTC_INVALID_GEOMETRY_ID;
 	}
-
 	rtcIntersectNp(scene->scene, scene->coherent_context, ray_hit, tile->width * tile->height);
-
 
 	// Essentially our "closest hit" shader here. Compute the normal for each hit
 	// Since the AO (or path tracing rays) will now be pretty incoherent tracing
@@ -228,7 +230,7 @@ float3 shade_path(const SceneContext *uniform scene,
 	int geom = ray_hits->hit.geomID[px];
 	int prim = ray_hits->hit.primID[px];
 
-	if (geom == (uint32_t)-1 || inst == (uint32_t)-1 || prim == (uint32_t)-1) {
+	if (geom == RTC_INVALID_GEOMETRY_ID || inst == RTC_INVALID_GEOMETRY_ID || prim == RTC_INVALID_GEOMETRY_ID) {
 		float3 dir = make_float3(ray_hits->ray.dir_x[px], ray_hits->ray.dir_y[px], ray_hits->ray.dir_z[px]);
 		return miss_shader(dir);
 	}
@@ -259,8 +261,6 @@ float3 shade_path(const SceneContext *uniform scene,
 	bary.x = ray_hits->hit.u[px];
 	bary.y = ray_hits->hit.v[px];
 
-	ISPCInstance *instance = &scene->instances[inst];
-
 	RTCRayHit path_ray;
 	int bounce = 0;
 	float3 illum = make_float3(0.0);
@@ -268,9 +268,15 @@ float3 shade_path(const SceneContext *uniform scene,
 	float3 w_i;
 	DisneyMaterial mat;
 	do {
-		uint3 indices = instance->index_buf[prim];
+		const ISPCInstance *instance = &scene->instances[inst];
 
 		float2 uv = make_float2(0.f, 0.f);
+		if (prim >= instance->num_tris) {
+			print("Prim % >= num tris % on bounce %!??\n", prim, instance->num_tris, bounce);
+			break;
+		}
+		uint3 indices = instance->index_buf[prim];
+
 		if (instance->uv_buf) {
 			float2 uva = instance->uv_buf[indices.x];
 			float2 uvb = instance->uv_buf[indices.y];
@@ -314,8 +320,11 @@ float3 shade_path(const SceneContext *uniform scene,
 			inst = path_ray.hit.instID[0];
 			geom = path_ray.hit.geomID;
 			prim = path_ray.hit.primID;
+			instance = 0;
 
-			if (geom == (uint32_t)-1 || inst == (uint32_t)-1 || prim == (uint32_t)-1) {
+			if (geom == RTC_INVALID_GEOMETRY_ID || inst == RTC_INVALID_GEOMETRY_ID
+					|| prim == RTC_INVALID_GEOMETRY_ID)
+			{
 				illum = illum + path_throughput * miss_shader(w_i);
 				break;
 			}
@@ -330,8 +339,6 @@ float3 shade_path(const SceneContext *uniform scene,
 
 			bary.x = path_ray.hit.u;
 			bary.y = path_ray.hit.v;
-
-			instance = &scene->instances[inst];
 
 			w_o = neg(w_i);
 		}
