@@ -44,8 +44,6 @@ struct ISPCInstance {
 
 struct SceneContext {
 	RTCScene scene;
-	RTCIntersectContext *uniform coherent_context;
-	RTCIntersectContext *uniform incoherent_context;
 	ISPCInstance *uniform instances;
 	MaterialParams *uniform material_params;
 };
@@ -77,8 +75,8 @@ void unpack_material(DisneyMaterial &mat, const MaterialParams *p, const float2 
 	mat.specular_transmission = p->specular_transmission;
 }
 
-float3 shade_path(const SceneContext *uniform scene,
-		const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng);
+float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform ray_hits,
+		uint32_t px, uniform RTCIntersectContext *uniform context, PCGRand &rng);
 
 export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		void *uniform _tile, const void *uniform _view_params)
@@ -86,6 +84,10 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	SceneContext *uniform scene = (SceneContext *uniform)_scene;
 	const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
 	Tile *uniform tile = (Tile *uniform)_tile;
+
+	uniform RTCIntersectContext context;
+	rtcInitIntersectContext(&context);
+	context.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
 
 	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
@@ -126,7 +128,9 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		ray_hit->hit.geomID[ray] = RTC_INVALID_GEOMETRY_ID;
 		ray_hit->hit.instID[0][ray] = RTC_INVALID_GEOMETRY_ID;
 	}
-	rtcIntersectNp(scene->scene, scene->coherent_context, ray_hit, tile->width * tile->height);
+	rtcIntersectNp(scene->scene, &context, ray_hit, tile->width * tile->height);
+
+	context.flags = RTC_INTERSECT_CONTEXT_FLAG_INCOHERENT;
 
 	// Essentially our "closest hit" shader here. Compute the normal for each hit
 	// Since the AO (or path tracing rays) will now be pretty incoherent tracing
@@ -136,7 +140,7 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 		const uint32_t ray = j * tile->width + i;
 		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 2));
 
-		const float3 color = shade_path(scene, ray_hit, ray, rng);
+		const float3 color = shade_path(scene, ray_hit, ray, &context, rng);
 		
 		const uint32_t pixel = ray * 3;
 		tile->data[pixel] = (color.x + view_params->frame_id * tile->data[pixel]) / (view_params->frame_id + 1);
@@ -147,7 +151,8 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 
 float3 sample_direct_light(const SceneContext *uniform scene,
 		const DisneyMaterial &mat, const float3 &hit_p, const float3 &n,
-		const float3 &v_x, const float3 &v_y, const float3 &w_o, PCGRand &rng)
+		const float3 &v_x, const float3 &v_y, const float3 &w_o,
+		uniform RTCIntersectContext *uniform incoherent_context, PCGRand &rng)
 {
 	float3 illum = make_float3(0.f);
 
@@ -175,7 +180,7 @@ float3 sample_direct_light(const SceneContext *uniform scene,
 
 		set_ray(shadow_ray, hit_p, light_dir, EPSILON);
 		shadow_ray.tfar = light_dist;
-		rtcOccludedV(scene->scene, scene->incoherent_context, &shadow_ray);
+		rtcOccludedV(scene->scene, incoherent_context, &shadow_ray);
 
 		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_ray.tfar > 0.f) {
 			float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
@@ -199,7 +204,7 @@ float3 sample_direct_light(const SceneContext *uniform scene,
 
 				set_ray(shadow_ray, hit_p, w_i, EPSILON);
 				shadow_ray.tfar = light_dist;
-				rtcOccludedV(scene->scene, scene->incoherent_context, &shadow_ray);
+				rtcOccludedV(scene->scene, incoherent_context, &shadow_ray);
 				if (shadow_ray.tfar > 0.f) {
 					illum = illum + bsdf * light.emission * abs(dot(w_i, n)) * w / bsdf_pdf;
 				}
@@ -223,8 +228,8 @@ float3 miss_shader(const float3 &dir) {
 	return make_float3(0.1f);
 }
 
-float3 shade_path(const SceneContext *uniform scene,
-		const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng)
+float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform ray_hits,
+		uint32_t px, uniform RTCIntersectContext *uniform context, PCGRand &rng)
 {
 	int inst = ray_hits->hit.instID[0][px];
 	int geom = ray_hits->hit.geomID[px];
@@ -272,7 +277,10 @@ float3 shade_path(const SceneContext *uniform scene,
 
 		float2 uv = make_float2(0.f, 0.f);
 		if (prim >= instance->num_tris) {
+			print("=====\n");
 			print("Prim % >= num tris % on bounce %!??\n", prim, instance->num_tris, bounce);
+			print("inst: %, geom %\n", inst, geom);
+			print("====\n");
 			break;
 		}
 		uint3 indices = instance->index_buf[prim];
@@ -294,7 +302,7 @@ float3 shade_path(const SceneContext *uniform scene,
 		}
 		ortho_basis(v_x, v_y, normal);
 		illum = illum + path_throughput
-			* sample_direct_light(scene, mat, hit_p, normal, v_x, v_y, w_o, rng);
+			* sample_direct_light(scene, mat, hit_p, normal, v_x, v_y, w_o, context, rng);
 
 		// Sample the BSDF to continue the ray
 		float pdf;
@@ -315,7 +323,7 @@ float3 shade_path(const SceneContext *uniform scene,
 
 		++bounce;
 		if (bounce < MAX_PATH_DEPTH) {
-			rtcIntersectV(scene->scene, scene->incoherent_context, &path_ray);
+			rtcIntersectV(scene->scene, context, &path_ray);
 
 			inst = path_ray.hit.instID[0];
 			geom = path_ray.hit.geomID;

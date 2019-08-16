@@ -96,7 +96,6 @@ TopLevelBVH::TopLevelBVH(RTCDevice &device, const std::vector<std::shared_ptr<In
 	int id = 0;
 	for (const auto &i : instances) {
 		int x = rtcAttachGeometry(handle, i->handle);
-		std::cout << "added instance " << id << " got geom id " << x << "\n";
 		++id;
 		ispc_instances.push_back(*i);
 	}

@@ -159,8 +159,6 @@ struct ViewParams {
 
 struct SceneContext {
 	RTCScene scene;
-	RTCIntersectContext *coherent_context;
-	RTCIntersectContext *incoherent_context;
 	ISPCInstance *instances;
 	MaterialParams *material_params;
 };

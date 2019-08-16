@@ -94,17 +94,8 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	view_params.dir_top_left = dir - 0.5f * view_params.dir_du - 0.5f * view_params.dir_dv;
 	view_params.frame_id = frame_id;
 
-	RTCIntersectContext coherent, incoherent;
-	rtcInitIntersectContext(&coherent);
-	coherent.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
-
-	rtcInitIntersectContext(&incoherent);
-	incoherent.flags = RTC_INTERSECT_CONTEXT_FLAG_INCOHERENT;
-
 	embree::SceneContext ispc_scene;
 	ispc_scene.scene = scene->handle;
-	ispc_scene.coherent_context = &coherent;
-	ispc_scene.incoherent_context = &incoherent;
 	ispc_scene.instances = scene->ispc_instances.data();
 	ispc_scene.material_params = material_params.data();
 
@@ -114,27 +105,6 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 			fb_dims.y / tile_size.y + (fb_dims.y % tile_size.y != 0 ? 1 : 0));
 
 	auto start = high_resolution_clock::now();
-
-	static bool once = false;
-	if (once) {
-		size_t inst_id = 0;
-		for (const auto &inst : scene->instances) {
-			std::cout << "Inst " << inst_id << ": # verts: " << inst->mesh->vertex_buf.size()
-				<< "\n# indices: " << inst->mesh->index_buf.size()
-				<< "\n# uvs: " << inst->mesh->uv_buf.size() << "\n";
-
-			for (size_t i = 0; i < inst->mesh->vertex_buf.size(); ++i) {
-				std::cout << "vrt[" << i << "] = " << glm::to_string(scene->ispc_instances[inst_id].vertex_buf[i])
-					<< "\n";
-			}
-			for (size_t i = 0; i < inst->mesh->index_buf.size(); ++i) {
-				std::cout << "idx[" << i << "] = " << glm::to_string(scene->ispc_instances[inst_id].index_buf[i])
-					<< "\n";
-			}
-			++inst_id;
-		}
-		once = false;
-	}
 
 	uint8_t *color = reinterpret_cast<uint8_t*>(img.data());
 	//for (uint32_t tile_id = 0; tile_id < ntiles.x * ntiles.y; ++tile_id) {
