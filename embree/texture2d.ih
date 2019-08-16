@@ -37,6 +37,7 @@ float4 texture(ISPCTexture2D *tex, const float2 uv) {
 
 	const int2 texel = make_int2(clamp((int)px, 0, tex->width - 1),
 			clamp((int)py, 0, tex->height - 1));
+	// TODO: Bilinear filtering
 	return get_texel(tex, texel);
 }
 
