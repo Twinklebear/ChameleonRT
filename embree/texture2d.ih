@@ -1,0 +1,42 @@
+#pragma once
+
+#include "float3.ih"
+#include "util.ih"
+
+struct ISPCTexture2D {
+	int width;
+	int height;
+	int channels;
+	const uint8_t *uniform data;
+};
+
+float4 get_texel(ISPCTexture2D *tex, const int2 px) {
+	float4 color = make_float4(0.f);
+	color.x = tex->data[((px.y * tex->width) + px.x) * tex->channels] / 255.f;
+	if (tex->channels >= 2) {
+		color.y = tex->data[((px.y * tex->width) + px.x) * tex->channels + 1] / 255.f;
+	}
+	if (tex->channels >= 3) {
+		color.z = tex->data[((px.y * tex->width) + px.x) * tex->channels + 2] / 255.f;
+	}
+	if (tex->channels == 4) {
+		color.w = tex->data[((px.y * tex->width) + px.x) * tex->channels + 3] / 255.f;
+	}
+	return color;
+}
+
+float4 texture(ISPCTexture2D *tex, const float2 uv) {
+	// TODO: Maybe support other wrap modes?
+	float px = uv.x * tex->width;
+	// Wrap mode, note not using % here as it's warned as being
+	// inefficient w/ varying types
+	px = px - floor(px / tex->width) * tex->width;
+
+	float py = uv.y * tex->height;
+	py = py - floor(py / tex->height) * tex->height;
+
+	const int2 texel = make_int2(clamp((int)px, 0, tex->width - 1),
+			clamp((int)py, 0, tex->height - 1));
+	return get_texel(tex, texel);
+}
+

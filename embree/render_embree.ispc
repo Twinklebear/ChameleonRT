@@ -3,6 +3,7 @@
 #include "pcg_rng.ih"
 #include "float3.ih"
 #include "lights.ih"
+#include "texture2d.ih"
 #include "disney_bsdf.ih"
 
 struct ViewParams {
@@ -10,9 +11,29 @@ struct ViewParams {
 	uint32_t frame_id;
 };
 
-struct Instance {
+struct MaterialParams {
+	float3 base_color;
+	float metallic;
+
+	float specular;
+	float roughness;
+	float specular_tint;
+	float anisotropy;
+
+	float sheen;
+	float sheen_tint;
+	float clearcoat;
+	float clearcoat_gloss;
+
+	float ior;
+	float specular_transmission;
+
+	ISPCTexture2D *uniform color_texture;
+};
+
+struct ISPCInstance {
 	const float4 *uniform vertex_buf;
-	const int3 *uniform index_buf;
+	const uint3 *uniform index_buf;
 	const float3 *uniform normal_buf;
 	const float2 *uniform uv_buf;
 	const float *uniform transform;
@@ -24,8 +45,8 @@ struct SceneContext {
 	RTCScene scene;
 	RTCIntersectContext *uniform coherent_context;
 	RTCIntersectContext *uniform incoherent_context;
-	Instance *uniform instances;
-	DisneyMaterial *uniform materials;
+	ISPCInstance *uniform instances;
+	MaterialParams *uniform material_params;
 };
 
 struct Tile {
@@ -34,6 +55,26 @@ struct Tile {
 	uint32_t fb_width, fb_height;
 	float *uniform data;
 };
+
+void unpack_material(DisneyMaterial &mat, const MaterialParams *p, const float2 uv) {
+	if (p->color_texture) {
+		mat.base_color = make_float3(uv.x, uv.y, 0.f);
+		//mat.base_color = make_float3(texture(p->color_texture, uv));
+	} else {
+		mat.base_color = p->base_color;
+	}
+	mat.metallic = p->metallic;
+	mat.specular = p->specular;
+	mat.roughness = p->roughness;
+	mat.specular_tint = p->specular_tint;
+	mat.anisotropy = p->anisotropy;
+	mat.sheen = p->sheen;
+	mat.sheen_tint = p->sheen_tint;
+	mat.clearcoat = p->clearcoat;
+	mat.clearcoat_gloss = p->clearcoat_gloss;
+	mat.ior = p->ior;
+	mat.specular_transmission = p->specular_transmission;
+}
 
 float3 shade_path(const SceneContext *uniform scene,
 		const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng);
@@ -84,17 +125,18 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 
 	rtcIntersectNp(scene->scene, scene->coherent_context, ray_hit, tile->width * tile->height);
 
+
 	// Essentially our "closest hit" shader here. Compute the normal for each hit
 	// Since the AO (or path tracing rays) will now be pretty incoherent tracing
 	// a huge stream may not really be worth it, so we switch to just doing packets of
 	// SIMD-width rays
 	foreach_tiled (i = 0 ... tile->width, j = 0 ... tile->height) {
 		const uint32_t ray = j * tile->width + i;
-		const uint32_t pixel = ray * 3;
 		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 2));
 
 		const float3 color = shade_path(scene, ray_hit, ray, rng);
 		
+		const uint32_t pixel = ray * 3;
 		tile->data[pixel] = (color.x + view_params->frame_id * tile->data[pixel]) / (view_params->frame_id + 1);
 		tile->data[pixel + 1] = (color.y + view_params->frame_id * tile->data[pixel + 1]) / (view_params->frame_id + 1);
 		tile->data[pixel + 2] = (color.z + view_params->frame_id * tile->data[pixel + 2]) / (view_params->frame_id + 1);
@@ -182,7 +224,11 @@ float3 miss_shader(const float3 &dir) {
 float3 shade_path(const SceneContext *uniform scene,
 		const RTCRayHitNp *uniform ray_hits, uint32_t px, PCGRand &rng)
 {
-	if (ray_hits->hit.geomID[px] == (uint32_t)-1) {
+	int inst = ray_hits->hit.instID[0][px];
+	int geom = ray_hits->hit.geomID[px];
+	int prim = ray_hits->hit.primID[px];
+
+	if (geom == (uint32_t)-1 || inst == (uint32_t)-1 || prim == (uint32_t)-1) {
 		float3 dir = make_float3(ray_hits->ray.dir_x[px], ray_hits->ray.dir_y[px], ray_hits->ray.dir_z[px]);
 		return miss_shader(dir);
 	}
@@ -209,15 +255,31 @@ float3 shade_path(const SceneContext *uniform scene,
 	w_o.y = -ray_hits->ray.dir_y[px];
 	w_o.z = -ray_hits->ray.dir_z[px];
 
-	Instance *instance = &scene->instances[ray_hits->hit.instID[0][px]];
+	float2 bary;
+	bary.x = ray_hits->hit.u[px];
+	bary.y = ray_hits->hit.v[px];
+
+	ISPCInstance *instance = &scene->instances[inst];
 
 	RTCRayHit path_ray;
 	int bounce = 0;
 	float3 illum = make_float3(0.0);
 	float3 path_throughput = make_float3(1.0);
 	float3 w_i;
+	DisneyMaterial mat;
 	do {
-		const DisneyMaterial mat = scene->materials[instance->material_id];
+		uint3 indices = instance->index_buf[prim];
+
+		float2 uv = make_float2(0.f, 0.f);
+		if (instance->uv_buf) {
+			float2 uva = instance->uv_buf[indices.x];
+			float2 uvb = instance->uv_buf[indices.y];
+			float2 uvc = instance->uv_buf[indices.z];
+			uv = (1.f - bary.x - bary.y) * uva
+				+ bary.x * uvb + bary.y * uvc;
+		}
+
+		unpack_material(mat, &scene->material_params[instance->material_id], uv);
 
 		// Direct light sampling
 		float3 v_x, v_y;
@@ -248,7 +310,12 @@ float3 shade_path(const SceneContext *uniform scene,
 		++bounce;
 		if (bounce < MAX_PATH_DEPTH) {
 			rtcIntersectV(scene->scene, scene->incoherent_context, &path_ray);
-			if (path_ray.hit.geomID == (uint32_t)-1) {
+
+			inst = path_ray.hit.instID[0];
+			geom = path_ray.hit.geomID;
+			prim = path_ray.hit.primID;
+
+			if (geom == (uint32_t)-1 || inst == (uint32_t)-1 || prim == (uint32_t)-1) {
 				illum = illum + path_throughput * miss_shader(w_i);
 				break;
 			}
@@ -261,7 +328,10 @@ float3 shade_path(const SceneContext *uniform scene,
 			normal.z = path_ray.hit.Ng_z;
 			normal = normalize(normal);
 
-			instance = &scene->instances[path_ray.hit.instID[0]];
+			bary.x = path_ray.hit.u;
+			bary.y = path_ray.hit.v;
+
+			instance = &scene->instances[inst];
 
 			w_o = neg(w_i);
 		}

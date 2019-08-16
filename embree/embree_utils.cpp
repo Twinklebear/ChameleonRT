@@ -113,7 +113,7 @@ TopLevelBVH::TopLevelBVH(RTCDevice &device, std::vector<Instance> inst)
 {
 	for (const auto &i : instances) {
 		rtcAttachGeometry(handle, i.handle);
-		ispc_instances.push_back(i);
+		ispc_instances.emplace_back(i);
 	}
 	rtcCommitScene(handle);
 }
@@ -123,6 +123,10 @@ TopLevelBVH::~TopLevelBVH() {
 		rtcReleaseScene(handle);
 	}
 }
+
+ISPCTexture2D::ISPCTexture2D(const Image &img)
+	: width(img.width), height(img.height), channels(img.channels), data(img.img.data())
+{}
 
 RaySoA::RaySoA(const size_t nrays)
 	: org_x(nrays, 0.f), org_y(nrays, 0.f), org_z(nrays, 0.f), tnear(nrays, 0.f),

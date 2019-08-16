@@ -14,7 +14,10 @@ struct RenderEmbree : RenderBackend {
 
 	std::vector<std::shared_ptr<embree::TriangleMesh>> meshes;
 	std::shared_ptr<embree::TopLevelBVH> scene;
-	std::vector<DisneyMaterial> materials;
+
+	std::vector<embree::MaterialParams> material_params;
+	std::vector<Image> textures;
+	std::vector<embree::ISPCTexture2D> ispc_textures;
 
 	uint32_t frame_id = 0;
 	glm::uvec2 tile_size = glm::uvec2(64);

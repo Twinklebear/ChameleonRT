@@ -1,7 +1,9 @@
 #include <limits>
+#include <algorithm>
 #include <iostream>
 #include <chrono>
 #include <tbb/parallel_for.h>
+#include <glm/ext.hpp>
 #include "render_embree.h"
 #include "render_embree_ispc.h"
 
@@ -37,7 +39,36 @@ void RenderEmbree::set_scene(const Scene &scene_data) {
 	}
 	scene = std::make_shared<embree::TopLevelBVH>(device, std::move(instances));
 
-	materials = scene_data.materials;
+	textures = scene_data.textures;
+	ispc_textures.reserve(textures.size());
+	std::transform(textures.begin(), textures.end(), std::back_inserter(ispc_textures),
+			[](const Image &img) { return embree::ISPCTexture2D(img); });
+
+	material_params.reserve(scene_data.materials.size());
+	for (const auto &m : scene_data.materials) {
+		embree::MaterialParams p;
+
+		p.base_color = m.base_color;
+		p.metallic = m.metallic;
+		p.specular = m.specular;
+		p.roughness = m.roughness;
+		p.specular_tint = m.specular_tint;
+		p.anisotropy = m.anisotropy;
+		p.sheen = m.sheen;
+		p.sheen_tint = m.sheen_tint;
+		p.clearcoat = m.clearcoat;
+		p.clearcoat_gloss = m.clearcoat_gloss;
+		p.ior = m.ior;
+		p.specular_transmission = m.specular_transmission;
+
+		if (m.color_tex_id != -1) {
+			p.color_texture = &ispc_textures[m.color_tex_id];
+		} else {
+			p.color_texture = nullptr;
+		}
+
+		material_params.push_back(p);
+	}
 }
 
 double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -72,7 +103,7 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	ispc_scene.coherent_context = &coherent;
 	ispc_scene.incoherent_context = &incoherent;
 	ispc_scene.instances = scene->ispc_instances.data();
-	ispc_scene.materials = materials.data();
+	ispc_scene.material_params = material_params.data();
 
 	// Round up the number of tiles we need to run in case the
 	// framebuffer is not an even multiple of tile size

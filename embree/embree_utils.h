@@ -81,6 +81,36 @@ struct TopLevelBVH {
 	TopLevelBVH& operator=(const TopLevelBVH &) = delete;
 };
 
+struct ISPCTexture2D {
+	int width = -1;
+	int height = -1;
+	int channels = -1;
+	const uint8_t *data = nullptr;
+
+	ISPCTexture2D(const Image &img);
+	ISPCTexture2D() = default;
+};
+
+struct MaterialParams {
+	glm::vec3 base_color = glm::vec3(0.9f);
+	float metallic = 0;
+
+	float specular = 0;
+	float roughness = 1;
+	float specular_tint = 0;
+	float anisotropy = 0;
+
+	float sheen = 0;
+	float sheen_tint = 0;
+	float clearcoat = 0;
+	float clearcoat_gloss = 0;
+
+	float ior = 1.5;
+	float specular_transmission = 0;
+
+	ISPCTexture2D *color_texture = nullptr;
+};
+
 struct RaySoA {
 	std::vector<float> org_x;
 	std::vector<float> org_y;
@@ -134,7 +164,7 @@ struct SceneContext {
 	RTCIntersectContext *coherent_context;
 	RTCIntersectContext *incoherent_context;
 	ISPCInstance *instances;
-	DisneyMaterial *materials;
+	MaterialParams *material_params;
 };
 
 struct Tile {
