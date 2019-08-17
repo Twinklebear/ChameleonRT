@@ -25,19 +25,42 @@ float4 get_texel(ISPCTexture2D *tex, const int2 px) {
 	return color;
 }
 
-float4 texture(ISPCTexture2D *tex, const float2 uv) {
-	// TODO: Maybe support other wrap modes?
-	float px = uv.x * tex->width;
-	// Wrap mode, note not using % here as it's warned as being
+int2 get_wrapped_texcoord(ISPCTexture2D *tex, int x, int y) {
+	int w = tex->width;
+	int h = tex->height;
+	unmasked {
+		if (!tex) {
+			w = 1;
+			h = 1;
+		}
+	}
+	// TODO: maybe support other wrap modes?
+	// Note: not using % here as it's warned as being
 	// inefficient w/ varying types
-	px = px - floor(px / tex->width) * tex->width;
+	return make_int2(x - (x / w) * w, y - (y / h) * h);
+}
 
-	float py = uv.y * tex->height;
-	py = py - floor(py / tex->height) * tex->height;
+float4 texture(ISPCTexture2D *tex, const float2 uv) {
+	const float ux = uv.x * tex->width - 0.5;
+	const float uy = uv.y * tex->width - 0.5;
 
-	const int2 texel = make_int2(clamp((int)px, 0, tex->width - 1),
-			clamp((int)py, 0, tex->height - 1));
-	// TODO: Bilinear filtering
-	return get_texel(tex, texel);
+	const float tx = ux - floor(ux);
+	const float ty = uy - floor(uy);
+
+	const int2 px = get_wrapped_texcoord(tex, ux, uy);
+	const int2 t00 = get_wrapped_texcoord(tex, px.x, px.y);
+	const int2 t10 = get_wrapped_texcoord(tex, px.x + 1, px.y);
+	const int2 t01 = get_wrapped_texcoord(tex, px.x, px.y + 1);
+	const int2 t11 = get_wrapped_texcoord(tex, px.x + 1, px.y + 1);
+		
+	const float4 s00 = get_texel(tex, t00);
+	const float4 s10 = get_texel(tex, t10);
+	const float4 s01 = get_texel(tex, t01);
+	const float4 s11 = get_texel(tex, t11);
+
+	return s00 * (1.f - tx) * (1.f - ty)
+		+ s10 * tx * (1.f - ty)
+		+ s01 * (1.f - tx) * ty
+		+ s11 * tx * ty;
 }
 
