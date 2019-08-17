@@ -45,6 +45,11 @@ void ortho_basis(float3 &v_x, float3 &v_y, const float3 &n) {
 }
 
 int mod(int a, int b) {
+	unmasked {
+		if (b == 0) {
+			b = 1;
+		}
+	}
 	int r = a - (a / b) * b;
 	return r < 0 ? r + b : r;
 }

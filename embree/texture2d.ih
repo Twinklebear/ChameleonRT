@@ -28,16 +28,7 @@ float4 get_texel(ISPCTexture2D *tex, const int2 px) {
 int2 get_wrapped_texcoord(ISPCTexture2D *tex, int x, int y) {
 	int w = tex->width;
 	int h = tex->height;
-	unmasked {
-		if (!tex) {
-			w = 1;
-			h = 1;
-		}
-	}
 	// TODO: maybe support other wrap modes?
-	// Note: not using % here as it's warned as being
-	// inefficient w/ varying types
-	// TODO Wrap mode doesn't actually wrap??
 	return make_int2(mod(x, w), mod(y, h));
 }
 
