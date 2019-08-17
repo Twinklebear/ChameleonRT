@@ -86,6 +86,10 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 	// Allocate the readback buffer so we can read the image back to the CPU
 	img_readback_buf = Buffer::readback(device.Get(),
 		render_target.linear_row_pitch() * fb_height, D3D12_RESOURCE_STATE_COPY_DEST);
+
+	if (rt_pipeline.get()) {
+		build_descriptor_heap();
+	}
 }
 
 void RenderDXR::set_scene(const Scene &scene) {
