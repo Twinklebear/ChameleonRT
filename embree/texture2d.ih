@@ -37,21 +37,21 @@ int2 get_wrapped_texcoord(ISPCTexture2D *tex, int x, int y) {
 	// TODO: maybe support other wrap modes?
 	// Note: not using % here as it's warned as being
 	// inefficient w/ varying types
-	return make_int2(x - (x / w) * w, y - (y / h) * h);
+	// TODO Wrap mode doesn't actually wrap??
+	return make_int2(mod(x, w), mod(y, h));
 }
 
 float4 texture(ISPCTexture2D *tex, const float2 uv) {
 	const float ux = uv.x * tex->width - 0.5;
-	const float uy = uv.y * tex->width - 0.5;
+	const float uy = uv.y * tex->height - 0.5;
 
 	const float tx = ux - floor(ux);
 	const float ty = uy - floor(uy);
 
-	const int2 px = get_wrapped_texcoord(tex, ux, uy);
-	const int2 t00 = get_wrapped_texcoord(tex, px.x, px.y);
-	const int2 t10 = get_wrapped_texcoord(tex, px.x + 1, px.y);
-	const int2 t01 = get_wrapped_texcoord(tex, px.x, px.y + 1);
-	const int2 t11 = get_wrapped_texcoord(tex, px.x + 1, px.y + 1);
+	const int2 t00 = get_wrapped_texcoord(tex, ux, uy);
+	const int2 t10 = get_wrapped_texcoord(tex, ux + 1, uy);
+	const int2 t01 = get_wrapped_texcoord(tex, ux, uy + 1);
+	const int2 t11 = get_wrapped_texcoord(tex, ux + 1, uy + 1);
 		
 	const float4 s00 = get_texel(tex, t00);
 	const float4 s10 = get_texel(tex, t10);

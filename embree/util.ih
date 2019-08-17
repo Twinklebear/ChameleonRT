@@ -44,6 +44,11 @@ void ortho_basis(float3 &v_x, float3 &v_y, const float3 &n) {
 	v_y = normalize(cross(n, v_x));
 }
 
+int mod(int a, int b) {
+	int r = a - (a / b) * b;
+	return r < 0 ? r + b : r;
+}
+
 // Utils from HLSL
 float saturate(float x) {
 	return clamp(x, 0.f, 1.f);
