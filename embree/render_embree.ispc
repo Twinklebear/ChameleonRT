@@ -88,8 +88,9 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	rtcInitIntersectContext(&context);
 	context.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
 
-	foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
-		const uint32_t ray = j * tile->width + i;
+	foreach (ray = 0 ... tile->width * tile->height)  {
+		const uint32_t i = mod(ray, tile->width);
+		const uint32_t j = ray / tile->width;
 		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 1));
 
 		const float px_x = (i + tile->x + pcg32_randomf(rng)) / tile->fb_width;
@@ -135,8 +136,9 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	// Since the AO (or path tracing rays) will now be pretty incoherent tracing
 	// a huge stream may not really be worth it, so we switch to just doing packets of
 	// SIMD-width rays
-	foreach_tiled (i = 0 ... tile->width, j = 0 ... tile->height) {
-		const uint32_t ray = j * tile->width + i;
+	foreach (ray = 0 ... tile->width * tile->height)  {
+		const uint32_t i = mod(ray, tile->width);
+		const uint32_t j = ray / tile->width;
 		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 2));
 
 		const float3 color = shade_path(scene, ray_hit, ray, &context, rng);
@@ -221,8 +223,8 @@ float3 miss_shader(const float3 &dir) {
 	int check_x = u * 10.f;
 	int check_y = v * 10.f;
 
-	if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
-		return make_float3(0.5f);// * (1.f + normalize(dir)) * 0.5f;
+	if (dir.y > -0.1 && mod(check_x + check_y,  2) == 0) {
+		return make_float3(0.5f);
 	}
 	return make_float3(0.1f);
 }
