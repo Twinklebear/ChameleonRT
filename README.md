@@ -21,18 +21,6 @@ of your SDL2 directory by passing `-DSDL2=<path>`.
 Similarly for GLM, you can point it to the glmConfig.cmake file
 in your GLM distribution by passing `-Dglm_DIR=<path>`.
 
-### OSPRay
-
-Dependencies: [OSPRay](http://www.ospray.org/).
-
-To build the OSPRay backend run CMake with:
-
-```
-cmake .. -DENABLE_OSPRAY=ON -Dospray_DIR=<path to osprayConfig.cmake>
-```
-
-You can then pass `-ospray` to use the OSPRay backend.
-
 ### Embree
 
 Dependencies: [Embree](https://embree.github.io/),
@@ -76,4 +64,16 @@ cmake .. -DENABLE_DXR=ON
 ```
 
 You can then pass `-dxr` to use the DXR backend.
+
+### OSPRay
+
+Dependencies: [OSPRay](http://www.ospray.org/).
+
+To build the OSPRay backend run CMake with:
+
+```
+cmake .. -DENABLE_OSPRAY=ON -Dospray_DIR=<path to osprayConfig.cmake>
+```
+
+You can then pass `-ospray` to use the OSPRay backend.
 
