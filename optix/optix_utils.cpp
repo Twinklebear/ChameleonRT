@@ -227,10 +227,11 @@ void TopLevelBVH::enqueue_build(OptixDeviceContext &device, CUstream &stream) {
 
 	OptixAccelBufferSizes buf_sizes;
 	CHECK_OPTIX(optixAccelComputeMemoryUsage(device, &opts, &geom_desc, 1, &buf_sizes));
-
+#if 0
 	std::cout << "BLAS will use output space of "
 		<< pretty_print_count(buf_sizes.outputSizeInBytes)
 		<< " plus scratch of " << pretty_print_count(buf_sizes.tempSizeInBytes) << "\n";
+#endif
 
 	build_output = Buffer(buf_sizes.outputSizeInBytes);
 	scratch = Buffer(buf_sizes.tempSizeInBytes);
@@ -388,7 +389,6 @@ ShaderTable::ShaderTable(const ShaderRecord &raygen_record,
 
 	const size_t sbt_size = raygen_entry_size + miss_records.size() * miss_entry_size
 		+ hitgroup_records.size() * hitgroup_entry_size;
-	std::cout << "SBT will require " << pretty_print_count(sbt_size) << "\n";
 
 	shader_table = Buffer(sbt_size);
 	cpu_shader_table.resize(sbt_size, 0);

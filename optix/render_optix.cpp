@@ -52,7 +52,7 @@ RenderOptiX::RenderOptiX() {
 
 	CHECK_OPTIX(optixDeviceContextCreate(cuda_context, 0, &device));
 	// TODO: set this val. based on the debug level
-	CHECK_OPTIX(optixDeviceContextSetLogCallback(device, log_callback, nullptr, 4));
+	CHECK_OPTIX(optixDeviceContextSetLogCallback(device, log_callback, nullptr, 0));
 
 	launch_params = optix::Buffer(sizeof(LaunchParams));
 }
@@ -231,8 +231,7 @@ void RenderOptiX::build_raytracing_pipeline() {
 
 	OptixPipelineLinkOptions link_opts = {};
 	link_opts.maxTraceDepth = 1;
-	// TODO pick debug level based on compile config
-	link_opts.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
+	link_opts.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
 
 	pipeline = optix::compile_pipeline(device, pipeline_opts, link_opts, pipeline_progs);
 

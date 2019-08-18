@@ -134,9 +134,6 @@ RootSignature::RootSignature(D3D12_ROOT_SIGNATURE_FLAGS flags, Microsoft::WRL::C
 		}
 		param_offsets[p.name] = p;
 		offset += p.size;
-
-		std::cout << "Param: " << p.name << " is at offset "
-			<< p.offset << ", size: " << p.size << "\n";
 	}
 }
 
@@ -613,9 +610,6 @@ size_t RTPipelineBuilder::compute_num_subobjects(size_t &num_export_associations
 	if (has_global_root_sig()) {
 		++num_subobjs;
 	}
-	std::cout << "Pipeline requires " << num_subobjs << " subobjects\n"
-		<< "Has " << num_export_associations << " export assocs\n"
-		<< "With " << num_associated_fcns << " associated fcns\n";
 	return num_subobjs;
 }
 
@@ -631,11 +625,8 @@ RTPipeline::RTPipeline(D3D12_STATE_OBJECT_DESC &desc, RootSignature &global_sig,
 	CHECK_ERR(device->CreateStateObject(&desc, IID_PPV_ARGS(&state)));
 	CHECK_ERR(state->QueryInterface(&pipeline_props));
 
-	std::cout << "Shader table for pipeline will need "
-		<< shader_record_size * (1 + miss_shaders.size() + hit_groups.size())
-		<< " bytes\n";
-
 	const size_t sbt_size = shader_record_size * (1 + miss_shaders.size() + hit_groups.size());
+
 	cpu_shader_table = Buffer::upload(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
 	shader_table = Buffer::default(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
 
@@ -789,7 +780,6 @@ size_t RTPipeline::compute_shader_record_size() const {
 	for (const auto &hg : hit_groups) {
 		add_shader_record(hg);
 	}
-	std::cout << "Shader record size is: " << record_size << " bytes\n";
 	return record_size;
 }
 
@@ -931,9 +921,11 @@ void TopLevelBVH::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList4
 		align_to(prebuild_info.ResultDataMaxSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
 	prebuild_info.ScratchDataSizeInBytes =
 		align_to(prebuild_info.ScratchDataSizeInBytes, D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
+#if 0
 	std::cout << "TopLevelBVH will use at most "
 		<< pretty_print_count(prebuild_info.ResultDataMaxSizeInBytes) << "b, and scratch of: "
 		<< pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
+#endif
 
 	bvh = Buffer::default(device, prebuild_info.ResultDataMaxSizeInBytes,
 		D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
