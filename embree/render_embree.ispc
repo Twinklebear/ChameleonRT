@@ -88,10 +88,11 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	rtcInitIntersectContext(&context);
 	context.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
 
+	PCGRand rng;
 	foreach (ray = 0 ... tile->width * tile->height)  {
 		const uint32_t i = mod(ray, tile->width);
 		const uint32_t j = ray / tile->width;
-		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 1));
+		rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 1));
 
 		const float px_x = (i + tile->x + pcg32_randomf(rng)) / tile->fb_width;
 		const float px_y = (j + tile->y + pcg32_randomf(rng)) / tile->fb_height;
@@ -139,7 +140,6 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	foreach (ray = 0 ... tile->width * tile->height)  {
 		const uint32_t i = mod(ray, tile->width);
 		const uint32_t j = ray / tile->width;
-		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 2));
 
 		const float3 color = shade_path(scene, ray_hit, ray, &context, rng);
 		
