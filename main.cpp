@@ -31,6 +31,23 @@
 #include "dxr/render_dxr.h"
 #endif
 
+const std::string USAGE = "Usage: (backend) <obj_file> [camera]\n"
+			"Backends:\n"
+#if ENABLE_OSPRAY
+			"\t-ospray    Render with OSPRay\n"
+#endif
+#if ENABLE_OPTIX
+			"\t-optix     Render with OptiX\n"
+#endif
+#if ENABLE_EMBREE
+			"\t-embree    Render with Embree\n"
+#endif
+#if ENABLE_DXR
+			"\t-dxr       Render with DirectX Ray Tracing\n"
+#endif
+			"\n";
+
+
 const std::string fullscreen_quad_vs = R"(
 #version 450 core
 
@@ -69,21 +86,7 @@ glm::vec2 transform_mouse(glm::vec2 in) {
 
 int main(int argc, const char **argv) {
 	if (argc < 3) {
-		std::cout << "Usage: " << argv[0] << " (backend) <obj_file> [camera]\n"
-			<< "Backends:\n"
-#if ENABLE_OSPRAY
-			<< "\t-ospray    Render with OSPRay\n"
-#endif
-#if ENABLE_OPTIX
-			<< "\t-optix     Render with OptiX\n"
-#endif
-#if ENABLE_EMBREE
-			<< "\t-embree    Render with Embree\n"
-#endif
-#if ENABLE_DXR
-			<< "\t-dxr       Render with DirectX Ray Tracing\n"
-#endif
-			<< "\n";
+		std::cout << USAGE;
 		return 1;
 	}
 
@@ -145,6 +148,9 @@ int main(int argc, const char **argv) {
 void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	ImGuiIO& io = ImGui::GetIO();
 
+	std::string scene_file;
+	std::string rt_backend;
+	std::unique_ptr<RenderBackend> renderer = nullptr;
 	glm::vec3 eye(0, 0, 5);
 	glm::vec3 center(0);
 	glm::vec3 up(0, 1, 0);
@@ -162,44 +168,44 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 			up.y = std::stof(args[++i]);
 			up.z = std::stof(args[++i]);
 		}
-	}
-
-	std::string rt_backend;
-	std::unique_ptr<RenderBackend> renderer = nullptr;
 #if ENABLE_OSPRAY
-	if (args[1] == "-ospray") {
-		renderer = std::make_unique<RenderOSPRay>();
-		rt_backend = "OSPRay";
-	}
+		else if (args[i] == "-ospray") {
+			renderer = std::make_unique<RenderOSPRay>();
+			rt_backend = "OSPRay";
+		}
 #endif
 #if ENABLE_OPTIX
-	if (args[1] == "-optix") {
-		renderer = std::make_unique<RenderOptiX>();
-		rt_backend = "OptiX";
-	}
+		else if (args[i] == "-optix") {
+			renderer = std::make_unique<RenderOptiX>();
+			rt_backend = "OptiX";
+		}
 #endif
 #if ENABLE_EMBREE
-	if (args[1] == "-embree") {
-		renderer = std::make_unique<RenderEmbree>();
-		rt_backend = "Embree (w/ TBB & ISPC)";
-	}
+		else if (args[i] == "-embree") {
+			renderer = std::make_unique<RenderEmbree>();
+			rt_backend = "Embree (w/ TBB & ISPC)";
+		}
 #endif
 #if ENABLE_DXR
-	if (args[1] == "-dxr") {
-		renderer = std::make_unique<RenderDXR>();
-		rt_backend = "DirectX Ray Tracing";
-	}
+		else if (args[i] == "-dxr") {
+			renderer = std::make_unique<RenderDXR>();
+			rt_backend = "DirectX Ray Tracing";
+		}
 #endif
+		else {
+			scene_file = args[i];
+			canonicalize_path(scene_file);
+		}
+	}
 	if (!renderer) {
-		throw std::runtime_error("Invalid renderer name");
+		std::cout << "Error: No renderer backend or invalid backend name specified\n" << USAGE;
+		std::exit(1);
 	}
 	renderer->initialize(win_width, win_height);
 
 	size_t total_tris = 0;
 	std::string num_tris;
 	{
-		std::string scene_file = args[2];
-		canonicalize_path(scene_file);
 		Scene scene = Scene::load_obj(scene_file);
 		std::cout << "Scene '" << scene_file << "' loaded:\n"
 			<< "# Triangles: " << scene.total_tris() << "\n"
