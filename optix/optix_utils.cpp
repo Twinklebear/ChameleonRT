@@ -288,9 +288,11 @@ Module::Module(OptixDeviceContext &device,
 	CHECK_OPTIX(optixModuleCreateFromPTX(device, &compile_opts, &pipeline_opts,
 				reinterpret_cast<const char*>(ptx), ptex_len,
 				log, &log_size, &module));
+#if 0
 	if (log_size > 0) {
 		std::cout << log << "\n";
 	}
+#endif
 }
 
 
@@ -304,9 +306,11 @@ OptixProgramGroup Module::create_program(OptixDeviceContext &device, OptixProgra
 	char log[2048];
 	size_t log_size = sizeof(log);
 	CHECK_OPTIX(optixProgramGroupCreate(device, &desc, 1, &opts, log, &log_size, &prog));
+#if 0
 	if (log_size > 0) {
 		std::cout << log << "\n";
 	}
+#endif
 	return prog;
 }
 
@@ -358,9 +362,11 @@ OptixPipeline compile_pipeline(OptixDeviceContext &device,
 	CHECK_OPTIX(optixPipelineCreate(device, &compile_opts, &link_opts,
 				programs.data(), programs.size(),
 				log, &log_size, &pipeline));
+#if 0
 	if (log_size > 0) {
 		std::cout << log << "\n";
 	}
+#endif
 	return pipeline;
 }
 
