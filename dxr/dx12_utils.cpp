@@ -2,6 +2,8 @@
 #include "util.h"
 #include "dx12_utils.h"
 
+namespace dxr {
+
 using Microsoft::WRL::ComPtr;
 
 const D3D12_HEAP_PROPERTIES UPLOAD_HEAP_PROPS = {
@@ -263,4 +265,5 @@ glm::uvec2 Texture2D::dims() const {
 	return tdims;
 }
 
+}
 

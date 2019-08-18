@@ -5,7 +5,7 @@
 #include <string>
 #include "dx12_utils.h"
 
-// Utilities for DXR ease of use
+namespace dxr {
 
 bool dxr_available(Microsoft::WRL::ComPtr<ID3D12Device5> &device);
 
@@ -347,3 +347,6 @@ public:
 	ID3D12Resource* operator->();
 	ID3D12Resource* get();
 };
+
+}
+

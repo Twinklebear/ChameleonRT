@@ -34,7 +34,7 @@ RenderDXR::RenderDXR() {
 		throw std::runtime_error("failed to make d3d12 device\n");
 	}
 
-	if (!dxr_available(device)) {
+	if (!dxr::dxr_available(device)) {
 		throw std::runtime_error("DXR is required but not available!");
 	}
 
@@ -62,7 +62,7 @@ RenderDXR::RenderDXR() {
 	// vec4 cam_dv
 	// vec4 cam_dir_top_left
 	// uint32_t frame_id
-	view_param_buf = Buffer::upload(device.Get(),
+	view_param_buf = dxr::Buffer::upload(device.Get(),
 		align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
 }
@@ -75,16 +75,16 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 	frame_id = 0;
 	img.resize(fb_width * fb_height);
 
-	render_target = Texture2D::default(device.Get(), glm::uvec2(fb_width, fb_height),
+	render_target = dxr::Texture2D::default(device.Get(), glm::uvec2(fb_width, fb_height),
 		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, DXGI_FORMAT_R8G8B8A8_UNORM,
 		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
-	accum_buffer = Texture2D::default(device.Get(), glm::uvec2(fb_width, fb_height),
+	accum_buffer = dxr::Texture2D::default(device.Get(), glm::uvec2(fb_width, fb_height),
 		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, DXGI_FORMAT_R32G32B32A32_FLOAT,
 		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 	
 	// Allocate the readback buffer so we can read the image back to the CPU
-	img_readback_buf = Buffer::readback(device.Get(),
+	img_readback_buf = dxr::Buffer::readback(device.Get(),
 		render_target.linear_row_pitch() * fb_height, D3D12_RESOURCE_STATE_COPY_DEST);
 
 	if (rt_pipeline.get()) {
@@ -104,9 +104,9 @@ void RenderDXR::set_scene(const Scene &scene) {
 		// Upload the mesh to the vertex buffer, build accel structures
 		// Place the data in an upload heap first, then do a GPU-side copy
 		// into a default heap (resident in VRAM)
-		Buffer upload_verts = Buffer::upload(device.Get(), mesh.vertices.size() * sizeof(glm::vec3),
+		dxr::Buffer upload_verts = dxr::Buffer::upload(device.Get(), mesh.vertices.size() * sizeof(glm::vec3),
 				D3D12_RESOURCE_STATE_GENERIC_READ);
-		Buffer upload_indices = Buffer::upload(device.Get(), mesh.indices.size() * sizeof(glm::uvec3),
+		dxr::Buffer upload_indices = dxr::Buffer::upload(device.Get(), mesh.indices.size() * sizeof(glm::uvec3),
 				D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		// Copy vertex and index data into the upload buffers
@@ -115,26 +115,26 @@ void RenderDXR::set_scene(const Scene &scene) {
 		upload_verts.unmap();
 		upload_indices.unmap();
 
-		Buffer upload_uvs;
+		dxr::Buffer upload_uvs;
 		if (!mesh.uvs.empty()) {
-			upload_uvs = Buffer::upload(device.Get(), mesh.uvs.size() * sizeof(glm::vec2),
+			upload_uvs = dxr::Buffer::upload(device.Get(), mesh.uvs.size() * sizeof(glm::vec2),
 					D3D12_RESOURCE_STATE_GENERIC_READ);
 			std::memcpy(upload_uvs.map(), mesh.uvs.data(), upload_uvs.size());
 			upload_uvs.unmap();
 		}
 
-		Buffer upload_normals;
+		dxr::Buffer upload_normals;
 		if (!mesh.normals.empty()) {
-			upload_normals = Buffer::upload(device.Get(), mesh.normals.size() * sizeof(glm::vec3),
+			upload_normals = dxr::Buffer::upload(device.Get(), mesh.normals.size() * sizeof(glm::vec3),
 					D3D12_RESOURCE_STATE_GENERIC_READ);
 			std::memcpy(upload_normals.map(), mesh.normals.data(), upload_normals.size());
 			upload_normals.unmap();
 		}
 
 		// Allocate GPU side buffers for the data so we can have it resident in VRAM
-		Buffer vertex_buf = Buffer::default(device.Get(), upload_verts.size(),
+		dxr::Buffer vertex_buf = dxr::Buffer::default(device.Get(), upload_verts.size(),
 				D3D12_RESOURCE_STATE_COPY_DEST);
-		Buffer index_buf = Buffer::default(device.Get(), upload_indices.size(),
+		dxr::Buffer index_buf = dxr::Buffer::default(device.Get(), upload_indices.size(),
 				D3D12_RESOURCE_STATE_COPY_DEST);
 
 		CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
@@ -143,16 +143,16 @@ void RenderDXR::set_scene(const Scene &scene) {
 		cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
 		cmd_list->CopyResource(index_buf.get(), upload_indices.get());
 
-		Buffer uv_buf;
+		dxr::Buffer uv_buf;
 		if (!mesh.uvs.empty()) {
-			uv_buf = Buffer::default(device.Get(), upload_uvs.size(),
+			uv_buf = dxr::Buffer::default(device.Get(), upload_uvs.size(),
 				D3D12_RESOURCE_STATE_COPY_DEST);
 			cmd_list->CopyResource(uv_buf.get(), upload_uvs.get());
 		}
 
-		Buffer normal_buf;
+		dxr::Buffer normal_buf;
 		if (!mesh.normals.empty()) {
-			normal_buf = Buffer::default(device.Get(), upload_normals.size(),
+			normal_buf = dxr::Buffer::default(device.Get(), upload_normals.size(),
 				D3D12_RESOURCE_STATE_COPY_DEST);
 			cmd_list->CopyResource(normal_buf.get(), upload_normals.get());
 		}
@@ -195,7 +195,7 @@ void RenderDXR::set_scene(const Scene &scene) {
 		meshes.back().finalize();
 	}
 
-	instance_buf = Buffer::upload(device.Get(),
+	instance_buf = dxr::Buffer::upload(device.Get(),
 		align_to(meshes.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
 			D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT),
 		D3D12_RESOURCE_STATE_GENERIC_READ);
@@ -225,7 +225,7 @@ void RenderDXR::set_scene(const Scene &scene) {
 	}
 
 	// Now build the top level acceleration structure on our instance
-	scene_bvh = TopLevelBVH(instance_buf, meshes.size());
+	scene_bvh = dxr::TopLevelBVH(instance_buf, meshes.size());
 
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	scene_bvh.enqeue_build(device.Get(), cmd_list.Get());
@@ -239,9 +239,9 @@ void RenderDXR::set_scene(const Scene &scene) {
 
 	// Upload the textures
 	for (const auto &t : scene.textures) {
-		Texture2D tex = Texture2D::default(device.Get(), glm::uvec2(t.width, t.height),
+		dxr::Texture2D tex = dxr::Texture2D::default(device.Get(), glm::uvec2(t.width, t.height),
 				D3D12_RESOURCE_STATE_COPY_DEST, DXGI_FORMAT_R8G8B8A8_UNORM);
-		Buffer tex_upload = Buffer::upload(device.Get(), tex.linear_row_pitch() * t.height,
+		dxr::Buffer tex_upload = dxr::Buffer::upload(device.Get(), tex.linear_row_pitch() * t.height,
 				D3D12_RESOURCE_STATE_GENERIC_READ);
 
 		// TODO: Some better texture upload handling here, and readback for handling the row pitch stuff
@@ -274,13 +274,13 @@ void RenderDXR::set_scene(const Scene &scene) {
 	// Upload the material data
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	{
-		Buffer mat_upload_buf = Buffer::upload(device.Get(),
+		dxr::Buffer mat_upload_buf = dxr::Buffer::upload(device.Get(),
 				scene.materials.size() * sizeof(DisneyMaterial),
 				D3D12_RESOURCE_STATE_GENERIC_READ);
 		std::memcpy(mat_upload_buf.map(), scene.materials.data(), mat_upload_buf.size());
 		mat_upload_buf.unmap();
 
-		material_param_buf = Buffer::default(device.Get(), mat_upload_buf.size(),
+		material_param_buf = dxr::Buffer::default(device.Get(), mat_upload_buf.size(),
 				D3D12_RESOURCE_STATE_COPY_DEST);
 
 		cmd_list->CopyResource(material_param_buf.get(), mat_upload_buf.get());
@@ -295,13 +295,13 @@ void RenderDXR::set_scene(const Scene &scene) {
 	// Upload the light data
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 	{
-		Buffer light_upload_buf = Buffer::upload(device.Get(),
+		dxr::Buffer light_upload_buf = dxr::Buffer::upload(device.Get(),
 				scene.lights.size() * sizeof(QuadLight),
 				D3D12_RESOURCE_STATE_GENERIC_READ);
 		std::memcpy(light_upload_buf.map(), scene.lights.data(), light_upload_buf.size());
 		light_upload_buf.unmap();
 
-		light_buf = Buffer::default(device.Get(), light_upload_buf.size(),
+		light_buf = dxr::Buffer::default(device.Get(), light_upload_buf.size(),
 				D3D12_RESOURCE_STATE_COPY_DEST);
 
 		cmd_list->CopyResource(light_buf.get(), light_upload_buf.get());
@@ -401,18 +401,18 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 }
 
 void RenderDXR::build_raytracing_pipeline() {
-	ShaderLibrary shader_library(render_dxr_dxil, sizeof(render_dxr_dxil),
+	dxr::ShaderLibrary shader_library(render_dxr_dxil, sizeof(render_dxr_dxil),
 		{ L"RayGen", L"Miss", L"ClosestHit", L"OcclusionHit", L"AOMiss" });
 
 	// Create the root signature for our ray gen shader
-	RootSignature raygen_root_sig = RootSignatureBuilder::local()
+	dxr::RootSignature raygen_root_sig = dxr::RootSignatureBuilder::local()
 		.add_constants("SceneParams", 1, 1, 0)
 		.add_desc_heap("cbv_srv_uav_heap", raygen_desc_heap)
 		.add_desc_heap("sampler_heap", raygen_sampler_heap)
 		.create(device.Get());
 
 	// Create the root signature for our closest hit function
-	RootSignature hitgroup_root_sig = RootSignatureBuilder::local()
+	dxr::RootSignature hitgroup_root_sig = dxr::RootSignatureBuilder::local()
 		.add_srv("vertex_buf", 0, 1)
 		.add_srv("index_buf", 1, 1)
 		.add_srv("normal_buf", 2, 1)
@@ -420,7 +420,7 @@ void RenderDXR::build_raytracing_pipeline() {
 		.add_constants("MeshData", 0, 2, 1)
 		.create(device.Get());
 
-	RTPipelineBuilder rt_pipeline_builder = RTPipelineBuilder()
+	dxr::RTPipelineBuilder rt_pipeline_builder = dxr::RTPipelineBuilder()
 		.add_shader_library(shader_library)
 		.set_ray_gen(L"RayGen")
 		.add_miss_shaders({ L"Miss", L"AOMiss" })
@@ -438,8 +438,8 @@ void RenderDXR::build_raytracing_pipeline() {
 		const std::wstring og_name = L"OcclusionGroup_inst" + std::to_wstring(i);
 
 		rt_pipeline_builder.add_hit_groups({
-				HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit"),
-				HitGroup(og_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"OcclusionHit")});
+				dxr::HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit"),
+				dxr::HitGroup(og_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"OcclusionHit")});
 	}
 	rt_pipeline_builder.set_shader_root_sig(hg_names, hitgroup_root_sig);
 
@@ -449,14 +449,14 @@ void RenderDXR::build_raytracing_pipeline() {
 void RenderDXR::build_shader_resource_heap() {
 	// The CBV/SRV/UAV resource heap has the pointers/views things to our output image buffer
 	// and the top level acceleration structure, and any textures
-	raygen_desc_heap = DescriptorHeapBuilder()
+	raygen_desc_heap = dxr::DescriptorHeapBuilder()
 		.add_uav_range(2, 0, 0)
 		.add_srv_range(3, 0, 0)
 		.add_cbv_range(1, 0, 0)
 		.add_srv_range(!textures.empty() ? textures.size() : 1, 3, 0)
 		.create(device.Get());
 
-	raygen_sampler_heap = DescriptorHeapBuilder()
+	raygen_sampler_heap = dxr::DescriptorHeapBuilder()
 		.add_sampler_range(1, 0, 0)
 		.create(device.Get());
 }
@@ -465,7 +465,7 @@ void RenderDXR::build_shader_binding_table() {
 	rt_pipeline.map_shader_table();
 	{
 		uint8_t *map = rt_pipeline.shader_record(L"RayGen");
-		const RootSignature *sig = rt_pipeline.shader_signature(L"RayGen");
+		const dxr::RootSignature *sig = rt_pipeline.shader_signature(L"RayGen");
 
 		const uint32_t num_lights = light_buf.size() / sizeof(QuadLight);
 		std::memcpy(map + sig->offset("SceneParams"), &num_lights, sizeof(uint32_t));
@@ -482,7 +482,7 @@ void RenderDXR::build_shader_binding_table() {
 	for (size_t i = 0; i < meshes.size(); ++i) {
 		const std::wstring hg_name = L"HitGroup_inst" + std::to_wstring(i);
 		uint8_t *map = rt_pipeline.shader_record(hg_name);
-		const RootSignature *sig = rt_pipeline.shader_signature(hg_name);
+		const dxr::RootSignature *sig = rt_pipeline.shader_signature(hg_name);
 
 		D3D12_GPU_VIRTUAL_ADDRESS gpu_handle = meshes[i].vertex_buf->GetGPUVirtualAddress();
 		std::memcpy(map + sig->offset("vertex_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));

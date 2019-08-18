@@ -5,6 +5,8 @@
 #include "util.h"
 #include "dxr_utils.h"
 
+namespace dxr {
+
 using Microsoft::WRL::ComPtr;
 
 bool dxr_available(ComPtr<ID3D12Device5> &device) {
@@ -963,4 +965,6 @@ ID3D12Resource* TopLevelBVH::operator->() {
 }
 ID3D12Resource* TopLevelBVH::get() {
 	return bvh.get();
+}
+
 }

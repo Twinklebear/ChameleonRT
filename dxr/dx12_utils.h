@@ -18,6 +18,8 @@
 		}\
 	}
 
+namespace dxr {
+
 extern const D3D12_HEAP_PROPERTIES UPLOAD_HEAP_PROPS;
 extern const D3D12_HEAP_PROPERTIES DEFAULT_HEAP_PROPS;
 extern const D3D12_HEAP_PROPERTIES READBACK_HEAP_PROPS;
@@ -112,4 +114,6 @@ public:
 	DXGI_FORMAT pixel_format() const;
 	glm::uvec2 dims() const;
 };
+
+}
 

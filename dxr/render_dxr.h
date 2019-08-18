@@ -13,18 +13,18 @@ struct RenderDXR : RenderBackend {
 	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmd_allocator;
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
 	
-	Buffer view_param_buf, img_readback_buf,
+	dxr::Buffer view_param_buf, img_readback_buf,
 		bottom_level_as, instance_buf, material_param_buf,
 		light_buf;
 
-	Texture2D render_target, accum_buffer;
-	std::vector<Texture2D> textures;
+	dxr::Texture2D render_target, accum_buffer;
+	std::vector<dxr::Texture2D> textures;
 
-	std::vector<TriangleMesh> meshes;
-	TopLevelBVH scene_bvh;
+	std::vector<dxr::TriangleMesh> meshes;
+	dxr::TopLevelBVH scene_bvh;
 
-	RTPipeline rt_pipeline;
-	DescriptorHeap raygen_desc_heap, raygen_sampler_heap;
+	dxr::RTPipeline rt_pipeline;
+	dxr::DescriptorHeap raygen_desc_heap, raygen_sampler_heap;
 
 	uint64_t shader_table_entry_size = 0;
 	
