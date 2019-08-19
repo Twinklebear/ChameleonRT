@@ -82,7 +82,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 	float3 illum = 0.f;
 
 	uint32_t light_id = pcg32_randomf(rng) * num_lights;
-	light_id = clamp(light_id, 0, num_lights - 1);
+	light_id = min(light_id, num_lights - 1);
 	QuadLight light = lights[light_id];
 
 	OcclusionHitInfo shadow_hit;

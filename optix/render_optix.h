@@ -11,7 +11,7 @@ struct RenderOptiX : RenderBackend {
 	OptixDeviceContext device;
 
 	optix::Buffer framebuffer, accum_buffer,
-		launch_params, mat_params;
+		launch_params, mat_params, light_params;
 
 	std::vector<optix::TriangleMesh> meshes;
 	std::vector<optix::Texture2D> textures;

@@ -47,19 +47,14 @@ __device__ void unpack_material(const MaterialParams &p, float2 uv, DisneyMateri
 }
 
 __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &hit_p,
-		const float3 &n, const float3 &v_x, const float3 &v_y, const float3 &w_o, PCGRand &rng)
+		const float3 &n, const float3 &v_x, const float3 &v_y, const float3 &w_o,
+		const QuadLight *lights, const uint32_t num_lights, PCGRand &rng)
 {
 	float3 illum = make_float3(0.f);
 
-	QuadLight light;
-	light.emission = make_float3(5.f);
-	light.normal = normalize(make_float3(0.5, -0.8, -0.5));
-	light.position = 10.f * -light.normal;
-	// TODO: This would be input from the scene telling us how the light is placed
-	// For now we don't care
-	ortho_basis(light.v_x, light.v_y, light.normal);
-	light.width = 5.f;
-	light.height = 5.f;
+	uint32_t light_id = pcg32_randomf(rng) * num_lights;
+	light_id = min(light_id, num_lights - 1);
+	QuadLight light = lights[light_id];
 
 	RayPayload shadow_payload = make_ray_payload();
 	uint2 payload_ptr;
@@ -150,7 +145,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
 			break;
 		}
 
-		unpack_material(params.mat_params[payload.material_id], payload.uv, mat);
+		unpack_material(params.materials[payload.material_id], payload.uv, mat);
 
 		const float3 w_o = -ray_dir;
 		const float3 hit_p = ray_origin + payload.t_hit * ray_dir;
@@ -161,7 +156,8 @@ extern "C" __global__ void __raygen__perspective_camera() {
 		}
 		ortho_basis(v_x, v_y, v_z);
 
-		illum = illum + path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
+		illum = illum + path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o,
+				params.lights, params.num_lights, rng);
 
 		float3 w_i;
 		float pdf;

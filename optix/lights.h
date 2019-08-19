@@ -5,12 +5,17 @@
 // Quad-shaped light source
 struct QuadLight {
 	float3 emission;
+	float pad1;
+
 	float3 position;
+	float pad2;
+
 	float3 normal;
-	// x and y vectors spanning the quad, with
-	// the half-width and height in the w component
+	float pad3;
+
 	float3 v_x;
 	float width;
+
 	float3 v_y;
 	float height;
 };

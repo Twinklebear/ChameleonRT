@@ -190,6 +190,9 @@ void RenderOptiX::set_scene(const Scene &scene) {
 	mat_params = optix::Buffer(material_params.size() * sizeof(MaterialParams));
 	mat_params.upload(material_params);
 
+	light_params = optix::Buffer(scene.lights.size() * sizeof(QuadLight));
+	light_params.upload(scene.lights);
+
 	build_raytracing_pipeline();
 }
 
@@ -275,7 +278,9 @@ void RenderOptiX::build_raytracing_pipeline() {
 
 	{
 		RayGenParams &params = shader_table.get_shader_params<RayGenParams>("perspective_camera");
-		params.mat_params = mat_params.device_ptr();
+		params.materials = mat_params.device_ptr();
+		params.lights = light_params.device_ptr();
+		params.num_lights = light_params.size() / sizeof(QuadLight);
 	}
 
 	for (size_t i = 0; i < meshes.size(); ++i) {

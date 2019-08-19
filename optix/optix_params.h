@@ -1,7 +1,5 @@
 #pragma once
 
-// TODO: This can be made to match the host-side struct nicer since we
-// won't need to worry about any layout/padding weirdness
 struct MaterialParams {
 #ifdef __CUDA_ARCH__
 	float3 base_color;
@@ -56,10 +54,13 @@ struct LaunchParams {
 
 struct RayGenParams {
 #ifdef __CUDA_ARCH__
-	MaterialParams *mat_params;
+	MaterialParams *materials;
+	QuadLight *lights;
 #else
-	CUdeviceptr mat_params;
+	CUdeviceptr materials;
+	CUdeviceptr lights;
 #endif
+	uint32_t num_lights;
 };
 
 struct HitGroupParams {
