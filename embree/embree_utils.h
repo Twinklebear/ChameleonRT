@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include <embree3/rtcore.h>
 #include "material.h"
+#include "lights.h"
 
 namespace embree {
 
@@ -159,7 +160,9 @@ struct ViewParams {
 struct SceneContext {
 	RTCScene scene;
 	ISPCInstance *instances;
-	MaterialParams *material_params;
+	MaterialParams *materials;
+	QuadLight *lights;
+	uint32_t num_lights;
 };
 
 struct Tile {

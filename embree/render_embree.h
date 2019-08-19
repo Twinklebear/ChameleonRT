@@ -15,6 +15,7 @@ struct RenderEmbree : RenderBackend {
 	std::shared_ptr<embree::TopLevelBVH> scene;
 
 	std::vector<embree::MaterialParams> material_params;
+	std::vector<QuadLight> lights;
 	std::vector<Image> textures;
 	std::vector<embree::ISPCTexture2D> ispc_textures;
 

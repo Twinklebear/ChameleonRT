@@ -72,6 +72,8 @@ void RenderEmbree::set_scene(const Scene &scene_data) {
 
 		material_params.push_back(p);
 	}
+
+	lights = scene_data.lights;
 }
 
 double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
@@ -97,7 +99,9 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	embree::SceneContext ispc_scene;
 	ispc_scene.scene = scene->handle;
 	ispc_scene.instances = scene->ispc_instances.data();
-	ispc_scene.material_params = material_params.data();
+	ispc_scene.materials = material_params.data();
+	ispc_scene.lights = lights.data();
+	ispc_scene.num_lights = lights.size();
 
 	// Round up the number of tiles we need to run in case the
 	// framebuffer is not an even multiple of tile size

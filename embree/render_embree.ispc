@@ -44,7 +44,9 @@ struct ISPCInstance {
 struct SceneContext {
 	RTCScene scene;
 	ISPCInstance *uniform instances;
-	MaterialParams *uniform material_params;
+	MaterialParams *uniform materials;
+	QuadLight *uniform lights;
+	uniform uint32_t num_lights;
 };
 
 struct Tile {
@@ -56,7 +58,6 @@ struct Tile {
 
 void unpack_material(DisneyMaterial &mat, const MaterialParams *p, const float2 uv) {
 	if (p->color_texture) {
-		//mat.base_color = make_float3(uv.x, uv.y, 0.f);
 		mat.base_color = make_float3(texture(p->color_texture, uv));
 	} else {
 		mat.base_color = p->base_color;
@@ -88,11 +89,10 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	rtcInitIntersectContext(&context);
 	context.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
 
-	PCGRand rng;
 	foreach (ray = 0 ... tile->width * tile->height)  {
 		const uint32_t i = mod(ray, tile->width);
 		const uint32_t j = ray / tile->width;
-		rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 1));
+		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 1));
 
 		const float px_x = (i + tile->x + pcg32_randomf(rng)) / tile->fb_width;
 		const float px_y = (j + tile->y + pcg32_randomf(rng)) / tile->fb_height;
@@ -140,6 +140,11 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 	foreach (ray = 0 ... tile->width * tile->height)  {
 		const uint32_t i = mod(ray, tile->width);
 		const uint32_t j = ray / tile->width;
+		PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 1));
+
+		// Advance the RNG twice to continue from the state after making the ray directions
+		pcg32_randomf(rng);
+		pcg32_randomf(rng);
 
 		const float3 color = shade_path(scene, ray_hit, ray, &context, rng);
 		
@@ -153,19 +158,15 @@ export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
 float3 sample_direct_light(const SceneContext *uniform scene,
 		const DisneyMaterial &mat, const float3 &hit_p, const float3 &n,
 		const float3 &v_x, const float3 &v_y, const float3 &w_o,
-		uniform RTCIntersectContext *uniform incoherent_context, PCGRand &rng)
+		RTCIntersectContext *uniform incoherent_context,
+		QuadLight *uniform lights, uniform uint32_t num_lights,
+		PCGRand &rng)
 {
 	float3 illum = make_float3(0.f);
 
-	QuadLight light;
-	light.emission = make_float3(5.f);
-	light.normal = normalize(make_float3(0.5, -0.8, -0.5));
-	light.position = 10.f * neg(light.normal);
-	// TODO: This would be input from the scene telling us how the light is placed
-	// For now we don't care
-	ortho_basis(light.v_x, light.v_y, light.normal);
-	light.width = 5.f;
-	light.height = 5.f;
+	uint32_t light_id = pcg32_randomf(rng) * num_lights;
+	light_id = min(light_id, num_lights - 1);
+	QuadLight light = lights[light_id];
 
 	RTCRay shadow_ray;
 
@@ -287,7 +288,7 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 				+ bary.x * uvb + bary.y * uvc;
 		}
 
-		unpack_material(mat, &scene->material_params[instance->material_id], uv);
+		unpack_material(mat, &scene->materials[instance->material_id], uv);
 
 		// Direct light sampling
 		float3 v_x, v_y;
@@ -296,7 +297,8 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 		}
 		ortho_basis(v_x, v_y, normal);
 		illum = illum + path_throughput
-			* sample_direct_light(scene, mat, hit_p, normal, v_x, v_y, w_o, context, rng);
+			* sample_direct_light(scene, mat, hit_p, normal, v_x, v_y, w_o, context,
+					scene->lights, scene->num_lights, rng);
 
 		// Sample the BSDF to continue the ray
 		float pdf;
