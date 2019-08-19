@@ -53,11 +53,19 @@ void canonicalize_path(std::string &path) {
 std::string get_cpu_brand() {
 	std::string brand = "Unspecified";
 	std::array<int, 4> regs;
+#ifdef _WIN32
 	__cpuid(regs.data(), 0x80000000);
+#else
+	__cpuid(0x80000000, regs[0], regs[1], regs[2], regs[3]);
+#endif
 	if (regs[0] >= 0x80000004) {
 		char b[64] = {0};
 		for (int i = 0; i < 3; ++i) {
+#ifdef _WIN32
 			__cpuid(regs.data(), 0x80000000 + i + 2);
+#else
+			__cpuid(0x80000000 + i + 2, regs[0], regs[1], regs[2], regs[3]);
+#endif
 			std::memcpy(b + i * sizeof(regs), regs.data(), sizeof(regs));
 		}
 		brand = b;
