@@ -12,3 +12,5 @@ void ortho_basis(glm::vec3 &v_x, glm::vec3 &v_y, const glm::vec3 &n);
 
 void canonicalize_path(std::string &path);
 
+std::string get_cpu_brand();
+

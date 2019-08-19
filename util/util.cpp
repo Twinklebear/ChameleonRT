@@ -1,4 +1,10 @@
+#include <array>
 #include <algorithm>
+#ifdef _WIN32
+#include <intrin.h>
+#else
+#include <cpuid.h>
+#endif
 #include <glm/ext.hpp>
 #include "util.h"
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -42,5 +48,20 @@ void ortho_basis(glm::vec3 &v_x, glm::vec3 &v_y, const glm::vec3 &n) {
 
 void canonicalize_path(std::string &path) {
 	std::replace(path.begin(), path.end(), '\\', '/');
+}
+
+std::string get_cpu_brand() {
+	std::string brand = "Unspecified";
+	std::array<int, 4> regs;
+	__cpuid(regs.data(), 0x80000000);
+	if (regs[0] >= 0x80000004) {
+		char b[64] = {0};
+		for (int i = 0; i < 3; ++i) {
+			__cpuid(regs.data(), 0x80000000 + i + 2);
+			std::memcpy(b + i * sizeof(regs), regs.data(), sizeof(regs));
+		}
+		brand = b;
+	}
+	return brand;
 }
 

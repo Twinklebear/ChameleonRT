@@ -19,6 +19,10 @@ RenderOSPRay::RenderOSPRay() : fb(nullptr) {
 #endif
 }
 
+std::string RenderOSPRay::name() {
+	return "OSPRay";
+}
+
 void RenderOSPRay::initialize(const int fb_width, const int fb_height) {
 	ospSet1f(camera, "aspect", static_cast<float>(fb_width) / fb_height);
 

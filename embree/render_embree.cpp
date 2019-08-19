@@ -15,6 +15,10 @@ RenderEmbree::RenderEmbree() {
 	device = rtcNewDevice(NULL);
 }
 
+std::string RenderEmbree::name() {
+	return "Embree (w/ TBB & ISPC)";
+}
+
 void RenderEmbree::initialize(const int fb_width, const int fb_height) {
 	frame_id = 0;
 	fb_dims = glm::ivec2(fb_width, fb_height);

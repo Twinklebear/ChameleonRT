@@ -7,6 +7,8 @@
 struct RenderBackend {
 	std::vector<uint32_t> img;
 
+	virtual std::string name() = 0;
+
 	virtual void initialize(const int fb_width, const int fb_height) = 0;
 
 	// TODO Probably should take the scene through a shared_ptr

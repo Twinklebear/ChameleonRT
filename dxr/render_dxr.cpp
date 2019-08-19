@@ -71,6 +71,10 @@ RenderDXR::~RenderDXR() {
 	CloseHandle(fence_evt);
 }
 
+std::string RenderDXR::name() {
+	return "DirectX Ray Tracing";
+}
+
 void RenderDXR::initialize(const int fb_width, const int fb_height) {
 	frame_id = 0;
 	img.resize(fb_width * fb_height);

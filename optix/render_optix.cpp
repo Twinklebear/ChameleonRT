@@ -63,6 +63,10 @@ RenderOptiX::~RenderOptiX() {
 	cudaStreamDestroy(cuda_stream);
 }
 
+std::string RenderOptiX::name() {
+	return "OptiX";
+}
+
 void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 	frame_id = 0;
 	width = fb_width;

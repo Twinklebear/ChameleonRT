@@ -149,7 +149,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	ImGuiIO& io = ImGui::GetIO();
 
 	std::string scene_file;
-	std::string rt_backend;
 	std::unique_ptr<RenderBackend> renderer = nullptr;
 	glm::vec3 eye(0, 0, 5);
 	glm::vec3 center(0);
@@ -171,25 +170,21 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 #if ENABLE_OSPRAY
 		else if (args[i] == "-ospray") {
 			renderer = std::make_unique<RenderOSPRay>();
-			rt_backend = "OSPRay";
 		}
 #endif
 #if ENABLE_OPTIX
 		else if (args[i] == "-optix") {
 			renderer = std::make_unique<RenderOptiX>();
-			rt_backend = "OptiX";
 		}
 #endif
 #if ENABLE_EMBREE
 		else if (args[i] == "-embree") {
 			renderer = std::make_unique<RenderEmbree>();
-			rt_backend = "Embree (w/ TBB & ISPC)";
 		}
 #endif
 #if ENABLE_DXR
 		else if (args[i] == "-dxr") {
 			renderer = std::make_unique<RenderDXR>();
-			rt_backend = "DirectX Ray Tracing";
 		}
 #endif
 		else {
@@ -201,6 +196,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 		std::cout << "Error: No renderer backend or invalid backend name specified\n" << USAGE;
 		std::exit(1);
 	}
+
 	renderer->initialize(win_width, win_height);
 
 	size_t total_tris = 0;
@@ -239,6 +235,10 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 
 	glClearColor(0.0, 0.0, 0.0, 0.0);
 	glDisable(GL_DEPTH_TEST);
+
+	const std::string rt_backend = renderer->name();
+	const std::string cpu_brand = get_cpu_brand();
+	const std::string gpu_brand = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
 
 	size_t frame_id = 0;
 	double avg_rays_per_sec = 0.f;
@@ -322,6 +322,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 				1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::Text("# Triangles: %s", num_tris.c_str());
 		ImGui::Text("RT Backend: %s", rt_backend.c_str());
+		ImGui::Text("CPU: %s", cpu_brand.c_str());
+		ImGui::Text("GPU: %s", gpu_brand.c_str());
 		ImGui::Text("Accumulated Frames: %llu", frame_id);
 
 		// We don't instrument inside OSPRay so we don't show these statistics for it
