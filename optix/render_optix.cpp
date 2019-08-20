@@ -157,7 +157,8 @@ void RenderOptiX::set_scene(const Scene &scene) {
 
 	scene_bvh.finalize();
 
-	const cudaChannelFormatDesc channel_format = cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
+	const cudaChannelFormatDesc channel_format =
+		cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
 	for (const auto &t : scene.textures) {
 		textures.emplace_back(glm::uvec2(t.width, t.height), channel_format);
 		textures.back().upload(t.img.data());
@@ -274,7 +275,8 @@ void RenderOptiX::build_raytracing_pipeline() {
 
 	// Hitgroups for each instance
 	for (size_t i = 0; i < meshes.size(); ++i) {
-		shader_table_builder.add_hitgroup("closest_hit_" + std::to_string(i), hitgroup_progs[0], sizeof(HitGroupParams))
+		shader_table_builder
+			.add_hitgroup("closest_hit_" + std::to_string(i), hitgroup_progs[0], sizeof(HitGroupParams))
 			.add_hitgroup("occlusion_hit_" + std::to_string(i), hitgroup_progs[1], 0);
 	}
 
@@ -288,7 +290,8 @@ void RenderOptiX::build_raytracing_pipeline() {
 	}
 
 	for (size_t i = 0; i < meshes.size(); ++i) {
-		HitGroupParams &params = shader_table.get_shader_params<HitGroupParams>("closest_hit_" + std::to_string(i));
+		HitGroupParams &params =
+			shader_table.get_shader_params<HitGroupParams>("closest_hit_" + std::to_string(i));
 		params.vertex_buffer = meshes[i].vertex_buf->device_ptr();
 		params.index_buffer = meshes[i].index_buf->device_ptr();
 
