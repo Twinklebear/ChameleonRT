@@ -33,9 +33,9 @@ To build the Embree backend run CMake with:
 
 ```
 cmake .. -DENABLE_EMBREE=ON \
-    -Dembree_DIR=<path to embree-config.cmake> \
-    -DTBB_DIR=<path TBBConfig.cmake> \
-    -DISPC_DIR=<path to ispc>
+	-Dembree_DIR=<path to embree-config.cmake> \
+	-DTBB_DIR=<path TBBConfig.cmake> \
+	-DISPC_DIR=<path to ispc>
 ```
 
 You can then pass `-embree` to use the Embree backend. The `TBBConfig.cmake` will
@@ -81,6 +81,19 @@ cmake .. -DENABLE_OSPRAY=ON -Dospray_DIR=<path to osprayConfig.cmake>
 ```
 
 You can then pass `-ospray` to use the OSPRay backend.
+
+## Citation
+
+If you find rtobj useful in your work, please cite it as:
+
+```
+@misc{rtobj,
+	author = {Will Usher},
+	year = {2019},
+	note = {https://github.com/Twinklebear/rtobj},
+	title = {rtobj}
+} 
+```
 
 ## Images
 
