@@ -84,7 +84,7 @@ You can then pass `-ospray` to use the OSPRay backend.
 
 These versions of Sponza and San Miguel are from Morgan McGuire's [Computer Graphics Data Archive](https://casual-effects.com/data/).
 
-![San Miguel](https://i.imgur.com/BvXjUUE.png)
+![San Miguel](https://i.imgur.com/rhzcwaC.png)
 
 ![Sponza](https://i.imgur.com/RxNP15S.png)
 
