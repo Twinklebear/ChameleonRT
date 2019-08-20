@@ -32,8 +32,10 @@ Dependencies: [Embree](https://embree.github.io/),
 To build the Embree backend run CMake with:
 
 ```
-cmake .. -DENABLE_EMBREE=ON -Dembree_DIR=<path to embree-config.cmake> \
-    -DTBB_DIR=<path TBBConfig.cmake>
+cmake .. -DENABLE_EMBREE=ON \
+	-Dembree_DIR=<path to embree-config.cmake> \
+    -DTBB_DIR=<path TBBConfig.cmake> \
+	-DISPC_DIR=<path to ispc>
 ```
 
 You can then pass `-embree` to use the Embree backend. The `TBBConfig.cmake` will
