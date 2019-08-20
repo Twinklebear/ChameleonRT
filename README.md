@@ -21,6 +21,9 @@ of your SDL2 directory by passing `-DSDL2=<path>`.
 Similarly for GLM, you can point it to the glmConfig.cmake file
 in your GLM distribution by passing `-Dglm_DIR=<path>`.
 
+rtobj only supports per-OBJ group/mesh materials, OBJ files using per-face materials
+can be reexported from Blender with the "Material Groups" option enabled.
+
 ### Embree
 
 Dependencies: [Embree](https://embree.github.io/),
@@ -76,4 +79,12 @@ cmake .. -DENABLE_OSPRAY=ON -Dospray_DIR=<path to osprayConfig.cmake>
 ```
 
 You can then pass `-ospray` to use the OSPRay backend.
+
+## Images
+
+These versions of Sponza and San Miguel are from Morgan McGuire's [Computer Graphics Data Archive](https://casual-effects.com/data/).
+
+![San Miguel](https://i.imgur.com/BvXjUUE.png)
+
+![Sponza](https://i.imgur.com/RxNP15S.png)
 

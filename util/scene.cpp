@@ -1,4 +1,5 @@
 #include <iostream>
+#include <algorithm>
 #include <numeric>
 #include <map>
 #include <vector>
@@ -54,6 +55,12 @@ Scene Scene::load_obj(const std::string &file) {
 		Mesh mesh;
 		// Note: not supporting per-primitive materials
 		mesh.material_id = obj_mesh.material_ids[0];
+
+		auto minmax_matid = std::minmax_element(obj_mesh.material_ids.begin(), obj_mesh.material_ids.end());
+		if (*minmax_matid.first != *minmax_matid.second) {
+			std::cout << "Warning: per-face material IDs are not supported, materials may look wrong."
+				" Please reexport your mesh with each material group as an OBJ group\n";
+		}
 
 		for (size_t f = 0; f < obj_mesh.num_face_vertices.size(); ++f) {
 			if (obj_mesh.num_face_vertices[f] != 3) {
