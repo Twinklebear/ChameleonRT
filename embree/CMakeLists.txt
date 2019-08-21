@@ -3,7 +3,7 @@ find_package(TBB REQUIRED)
 
 include(cmake/ISPC.cmake)
 
-set(ISPC_COMPILE_DEFNS "-g;-O3;--opt=fast-math")
+set(ISPC_COMPILE_DEFNS "-O3;--opt=fast-math")
 if (REPORT_RAY_STATS)
 	set(ISPC_COMPILE_DEFNS "${ISPC_COMPILE_DEFNS};-DREPORT_RAY_STATS=1")
 endif()

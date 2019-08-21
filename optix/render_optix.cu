@@ -48,7 +48,7 @@ __device__ void unpack_material(const MaterialParams &p, float2 uv, DisneyMateri
 
 __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &hit_p,
 		const float3 &n, const float3 &v_x, const float3 &v_y, const float3 &w_o,
-		const QuadLight *lights, const uint32_t num_lights, PCGRand &rng)
+		const QuadLight *lights, const uint32_t num_lights, uint16_t &ray_count, PCGRand &rng)
 {
 	float3 illum = make_float3(0.f);
 
@@ -74,7 +74,9 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 				0xff, OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
 				OCCLUSION_RAY, 0, OCCLUSION_RAY,
 				payload_ptr.x, payload_ptr.y);
-
+#ifdef REPORT_RAY_STATS
+		++ray_count;
+#endif
 		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_payload.t_hit <= 0.f) {
 			float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
 			float w = power_heuristic(1.f, light_pdf, 1.f, bsdf_pdf);
@@ -94,14 +96,14 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 			float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
 			if (light_pdf >= EPSILON) {
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
-
 				shadow_payload.t_hit = -1.f;
-
 				optixTrace(launch_params.scene, hit_p, w_i, EPSILON, light_dist, 0,
 						0xff, OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
 						OCCLUSION_RAY, 0, OCCLUSION_RAY,
 						payload_ptr.x, payload_ptr.y);
-
+#ifdef REPORT_RAY_STATS
+				++ray_count;
+#endif
 				if (shadow_payload.t_hit <= 0.f) {
 					illum = illum + bsdf * light.emission * abs(dot(w_i, n)) * w / bsdf_pdf;
 				}
@@ -127,6 +129,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
 
 	DisneyMaterial mat;
 
+	uint16_t ray_count = 0;
 	const float3 light_emission = make_float3(1.0);
 	int bounce = 0;
 	float3 illum = make_float3(0.0);
@@ -139,6 +142,9 @@ extern "C" __global__ void __raygen__perspective_camera() {
 		optixTrace(launch_params.scene, ray_origin, ray_dir, EPSILON, 1e20f, 0,
 				0xff, OPTIX_RAY_FLAG_DISABLE_ANYHIT, PRIMARY_RAY, 0, PRIMARY_RAY,
 				payload_ptr.x, payload_ptr.y);
+#ifdef REPORT_RAY_STATS
+		++ray_count;
+#endif
 
 		if (payload.t_hit <= 0.f) {
 			illum = illum + path_throughput * payload.normal;
@@ -157,7 +163,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
 		ortho_basis(v_x, v_y, v_z);
 
 		illum = illum + path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o,
-				params.lights, params.num_lights, rng);
+				params.lights, params.num_lights, ray_count, rng);
 
 		float3 w_i;
 		float pdf;
@@ -185,6 +191,10 @@ extern "C" __global__ void __raygen__perspective_camera() {
 			clamp(linear_to_srgb(accum_color.x) * 255.f, 0.f, 255.f),
 			clamp(linear_to_srgb(accum_color.y) * 255.f, 0.f, 255.f),
 			clamp(linear_to_srgb(accum_color.z) * 255.f, 0.f, 255.f), 255);
+
+#ifdef REPORT_RAY_STATS
+	launch_params.ray_stats_buffer[pixel_idx] = ray_count;
+#endif
 }
 
 extern "C" __global__ void __miss__miss() {

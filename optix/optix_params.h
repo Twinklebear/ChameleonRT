@@ -49,6 +49,14 @@ struct LaunchParams {
 	CUdeviceptr accum_buffer;
 #endif
 
+#ifdef REPORT_RAY_STATS
+#ifdef __CUDA_ARCH__
+	uint16_t *ray_stats_buffer;
+#else
+	CUdeviceptr ray_stats_buffer;
+#endif
+#endif
+
 	OptixTraversableHandle scene;
 };
 

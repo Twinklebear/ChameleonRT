@@ -1,5 +1,7 @@
 #include <chrono>
 #include <array>
+#include <algorithm>
+#include <numeric>
 #include <iostream>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
@@ -76,6 +78,9 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height) {
 	framebuffer = optix::Buffer(img.size() * sizeof(uint32_t));
 	accum_buffer = optix::Buffer(img.size() * sizeof(glm::vec4));
 	accum_buffer.clear();
+#ifdef REPORT_RAY_STATS
+	ray_stats_buffer = optix::Buffer(img.size() * sizeof(uint16_t));
+#endif
 }
 
 void RenderOptiX::set_scene(const Scene &scene) {
@@ -345,6 +350,13 @@ RenderStats RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
 	framebuffer.download(img);
+#ifdef REPORT_RAY_STATS
+	std::vector<uint16_t> ray_counts(ray_stats_buffer.size() / sizeof(uint16_t), 0);
+	ray_stats_buffer.download(ray_counts);
+	const uint64_t total_rays = std::accumulate(ray_counts.begin(), ray_counts.end(), uint64_t(0),
+				[](const uint64_t &total, const uint16_t &c) { return total + c; });
+	stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
+#endif
 
 	++frame_id;
 	return stats;
@@ -370,6 +382,9 @@ void RenderOptiX::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &
 	params.frame_id = frame_id;
 	params.framebuffer = framebuffer.device_ptr();
 	params.accum_buffer = accum_buffer.device_ptr();
+#ifdef REPORT_RAY_STATS
+	params.ray_stats_buffer = ray_stats_buffer.device_ptr();
+#endif
 	params.scene = scene_bvh.handle();
 
 	launch_params.upload(&params, sizeof(LaunchParams));

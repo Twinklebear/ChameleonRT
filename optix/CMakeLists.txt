@@ -4,15 +4,26 @@ find_package(CUDA 10 REQUIRED)
 find_package(OptiX 6 REQUIRED)
 
 include(cmake/Bin2C.cmake)
+
+set(CUDA_COMPILE_DEFNS "-O3;--use_fast_math")
+if (REPORT_RAY_STATS)
+	set(CUDA_COMPILE_DEFNS "${CUDA_COMPILE_DEFNS};-DREPORT_RAY_STATS=1")
+endif()
+
 add_ptx_embed_library(optix_kernels render_optix.cu
 	INCLUDE_DIRECTORIES ${OptiX_INCLUDE}
-	COMPILE_DEFINITIONS --use_fast_math)
+	COMPILE_DEFINITIONS ${CUDA_COMPILE_DEFNS})
 
 add_library(render_optix render_optix.cpp optix_utils.cpp)
 
 set_target_properties(render_optix PROPERTIES
 	CXX_STANDARD 14
 	CXX_STANDARD_REQUIRED ON)
+
+if (REPORT_RAY_STATS)
+	target_compile_options(render_optix PUBLIC
+		-DREPORT_RAY_STATS=1)
+endif()
 
 target_include_directories(render_optix PUBLIC
 	$<BUILD_INTERFACE:${OptiX_INCLUDE}>
