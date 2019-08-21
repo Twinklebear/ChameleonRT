@@ -20,6 +20,10 @@ If CMake doesn't find your SDL2 install you can point it to the root
 of your SDL2 directory by passing `-DSDL2=<path>`.
 Similarly for GLM, you can point it to the glmConfig.cmake file
 in your GLM distribution by passing `-Dglm_DIR=<path>`.
+To track and report statistics about the number of rays traced per-second
+run CMake with `-DREPORT_RAY_STATS=ON`. Tracking these statistics can
+impact performance slightly.
+
 
 rtobj only supports per-OBJ group/mesh materials, OBJ files using per-face materials
 can be reexported from Blender with the "Material Groups" option enabled.
