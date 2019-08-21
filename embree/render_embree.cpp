@@ -116,8 +116,9 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	const glm::uvec2 ntiles(fb_dims.x / tile_size.x + (fb_dims.x % tile_size.x != 0 ? 1 : 0),
 			fb_dims.y / tile_size.y + (fb_dims.y % tile_size.y != 0 ? 1 : 0));
 
-	std::vector<uint64_t> num_rays;
-	num_rays.resize(tiles.size(), 0);
+#ifdef REPORT_RAY_STATS
+	std::vector<uint64_t> num_rays(tiles.size(), 0);
+#endif
 	uint8_t *color = reinterpret_cast<uint8_t*>(img.data());
 
 	auto start = high_resolution_clock::now();
@@ -144,14 +145,15 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 		ispc::tile_to_uint8(&ispc_tile, color);
 #ifdef REPORT_RAY_STATS
-		num_rays[tile_id] = std::accumulate(ray_stats[tile_id].begin(), ray_stats[tile_id].end(), 0);
+		num_rays[tile_id] = std::accumulate(ray_stats[tile_id].begin(), ray_stats[tile_id].end(), uint64_t(0),
+				[](const uint64_t &total, const uint16_t &c) { return total + c; });
 #endif
 	});
 	auto end = high_resolution_clock::now();
 	stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
 #ifdef REPORT_RAY_STATS
-	uint64_t total_rays = std::accumulate(num_rays.begin(), num_rays.end(), 0);
+	const uint64_t total_rays = std::accumulate(num_rays.begin(), num_rays.end(), 0);
 	stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
 #endif
 

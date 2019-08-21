@@ -333,7 +333,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 
 		if (stats.rays_per_second > 0) {
 			const std::string rays_per_sec = pretty_print_count(rays_per_second / frame_id);
-			ImGui::Text("Rays per-second: %sR/s", rays_per_sec.c_str());
+			ImGui::Text("Rays per-second: %sRay/s", rays_per_sec.c_str());
 		}
 
 		ImGui::Text("Total Application Time: %.3f ms/frame (%.1f FPS)",

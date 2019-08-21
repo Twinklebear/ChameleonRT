@@ -31,6 +31,10 @@ RWTexture2D<float4> output : register(u0);
 // Accumulation buffer for progressive refinement
 RWTexture2D<float4> accum_buffer : register(u1);
 
+#ifdef REPORT_RAY_STATS
+RWTexture2D<uint> ray_stats : register(u2);
+#endif
+
 // View params buffer
 cbuffer ViewParams : register(b0) {
 	float4 cam_pos;
@@ -77,7 +81,7 @@ void unpack_material(inout DisneyMaterial mat, uint id, float2 uv_coords) {
 }
 
 float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, in const float3 n,
-	in const float3 v_x, in const float3 v_y, in const float3 w_o, inout PCGRand rng)
+	in const float3 v_x, in const float3 v_y, in const float3 w_o, inout uint ray_count, inout PCGRand rng)
 {
 	float3 illum = 0.f;
 
@@ -105,7 +109,9 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 		shadow_ray.TMax = light_dist;
 		TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
 				OCCLUSION_RAY, 0, OCCLUSION_RAY, shadow_ray, shadow_hit);
-
+#ifdef REPORT_RAY_STATS
+		++ray_count;
+#endif
 		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_hit.hit == 0) {
 			float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
 			float w = power_heuristic(1.f, light_pdf, 1.f, bsdf_pdf);
@@ -127,11 +133,13 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 			float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
 			if (light_pdf >= EPSILON) {
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
-
 				shadow_ray.Direction = w_i;
 				shadow_ray.TMax = light_dist;
 				TraceRay(scene, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff,
 						OCCLUSION_RAY, 0, OCCLUSION_RAY, shadow_ray, shadow_hit);
+#ifdef REPORT_RAY_STATS
+				++ray_count;
+#endif
 				if (shadow_hit.hit == 0) {
 					illum += bsdf * light.emission.rgb * abs(dot(w_i, n)) * w / bsdf_pdf;
 				}
@@ -156,6 +164,7 @@ void RayGen() {
 
 	DisneyMaterial mat;
 
+	uint ray_count = 0;
 	int bounce = 0;
 	float3 illum = float3(0, 0, 0);
 	float3 path_throughput = float3(1, 1, 1);
@@ -163,6 +172,9 @@ void RayGen() {
 		HitInfo payload;
 		payload.color_dist = float4(0, 0, 0, -1);
 		TraceRay(scene, 0, 0xff, PRIMARY_RAY, 0, PRIMARY_RAY, ray, payload);
+#ifdef REPORT_RAY_STATS
+		++ray_count;
+#endif
 
 		// If we hit nothing, include the scene background color from the miss shader
 		if (payload.color_dist.w <= 0) {
@@ -182,7 +194,7 @@ void RayGen() {
 		}
 		ortho_basis(v_x, v_y, v_z);
 
-		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, rng);
+		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, ray_count, rng);
 
 		float3 w_i;
 		float pdf;
@@ -210,6 +222,10 @@ void RayGen() {
 	output[pixel] = float4(linear_to_srgb(accum_color.r),
 		linear_to_srgb(accum_color.g),
 		linear_to_srgb(accum_color.b), 1.f);
+
+#ifdef REPORT_RAY_STATS
+	ray_stats[pixel] = ray_count;
+#endif
 }
 
 [shader("miss")]

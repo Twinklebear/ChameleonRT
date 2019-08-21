@@ -15,9 +15,9 @@ struct RenderDXR : RenderBackend {
 	
 	dxr::Buffer view_param_buf, img_readback_buf,
 		bottom_level_as, instance_buf, material_param_buf,
-		light_buf;
+		light_buf, ray_stats_readback_buf;
 
-	dxr::Texture2D render_target, accum_buffer;
+	dxr::Texture2D render_target, accum_buffer, ray_stats;
 	std::vector<dxr::Texture2D> textures;
 
 	std::vector<dxr::TriangleMesh> meshes;
@@ -52,3 +52,4 @@ private:
 	void build_descriptor_heap();
 	void sync_gpu();
 };
+

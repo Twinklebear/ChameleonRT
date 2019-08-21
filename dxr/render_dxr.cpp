@@ -1,11 +1,12 @@
-#include <glm/ext.hpp>
 #include <iostream>
 #include <array>
+#include <numeric>
 #include <algorithm>
 #include <chrono>
 #include <sstream>
 #include <string>
 #include <iomanip>
+#include <glm/ext.hpp>
 #include "util.h"
 #include "render_dxr.h"
 #include "render_dxr_embedded_dxil.h"
@@ -90,6 +91,15 @@ void RenderDXR::initialize(const int fb_width, const int fb_height) {
 	// Allocate the readback buffer so we can read the image back to the CPU
 	img_readback_buf = dxr::Buffer::readback(device.Get(),
 		render_target.linear_row_pitch() * fb_height, D3D12_RESOURCE_STATE_COPY_DEST);
+
+#ifdef REPORT_RAY_STATS
+	ray_stats = dxr::Texture2D::default(device.Get(), glm::uvec2(fb_width, fb_height),
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, DXGI_FORMAT_R16_UINT,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+
+	ray_stats_readback_buf = dxr::Buffer::readback(device.Get(),
+		ray_stats.linear_row_pitch() * fb_height, D3D12_RESOURCE_STATE_COPY_DEST);
+#endif
 
 	if (rt_pipeline.get()) {
 		build_descriptor_heap();
@@ -372,12 +382,23 @@ RenderStats RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		// Render target from UA -> Copy Source
 		auto b = barrier_transition(render_target, D3D12_RESOURCE_STATE_COPY_SOURCE);
 		cmd_list->ResourceBarrier(1, &b);
+#ifdef REPORT_RAY_STATS
+		b = barrier_transition(ray_stats, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		cmd_list->ResourceBarrier(1, &b);
+#endif
 
 		render_target.readback(cmd_list.Get(), img_readback_buf);
+#ifdef REPORT_RAY_STATS
+		ray_stats.readback(cmd_list.Get(), ray_stats_readback_buf);
+#endif
 	
 		// Transition the render target back to UA so we can write to it in the next frame
 		b = barrier_transition(render_target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 		cmd_list->ResourceBarrier(1, &b);
+#ifdef REPORT_RAY_STATS
+		b = barrier_transition(ray_stats, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		cmd_list->ResourceBarrier(1, &b);
+#endif
 	}
 
 	// Run the copy and wait for it to finish
@@ -399,6 +420,23 @@ RenderStats RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 				render_target.dims().x * render_target.pixel_size());
 		}
 	}
+#ifdef REPORT_RAY_STATS
+	std::vector<uint16_t> ray_counts(ray_stats.dims().x * ray_stats.dims().y, 0);
+	if (ray_stats.linear_row_pitch() == ray_stats.dims().x * ray_stats.pixel_size()) {
+		std::memcpy(ray_counts.data(), ray_stats_readback_buf.map(), ray_stats_readback_buf.size());
+	} else {
+		uint8_t *buf = static_cast<uint8_t*>(ray_stats_readback_buf.map());
+		for (uint32_t y = 0; y < ray_stats.dims().y; ++y) {
+			std::memcpy(ray_counts.data() + y * ray_stats.dims().x,
+				buf + y * ray_stats.linear_row_pitch(),
+				ray_stats.dims().x * ray_stats.pixel_size());
+		}
+	}
+	const uint64_t total_rays = std::accumulate(ray_counts.begin(), ray_counts.end(), uint64_t(0),
+				[](const uint64_t &total, const uint16_t &c) { return total + c; });
+	stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
+#endif
+
 	img_readback_buf.unmap();
 	++frame_id;
 
@@ -455,7 +493,11 @@ void RenderDXR::build_shader_resource_heap() {
 	// The CBV/SRV/UAV resource heap has the pointers/views things to our output image buffer
 	// and the top level acceleration structure, and any textures
 	raygen_desc_heap = dxr::DescriptorHeapBuilder()
+#if REPORT_RAY_STATS
+		.add_uav_range(3, 0, 0)
+#else
 		.add_uav_range(2, 0, 0)
+#endif
 		.add_srv_range(3, 0, 0)
 		.add_cbv_range(1, 0, 0)
 		.add_srv_range(!textures.empty() ? textures.size() : 1, 3, 0)
@@ -569,6 +611,12 @@ void RenderDXR::build_descriptor_heap() {
 	// Accum buffer
 	device->CreateUnorderedAccessView(accum_buffer.get(), nullptr, &uav_desc, heap_handle);
 	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+#ifdef REPORT_RAY_STATS
+	// Ray stats buffer
+	device->CreateUnorderedAccessView(ray_stats.get(), nullptr, &uav_desc, heap_handle);
+	heap_handle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+#endif
 
 	// Write the TLAS after the output image in the heap
 	{

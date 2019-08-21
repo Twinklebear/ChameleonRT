@@ -190,7 +190,7 @@ float3 sample_direct_light(const SceneContext *uniform scene,
 		shadow_ray.tfar = light_dist;
 		rtcOccludedV(scene->scene, incoherent_context, &shadow_ray);
 #ifdef REPORT_RAY_STATS
-		ray_stats += 1;
+		++ray_stats;
 #endif
 		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_ray.tfar > 0.f) {
 			float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
@@ -215,7 +215,7 @@ float3 sample_direct_light(const SceneContext *uniform scene,
 				shadow_ray.tfar = light_dist;
 				rtcOccludedV(scene->scene, incoherent_context, &shadow_ray);
 #ifdef REPORT_RAY_STATS
-				ray_stats += 1;
+				++ray_stats;
 #endif
 				if (shadow_ray.tfar > 0.f) {
 					illum = illum + bsdf * light.emission * abs(dot(w_i, n)) * w / bsdf_pdf;
@@ -331,7 +331,7 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 		if (bounce < MAX_PATH_DEPTH) {
 			rtcIntersectV(scene->scene, context, &path_ray);
 #ifdef REPORT_RAY_STATS
-			ray_stats += 1;
+			++ray_stats;
 #endif
 			inst = path_ray.hit.instID[0];
 			geom = path_ray.hit.geomID;

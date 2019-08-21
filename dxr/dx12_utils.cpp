@@ -252,6 +252,7 @@ size_t Texture2D::pixel_size() const {
 	switch (format) {
 		case DXGI_FORMAT_R8G8B8A8_UNORM: return 4;
 		case DXGI_FORMAT_R32G32B32A32_FLOAT: return 16;
+		case DXGI_FORMAT_R16_UINT: return 2;
 		default: throw std::runtime_error("Unhandled format in pixel_size!");
 				 return -1;
 	};
