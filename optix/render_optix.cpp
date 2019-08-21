@@ -321,10 +321,11 @@ void RenderOptiX::build_raytracing_pipeline() {
 	}
 }
 
-double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
+RenderStats RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy, const bool camera_changed)
 {
 	using namespace std::chrono;
+	RenderStats stats;
 
 	if (camera_changed) {
 		frame_id = 0;
@@ -341,13 +342,12 @@ double RenderOptiX::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	// Sync with the GPU to ensure it actually finishes rendering
 	sync_gpu();
 	auto end = high_resolution_clock::now();
-
-	const double render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-9;
+	stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
 	framebuffer.download(img);
 
 	++frame_id;
-	return img.size() / render_time;
+	return stats;
 }
 
 void RenderOptiX::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,

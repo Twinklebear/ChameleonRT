@@ -324,10 +324,11 @@ void RenderDXR::set_scene(const Scene &scene) {
 	build_descriptor_heap();
 }
 
-double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
+RenderStats RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy, const bool camera_changed)
 {
 	using namespace std::chrono;
+	RenderStats stats;
 
 	// TODO: probably just pass frame_id directly
 	if (camera_changed) {
@@ -360,7 +361,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	sync_gpu();
 
 	auto end = high_resolution_clock::now();
-	const double render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-9;
+	stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
 	// Now copy the rendered image into our readback heap so we can give it back
 	// to our simple window to blit the image (TODO: Maybe in the future keep this on the GPU?
@@ -401,7 +402,7 @@ double RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	img_readback_buf.unmap();
 	++frame_id;
 
-	return img.size() / render_time;
+	return stats;
 }
 
 void RenderDXR::build_raytracing_pipeline() {

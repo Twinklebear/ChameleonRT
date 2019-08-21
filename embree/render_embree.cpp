@@ -1,4 +1,5 @@
 #include <limits>
+#include <numeric>
 #include <algorithm>
 #include <iostream>
 #include <chrono>
@@ -27,9 +28,11 @@ void RenderEmbree::initialize(const int fb_width, const int fb_height) {
 	const glm::uvec2 ntiles(fb_dims.x / tile_size.x + (fb_dims.x % tile_size.x != 0 ? 1 : 0),
 			fb_dims.y / tile_size.y + (fb_dims.y % tile_size.y != 0 ? 1 : 0));
 	tiles.resize(ntiles.x * ntiles.y);
+	ray_stats.resize(tiles.size());
 	primary_rays.resize(tiles.size());
 	for (size_t i = 0; i < tiles.size(); ++i) {
 		tiles[i].resize(tile_size.x * tile_size.y * 3, 0.f);
+		ray_stats[i].resize(tile_size.x * tile_size.y, 0);
 		primary_rays[i].first.resize(tile_size.x * tile_size.y);
 		primary_rays[i].second.resize(tile_size.x * tile_size.y);
 	}
@@ -80,10 +83,11 @@ void RenderEmbree::set_scene(const Scene &scene_data) {
 	lights = scene_data.lights;
 }
 
-double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
+RenderStats RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy, const bool camera_changed)
 {
 	using namespace std::chrono;
+	RenderStats stats;
 
 	if (camera_changed) {
 		frame_id = 0;
@@ -112,9 +116,11 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	const glm::uvec2 ntiles(fb_dims.x / tile_size.x + (fb_dims.x % tile_size.x != 0 ? 1 : 0),
 			fb_dims.y / tile_size.y + (fb_dims.y % tile_size.y != 0 ? 1 : 0));
 
-	auto start = high_resolution_clock::now();
-
+	std::vector<uint64_t> num_rays;
+	num_rays.resize(tiles.size(), 0);
 	uint8_t *color = reinterpret_cast<uint8_t*>(img.data());
+
+	auto start = high_resolution_clock::now();
 	tbb::parallel_for(uint32_t(0), ntiles.x * ntiles.y, [&](uint32_t tile_id) {
 		const glm::uvec2 tile = glm::uvec2(tile_id % ntiles.x, tile_id / ntiles.x);
 		const glm::uvec2 tile_pos = tile * tile_size;
@@ -129,6 +135,7 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		ispc_tile.fb_width = fb_dims.x;
 		ispc_tile.fb_height = fb_dims.y;
 		ispc_tile.data = tiles[tile_id].data();
+		ispc_tile.ray_stats = ray_stats[tile_id].data();
 
 		RTCRayHitNp ray_hit = embree::make_ray_hit_soa(primary_rays[tile_id].first, primary_rays[tile_id].second);
 
@@ -136,13 +143,20 @@ double RenderEmbree::render(const glm::vec3 &pos, const glm::vec3 &dir,
 				&ispc_tile, &view_params);
 
 		ispc::tile_to_uint8(&ispc_tile, color);
+#ifdef REPORT_RAY_STATS
+		num_rays[tile_id] = std::accumulate(ray_stats[tile_id].begin(), ray_stats[tile_id].end(), 0);
+#endif
 	});
-
 	auto end = high_resolution_clock::now();
-	const double render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-9;
+	stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
+
+#ifdef REPORT_RAY_STATS
+	uint64_t total_rays = std::accumulate(num_rays.begin(), num_rays.end(), 0);
+	stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
+#endif
 
 	++frame_id;
 
-	return fb_dims.x * fb_dims.y / render_time;
+	return stats;
 }
 

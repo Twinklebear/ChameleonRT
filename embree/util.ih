@@ -10,6 +10,7 @@
 #define MAX_PATH_DEPTH 5
 
 typedef unsigned int8 uint8_t;
+typedef unsigned int16 uint16_t;
 typedef unsigned int uint32_t;
 typedef unsigned int64 uint64_t;
 

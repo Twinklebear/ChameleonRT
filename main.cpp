@@ -241,7 +241,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 	const std::string gpu_brand = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
 
 	size_t frame_id = 0;
-	double avg_rays_per_sec = 0.f;
+	float render_time = 0.f;
+	float rays_per_second = 0.f;
 	glm::vec2 prev_mouse(-2.f);
 	bool done = false;
 	bool camera_changed = true;
@@ -287,6 +288,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 				}
 			}
 			if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED) {
+				frame_id = 0;
 				win_width = event.window.data1;
 				win_height = event.window.data2;
 				io.DisplaySize.x = win_width;
@@ -310,30 +312,37 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 			frame_id = 0;
 		}
 
-		const double rays_per_sec =
-			renderer->render(camera.eye(), camera.dir(), camera.up(), 65.f, camera_changed);
+		RenderStats stats = renderer->render(camera.eye(), camera.dir(), camera.up(), 65.f, camera_changed);
+		++frame_id;
+
+		if (frame_id == 1) {
+			render_time = stats.render_time;
+			rays_per_second = stats.rays_per_second;
+		} else {
+			render_time += stats.render_time;
+			rays_per_second += stats.rays_per_second;
+		}
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplSDL2_NewFrame(window);
 		ImGui::NewFrame();
 
-		ImGui::Begin("Debug Panel");
-		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
+		ImGui::Begin("Render Info");
+		ImGui::Text("Render Time: %.3f ms/frame (%.1f FPS)",
+				render_time / frame_id, 1000.f / (render_time / frame_id));
+
+		if (stats.rays_per_second > 0) {
+			const std::string rays_per_sec = pretty_print_count(rays_per_second / frame_id);
+			ImGui::Text("Rays per-second: %sR/s", rays_per_sec.c_str());
+		}
+
+		ImGui::Text("Total Application Time: %.3f ms/frame (%.1f FPS)",
 				1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::Text("# Triangles: %s", num_tris.c_str());
 		ImGui::Text("RT Backend: %s", rt_backend.c_str());
 		ImGui::Text("CPU: %s", cpu_brand.c_str());
 		ImGui::Text("GPU: %s", gpu_brand.c_str());
 		ImGui::Text("Accumulated Frames: %llu", frame_id);
-
-		// We don't instrument inside OSPRay so we don't show these statistics for it
-		if (rays_per_sec > 0.0) {
-			avg_rays_per_sec = avg_rays_per_sec + (rays_per_sec - avg_rays_per_sec) / (frame_id + 1);
-			// TODO: I need to compute the stats properly now that we send secondary rays.
-			// This will take some additional work since we basically need an additional buffer
-			// in each renderer to track the # rays launched for each pixel
-			//ImGui::Text("Avg. Rays/sec: %s/sec", pretty_print_count(avg_rays_per_sec).c_str());
-		}
 
 		ImGui::End();
 
@@ -352,7 +361,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 
 		SDL_GL_SwapWindow(window);
 
-		++frame_id;
 		camera_changed = false;
 	}
 }

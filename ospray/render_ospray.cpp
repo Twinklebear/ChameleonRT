@@ -52,9 +52,11 @@ void RenderOSPRay::set_mesh(const std::vector<float> &verts,
 	ospCommit(world);
 }
 
-double RenderOSPRay::render(const glm::vec3 &pos, const glm::vec3 &dir,
+RenderStats RenderOSPRay::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		const glm::vec3 &up, const float fovy, const bool camera_changed)
 {
+	RenderStats stats;
+
 	ospSet3fv(camera, "pos", &pos.x);
 	ospSet3fv(camera, "dir", &dir.x);
 	ospSet3fv(camera, "up", &up.x);
@@ -78,6 +80,6 @@ double RenderOSPRay::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	std::memcpy(img.data(), mapped, sizeof(uint32_t) * img.size());
 	ospUnmapFrameBuffer(mapped, fb);
 
-	return -1;
+	return stats;
 }
 

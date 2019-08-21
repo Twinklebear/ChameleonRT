@@ -170,6 +170,7 @@ struct Tile {
 	uint32_t width, height;
 	uint32_t fb_width, fb_height;
 	float *data;
+	uint16_t *ray_stats;
 };
 
 }

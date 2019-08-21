@@ -17,23 +17,29 @@ find_package(OpenGL REQUIRED)
 add_subdirectory(imgui)
 add_subdirectory(util)
 
-if (${ENABLE_OSPRAY})
+option(ENABLE_OSPRAY "Build the OSPRay rendering backend. Requires OSPRay" OFF)
+option(ENABLE_EMBREE "Build the Embree + TBB + ISPC rendering backend. Requires Embree, TBB and ISPC" OFF)
+option(ENABLE_OPTIX "Build the OptiX rendering backend. Requires OptiX and CUDA" OFF)
+option(REPORT_RAY_STATS "Track and report rays/second. May incur a slight rendering performance penalty" OFF)
+
+if (ENABLE_OSPRAY)
 	add_definitions(-DENABLE_OSPRAY)
 	add_subdirectory(ospray)
 endif()
 
-if (${ENABLE_EMBREE})
+if (ENABLE_EMBREE)
 	add_definitions(-DENABLE_EMBREE)
 	add_subdirectory(embree)
 endif()
 
-if (${ENABLE_OPTIX})
+if (ENABLE_OPTIX)
 	add_definitions(-DENABLE_OPTIX)
 	add_subdirectory(optix)
 endif()
 
 if (WIN32) 
-	if (${ENABLE_DXR})
+	option(ENABLE_DXR "Build the DXR rendering backend" OFF)
+	if (ENABLE_DXR)
 		add_definitions(-DENABLE_DXR)
 		add_subdirectory(dxr)
 	endif()
@@ -54,21 +60,19 @@ set_target_properties(rtobj PROPERTIES
 
 target_link_libraries(rtobj PUBLIC util)
 
-if (${ENABLE_OSPRAY})
+if (ENABLE_OSPRAY)
 	target_link_libraries(rtobj PUBLIC render_ospray)
 endif()
 
-if (${ENABLE_EMBREE})
+if (ENABLE_EMBREE)
 	target_link_libraries(rtobj PUBLIC render_embree)
 endif()
 
-if (${ENABLE_OPTIX})
+if (ENABLE_OPTIX)
 	target_link_libraries(rtobj PUBLIC render_optix)
 endif()
 
-if (WIN32) 
-	if (${ENABLE_DXR})
-		target_link_libraries(rtobj PUBLIC render_dxr)
-	endif()
+if (ENABLE_DXR)
+	target_link_libraries(rtobj PUBLIC render_dxr)
 endif()
 

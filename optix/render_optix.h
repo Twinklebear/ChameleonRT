@@ -31,7 +31,7 @@ struct RenderOptiX : RenderBackend {
 	std::string name() override;
 	void initialize(const int fb_width, const int fb_height) override;
 	void set_scene(const Scene &scene) override;
-	double render(const glm::vec3 &pos, const glm::vec3 &dir,
+	RenderStats render(const glm::vec3 &pos, const glm::vec3 &dir,
 			const glm::vec3 &up, const float fovy, const bool camera_changed) override;
 
 private:
