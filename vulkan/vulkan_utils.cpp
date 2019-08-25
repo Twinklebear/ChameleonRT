@@ -117,6 +117,10 @@ VkQueue Device::graphics_queue() {
 	return queue;
 }
 
+uint32_t Device::queue_index() const {
+	return graphics_queue_index;
+}
+
 VkCommandPool Device::make_command_pool(VkCommandPoolCreateFlagBits flags) {
 	VkCommandPool pool = VK_NULL_HANDLE;
 	VkCommandPoolCreateInfo create_info = {};

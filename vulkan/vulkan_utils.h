@@ -60,6 +60,7 @@ public:
 	VkDevice logical_device();
 
 	VkQueue graphics_queue();
+	uint32_t queue_index() const;
 
 	VkCommandPool make_command_pool(VkCommandPoolCreateFlagBits flags);
 

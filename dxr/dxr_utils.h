@@ -319,7 +319,6 @@ public:
 };
 
 class TopLevelBVH {
-private:
 	size_t n_instances;
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags;
 	Buffer scratch;
