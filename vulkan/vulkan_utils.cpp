@@ -35,6 +35,12 @@ void load_nv_rtx(VkDevice &device) {
 	vkCmdBuildAccelerationStructure =
 		reinterpret_cast<PFN_vkCmdBuildAccelerationStructureNV>(vkGetDeviceProcAddr(device,
 					"vkCmdBuildAccelerationStructureNV"));
+	vkCmdCopyAccelerationStructure =
+		reinterpret_cast<PFN_vkCmdCopyAccelerationStructureNV>(vkGetDeviceProcAddr(device,
+					"vkCmdCopyAccelerationStructureNV"));
+	vkCmdWriteAccelerationStructuresProperties =
+		reinterpret_cast<PFN_vkCmdWriteAccelerationStructuresPropertiesNV>(vkGetDeviceProcAddr(device,
+					"vkCmdWriteAccelerationStructuresPropertiesNV"));
 	vkCreateRayTracingPipelines =
 		reinterpret_cast<PFN_vkCreateRayTracingPipelinesNV>(vkGetDeviceProcAddr(device,
 					"vkCreateRayTracingPipelinesNV"));
