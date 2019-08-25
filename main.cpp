@@ -18,17 +18,17 @@
 #if ENABLE_OSPRAY
 #include "ospray/render_ospray.h"
 #endif
-
 #if ENABLE_OPTIX
 #include "optix/render_optix.h"
 #endif
-
 #if ENABLE_EMBREE
 #include "embree/render_embree.h"
 #endif
-
 #if ENABLE_DXR
 #include "dxr/render_dxr.h"
+#endif
+#if ENABLE_VULKAN
+#include "vulkan/render_vulkan.h"
 #endif
 
 const std::string USAGE = "Usage: (backend) <obj_file> [camera]\n"
@@ -44,6 +44,9 @@ const std::string USAGE = "Usage: (backend) <obj_file> [camera]\n"
 #endif
 #if ENABLE_DXR
 			"\t-dxr       Render with DirectX Ray Tracing\n"
+#endif
+#if ENABLE_VULKAN
+			"\t-vulkan    Render with Vulkan Ray Tracing\n"
 #endif
 			"\n";
 
@@ -185,6 +188,11 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window) {
 #if ENABLE_DXR
 		else if (args[i] == "-dxr") {
 			renderer = std::make_unique<RenderDXR>();
+		}
+#endif
+#if ENABLE_VULKAN
+		else if (args[i] == "-vulkan") {
+			renderer = std::make_unique<RenderVulkan>();
 		}
 #endif
 		else {

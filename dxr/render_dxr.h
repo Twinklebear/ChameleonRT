@@ -26,8 +26,6 @@ struct RenderDXR : RenderBackend {
 	dxr::RTPipeline rt_pipeline;
 	dxr::DescriptorHeap raygen_desc_heap, raygen_sampler_heap;
 
-	uint64_t shader_table_entry_size = 0;
-	
 	uint64_t fence_value = 1;
 	Microsoft::WRL::ComPtr<ID3D12Fence> fence;
 	HANDLE fence_evt;

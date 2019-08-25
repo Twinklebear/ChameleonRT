@@ -7,7 +7,7 @@ if (REPORT_RAY_STATS)
 	set(HLSL_COMPILE_DEFNS "REPORT_RAY_STATS=1")
 endif()
 
-add_dxil_embed_library(shaders render_dxr.hlsl util.hlsl
+add_dxil_embed_library(dxr_shaders render_dxr.hlsl util.hlsl
 	disney_bsdf.hlsl pcg_rng.hlsl
 	COMPILE_OPTIONS -Zi -O3
 	COMPILE_DEFINITIONS ${HLSL_COMPILE_DEFNS}
@@ -28,5 +28,5 @@ target_include_directories(render_dxr PUBLIC
 	$<BUILD_INTERFACE:${D3D12_INCLUDE_DIRS}>)
 
 target_link_libraries(render_dxr PUBLIC
-	shaders util ${D3D12_LIBRARIES})
+	dxr_shaders util ${D3D12_LIBRARIES})
 

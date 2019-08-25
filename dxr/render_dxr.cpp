@@ -347,6 +347,7 @@ RenderStats RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	update_view_parameters(pos, dir, up, fovy);
 
+	// TODO WILL: Pre-build this command list and save it
 	// Now render!
 	CHECK_ERR(cmd_allocator->Reset());
 	CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
@@ -438,8 +439,8 @@ RenderStats RenderDXR::render(const glm::vec3 &pos, const glm::vec3 &dir,
 #endif
 
 	img_readback_buf.unmap();
-	++frame_id;
 
+	++frame_id;
 	return stats;
 }
 

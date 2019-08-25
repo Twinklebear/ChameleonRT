@@ -1,0 +1,28 @@
+#version 460
+#extension GL_NV_ray_tracing : require
+// Need later, this is equiv of DXR non uniform resource index
+//#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(binding = 0, set = 0) uniform accelerationStructureNV scene;
+layout(binding = 1, set = 0, rgba8) uniform writeonly image2D framebuffer;
+
+layout(location = 0) rayPayloadNV vec4 hitColor;
+
+void main() {
+	const ivec2 pixel = ivec2(gl_LaunchIDNV.xy);
+	const vec2 dims = vec2(gl_LaunchSizeNV.xy);
+	vec2 px = (((vec2(pixel) + 0.5f) / dims.xy) * 2.f - 1.f);
+
+	vec3 origin = vec3(px.x, px.y, 1);
+	vec3 dir = vec3(0, 0, -1);
+
+	hitColor = vec4(0, 0, 0, 0);
+
+	// TODO Opaque = disable any hit?
+	traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, 0, 0, 0,
+		origin, 0.0, dir, 1e20f, 0);
+		
+
+	imageStore(framebuffer, pixel, hitColor);
+}
+
