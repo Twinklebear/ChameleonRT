@@ -140,6 +140,16 @@ uint32_t Device::memory_type_index(uint32_t type_filter, VkMemoryPropertyFlags p
 	throw std::runtime_error("failed to find appropriate memory");
 }
 
+VkDeviceMemory Device::alloc(size_t nbytes, uint32_t type_filter, VkMemoryPropertyFlags props) {
+	VkMemoryAllocateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	info.allocationSize = nbytes;
+	info.memoryTypeIndex = memory_type_index(type_filter, props);
+	VkDeviceMemory mem = VK_NULL_HANDLE;
+	CHECK_VULKAN(vkAllocateMemory(device, &info, nullptr, &mem));
+	return mem;
+}
+
 const VkPhysicalDeviceMemoryProperties& Device::memory_properties() const {
 	return mem_props;
 }
@@ -259,19 +269,6 @@ VkBufferCreateInfo Buffer::create_info(size_t nbytes, VkBufferUsageFlags usage) 
 	return info;
 }
 
-VkMemoryAllocateInfo Buffer::alloc_info(Device &device, const VkBuffer &buf,
-		VkMemoryPropertyFlags mem_props)
-{
-	VkMemoryRequirements mem_reqs = {};
-	vkGetBufferMemoryRequirements(device.logical_device(), buf, &mem_reqs);
-
-	VkMemoryAllocateInfo info = {};
-	info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	info.allocationSize = mem_reqs.size;
-	info.memoryTypeIndex = device.memory_type_index(mem_reqs.memoryTypeBits, mem_props);
-	return info;
-}
-
 std::shared_ptr<Buffer> Buffer::make_buffer(Device &device, size_t nbytes, VkBufferUsageFlags usage,
 		VkMemoryPropertyFlags mem_props)
 {
@@ -283,8 +280,9 @@ std::shared_ptr<Buffer> Buffer::make_buffer(Device &device, size_t nbytes, VkBuf
 	auto create_info = Buffer::create_info(nbytes, usage);
 	CHECK_VULKAN(vkCreateBuffer(device.logical_device(), &create_info, nullptr, &buf->buf));
 
-	auto alloc_info = Buffer::alloc_info(device, buf->buf, mem_props);
-	CHECK_VULKAN(vkAllocateMemory(device.logical_device(), &alloc_info, nullptr, &buf->mem));
+	VkMemoryRequirements mem_reqs = {};
+	vkGetBufferMemoryRequirements(device.logical_device(), buf->buf, &mem_reqs);
+	buf->mem = device.alloc(mem_reqs.size, mem_reqs.memoryTypeBits, mem_props);
 
 	vkBindBufferMemory(device.logical_device(), buf->buf, buf->mem, 0);
 
@@ -361,18 +359,6 @@ VkBuffer Buffer::handle() const {
 	return buf;
 }
 
-VkMemoryAllocateInfo Texture2D::alloc_info(Device &device, const VkImage &img) {
-	VkMemoryRequirements mem_reqs = {};
-	vkGetImageMemoryRequirements(device.logical_device(), img, &mem_reqs);
-
-	VkMemoryAllocateInfo info = {};
-	info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	info.allocationSize = mem_reqs.size;
-	info.memoryTypeIndex = device.memory_type_index(mem_reqs.memoryTypeBits,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	return info;
-}
-
 Texture2D::~Texture2D() {
 	if (image != VK_NULL_HANDLE) {
 		vkDestroyImageView(vkdevice->logical_device(), view, nullptr);
@@ -434,8 +420,9 @@ std::shared_ptr<Texture2D> Texture2D::device(Device &device, glm::uvec2 dims, Vk
 	create_info.initialLayout = texture->img_layout;
 	CHECK_VULKAN(vkCreateImage(device.logical_device(), &create_info, nullptr, &texture->image));
 
-	VkMemoryAllocateInfo alloc_info = Texture2D::alloc_info(device, texture->image);
-	CHECK_VULKAN(vkAllocateMemory(device.logical_device(), &alloc_info, nullptr, &texture->mem));
+	VkMemoryRequirements mem_reqs = {};
+	vkGetImageMemoryRequirements(device.logical_device(), texture->image, &mem_reqs);
+	texture->mem = device.alloc(mem_reqs.size, mem_reqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	CHECK_VULKAN(vkBindImageMemory(device.logical_device(), texture->image, texture->mem, 0));
 

@@ -26,16 +26,6 @@ extern PFN_vkCmdTraceRaysNV vkCmdTraceRays;
 
 namespace vk {
 
-// See https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html#acceleration-structure-instance
-struct GeometryInstance {
-	float transform[12];
-	uint32_t instance_custom_index : 24;
-	uint32_t mask : 8;
-	uint32_t instance_offset : 24;
-	uint32_t flags : 8;
-	uint64_t acceleration_structure_handle;
-};
-
 class Device {
 	VkInstance instance = VK_NULL_HANDLE;
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
@@ -65,6 +55,7 @@ public:
 	VkCommandPool make_command_pool(VkCommandPoolCreateFlagBits flags);
 
 	uint32_t memory_type_index(uint32_t type_filter, VkMemoryPropertyFlags props) const;
+	VkDeviceMemory alloc(size_t nbytes, uint32_t type_filter, VkMemoryPropertyFlags props);
 
 	const VkPhysicalDeviceMemoryProperties& memory_properties() const;
 	const VkPhysicalDeviceRayTracingPropertiesNV& raytracing_properties() const;
@@ -85,9 +76,6 @@ class Buffer {
 	bool host_visible = false;
 
 	static VkBufferCreateInfo create_info(size_t nbytes, VkBufferUsageFlags usage);
-
-	static VkMemoryAllocateInfo alloc_info(Device &device, const VkBuffer &buf,
-			VkMemoryPropertyFlags mem_props);
 
 	static std::shared_ptr<Buffer> make_buffer(Device &device, size_t nbytes, VkBufferUsageFlags usage,
 			VkMemoryPropertyFlags mem_props);
@@ -124,8 +112,6 @@ class Texture2D {
 	VkDeviceMemory mem = VK_NULL_HANDLE;
 	VkImageView view = VK_NULL_HANDLE;
 	Device *vkdevice = nullptr;
-
-	static VkMemoryAllocateInfo alloc_info(Device &device, const VkImage &img);
 
 public:
 	Texture2D() = default;
