@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include "vulkan_utils.h"
 #include "render_backend.h"
 
 struct RenderVulkan : RenderBackend {
