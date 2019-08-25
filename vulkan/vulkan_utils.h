@@ -109,13 +109,45 @@ public:
 	void unmap();
 
 	size_t size() const;
+
+	VkBuffer handle() const;
 };
 
-/*
 class Texture2D {
-	glm::uvec2 timds = glm::uvec2(0);
+	glm::uvec2 tdims = glm::uvec2(0);
+	VkFormat img_format;
+	VkImageLayout img_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+	VkImage image = VK_NULL_HANDLE;
+	VkDeviceMemory mem = VK_NULL_HANDLE;
+	VkImageView view = VK_NULL_HANDLE;
+	Device *vkdevice = nullptr;
+
+	static VkMemoryAllocateInfo alloc_info(Device &device, const VkImage &img);
+
+public:
+	Texture2D() = default;
+	~Texture2D();
+	Texture2D(Texture2D &&t);
+	Texture2D& operator=(Texture2D &&t);
+
+	Texture2D(Texture2D &t) = delete;
+	Texture2D& operator=(Texture2D &t) = delete;
+
+	// Note after creation image will be in the image_layout_undefined layout
+	static std::shared_ptr<Texture2D> device(Device &device, glm::uvec2 dims,
+			VkFormat img_format, VkImageUsageFlags usage);
+
+	// TODO: Not sure if we need the padded layout for image readback like is needed in DX12
+	//size_t linear_row_pitch() const;
+
+	// Size of one pixel, in bytes
+	size_t pixel_size() const;
+	VkFormat pixel_format() const;
+	glm::uvec2 dims() const;
+
+	VkImage image_handle() const;
+	VkImageView view_handle() const;
 };
 
-*/
 }
 

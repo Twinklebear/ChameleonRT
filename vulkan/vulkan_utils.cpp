@@ -353,5 +353,132 @@ size_t Buffer::size() const {
 	return buf_size;
 }
 
+VkBuffer Buffer::handle() const {
+	return buf;
+}
+
+VkMemoryAllocateInfo Texture2D::alloc_info(Device &device, const VkImage &img) {
+	VkMemoryRequirements mem_reqs = {};
+	vkGetImageMemoryRequirements(device.logical_device(), img, &mem_reqs);
+
+	VkMemoryAllocateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	info.allocationSize = mem_reqs.size;
+	info.memoryTypeIndex = device.memory_type_index(mem_reqs.memoryTypeBits,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	return info;
+}
+
+Texture2D::~Texture2D() {
+	if (image != VK_NULL_HANDLE) {
+		vkDestroyImageView(vkdevice->logical_device(), view, nullptr);
+		vkDestroyImage(vkdevice->logical_device(), image, nullptr);
+		vkFreeMemory(vkdevice->logical_device(), mem, nullptr);
+	}
+}
+
+Texture2D::Texture2D(Texture2D &&t)
+	: tdims(t.tdims), img_format(t.img_format), img_layout(t.img_layout),
+	image(t.image), mem(t.mem), view(t.view), vkdevice(t.vkdevice)
+{
+	t.image = VK_NULL_HANDLE;
+	t.mem = VK_NULL_HANDLE;
+	t.view = VK_NULL_HANDLE;
+	t.vkdevice = nullptr;
+}
+
+Texture2D& Texture2D::operator=(Texture2D &&t) {
+	if (image != VK_NULL_HANDLE) {
+		vkDestroyImageView(vkdevice->logical_device(), view, nullptr);
+		vkDestroyImage(vkdevice->logical_device(), image, nullptr);
+		vkFreeMemory(vkdevice->logical_device(), mem, nullptr);
+	}
+	tdims = t.tdims;
+	img_format = t.img_format;
+	img_layout = t.img_layout;
+	image = t.image;
+	mem = t.mem;
+	view = t.view;
+	vkdevice = t.vkdevice;
+
+	t.image = VK_NULL_HANDLE;
+	t.view = VK_NULL_HANDLE;
+	t.vkdevice = nullptr;
+	return *this;
+}
+
+std::shared_ptr<Texture2D> Texture2D::device(Device &device, glm::uvec2 dims, VkFormat img_format,
+		VkImageUsageFlags usage)
+{
+	auto texture = std::make_shared<Texture2D>();
+	texture->img_format = img_format;
+	texture->tdims = dims;
+	texture->vkdevice = &device;
+
+	VkImageCreateInfo create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	create_info.imageType = VK_IMAGE_TYPE_2D;
+	create_info.format = texture->img_format;
+	create_info.extent.width = texture->tdims.x;
+	create_info.extent.height = texture->tdims.y;
+	create_info.extent.depth = 1;
+	create_info.mipLevels = 1;
+	create_info.arrayLayers = 1;
+	create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	create_info.usage = usage;
+	create_info.initialLayout = texture->img_layout;
+	CHECK_VULKAN(vkCreateImage(device.logical_device(), &create_info, nullptr, &texture->image));
+
+	VkMemoryAllocateInfo alloc_info = Texture2D::alloc_info(device, texture->image);
+	CHECK_VULKAN(vkAllocateMemory(device.logical_device(), &alloc_info, nullptr, &texture->mem));
+
+	CHECK_VULKAN(vkBindImageMemory(device.logical_device(), texture->image, texture->mem, 0));
+
+	VkImageViewCreateInfo view_create_info = {};
+	view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view_create_info.image = texture->image;
+	view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view_create_info.format = texture->img_format;
+
+	view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+	view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view_create_info.subresourceRange.baseMipLevel = 0;
+	view_create_info.subresourceRange.levelCount = 1;
+	view_create_info.subresourceRange.baseArrayLayer = 0;
+	view_create_info.subresourceRange.layerCount = 1;
+
+	CHECK_VULKAN(vkCreateImageView(device.logical_device(), &view_create_info, nullptr, &texture->view));
+}
+
+size_t Texture2D::pixel_size() const {
+	switch (img_format) {
+		case VK_FORMAT_B8G8R8A8_UNORM:
+			return 4;
+		default:
+			throw std::runtime_error("Unhandled image format!");
+	}
+}
+
+VkFormat Texture2D::pixel_format() const {
+	return img_format;
+}
+
+glm::uvec2 Texture2D::dims() const {
+	return tdims;
+}
+
+VkImage Texture2D::image_handle() const {
+	return image;
+}
+
+VkImageView Texture2D::view_handle() const {
+	return view;
+}
+
 }
 
