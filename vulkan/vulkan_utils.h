@@ -74,18 +74,24 @@ private:
 	void make_logical_device();
 };
 
-/*
 class Buffer {
 	size_t buf_size = 0;
 	VkBuffer buf = VK_NULL_HANDLE;
 	VkDeviceMemory mem = VK_NULL_HANDLE;
+	Device *vkdevice = nullptr;
+	bool host_visible = false;
 
 	static VkBufferCreateInfo create_info(size_t nbytes, VkBufferUsageFlags usage);
 
-	static VkMemoryAllocateInfo alloc_info(VkDevice &device, const VkBuffer &buf, VkMemoryPropertyFlags props); 
+	static VkMemoryAllocateInfo alloc_info(Device &device, const VkBuffer &buf,
+			VkMemoryPropertyFlags mem_props);
+
+	static std::shared_ptr<Buffer> make_buffer(Device &device, size_t nbytes, VkBufferUsageFlags usage,
+			VkMemoryPropertyFlags mem_props);
 
 public:
 	Buffer() = default;
+	~Buffer();
 	Buffer(Buffer &&b);
 	Buffer& operator=(Buffer &&b);
 
@@ -105,6 +111,7 @@ public:
 	size_t size() const;
 };
 
+/*
 class Texture2D {
 	glm::uvec2 timds = glm::uvec2(0);
 };

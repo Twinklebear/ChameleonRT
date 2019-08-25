@@ -242,5 +242,108 @@ void Device::make_logical_device() {
 	CHECK_VULKAN(vkCreateDevice(physical_device, &create_info, nullptr, &device));
 }
 
+VkBufferCreateInfo Buffer::create_info(size_t nbytes, VkBufferUsageFlags usage) {
+	VkBufferCreateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	info.size = nbytes;
+	info.usage = usage;
+	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	return info;
+}
+
+VkMemoryAllocateInfo Buffer::alloc_info(Device &device, const VkBuffer &buf,
+		VkMemoryPropertyFlags mem_props)
+{
+	VkMemoryRequirements mem_reqs = {};
+	vkGetBufferMemoryRequirements(device.logical_device(), buf, &mem_reqs);
+
+	VkMemoryAllocateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	info.allocationSize = mem_reqs.size;
+	info.memoryTypeIndex = device.memory_type_index(mem_reqs.memoryTypeBits, mem_props);
+	return info;
+}
+
+std::shared_ptr<Buffer> Buffer::make_buffer(Device &device, size_t nbytes, VkBufferUsageFlags usage,
+		VkMemoryPropertyFlags mem_props)
+{
+	auto buf = std::make_shared<Buffer>();
+	buf->vkdevice = &device;
+	buf->buf_size = nbytes;
+	buf->host_visible = mem_props & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+
+	auto create_info = Buffer::create_info(nbytes, usage);
+	CHECK_VULKAN(vkCreateBuffer(device.logical_device(), &create_info, nullptr, &buf->buf));
+
+	auto alloc_info = Buffer::alloc_info(device, buf->buf, mem_props);
+	CHECK_VULKAN(vkAllocateMemory(device.logical_device(), &alloc_info, nullptr, &buf->mem));
+
+	vkBindBufferMemory(device.logical_device(), buf->buf, buf->mem, 0);
+
+	return buf;
+}
+
+Buffer::~Buffer() {
+	if (buf != VK_NULL_HANDLE) {
+		vkDestroyBuffer(vkdevice->logical_device(), buf, nullptr);
+		vkFreeMemory(vkdevice->logical_device(), mem, nullptr);
+	}
+}
+
+Buffer::Buffer(Buffer &&b)
+	: buf_size(b.buf_size), buf(b.buf), mem(b.mem), vkdevice(b.vkdevice), host_visible(b.host_visible)
+{
+	b.buf_size = 0;
+	b.buf = VK_NULL_HANDLE;
+	b.mem = VK_NULL_HANDLE;
+	b.vkdevice = nullptr;
+}
+
+Buffer& Buffer::operator=(Buffer &&b) {
+	buf_size = b.buf_size;
+	buf = b.buf;
+	mem = b.mem;
+	vkdevice = b.vkdevice;
+	host_visible = b.host_visible;
+
+	b.buf_size = 0;
+	b.buf = VK_NULL_HANDLE;
+	b.mem = VK_NULL_HANDLE;
+	b.vkdevice = nullptr;
+	return *this;
+}
+
+std::shared_ptr<Buffer> Buffer::host(Device &device, size_t nbytes, VkBufferUsageFlags usage) {
+	return make_buffer(device, nbytes, usage, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+}
+
+std::shared_ptr<Buffer> Buffer::device(Device &device, size_t nbytes, VkBufferUsageFlags usage) {
+	return make_buffer(device, nbytes, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+}
+
+void* Buffer::map() {
+	assert(host_visible);
+	void *mapping = nullptr;
+	CHECK_VULKAN(vkMapMemory(vkdevice->logical_device(), mem, 0, buf_size, 0, &mapping));
+	return mapping;
+}
+
+void* Buffer::map(size_t offset, size_t size) {
+	assert(host_visible);
+	assert(offset + size < buf_size);
+	void *mapping = nullptr;
+	CHECK_VULKAN(vkMapMemory(vkdevice->logical_device(), mem, offset, size, 0, &mapping));
+	return mapping;
+}
+
+void Buffer::unmap() {
+	assert(host_visible);
+	vkUnmapMemory(vkdevice->logical_device(), mem);
+}
+
+size_t Buffer::size() const {
+	return buf_size;
+}
+
 }
 
