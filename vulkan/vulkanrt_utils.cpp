@@ -162,5 +162,69 @@ size_t TriangleMesh::num_tris() const {
 	return geom_desc.geometry.triangles.indexCount / 3;
 }
 
+TopLevelBVH::TopLevelBVH(Device &dev, std::shared_ptr<Buffer> &inst_buf, uint32_t build_flags)
+	: device(&dev), build_flags((VkBuildAccelerationStructureFlagBitsNV)build_flags), instance_buf(inst_buf)
+
+{
+	accel_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+	accel_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
+	accel_info.instanceCount = instance_buf->size() / sizeof(GeometryInstance);
+	accel_info.geometryCount = 0;
+
+	VkAccelerationStructureCreateInfoNV create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
+	create_info.info = accel_info;
+	CHECK_VULKAN(vkCreateAccelerationStructure(device->logical_device(), &create_info, nullptr, &bvh));
+}
+
+TopLevelBVH::~TopLevelBVH() {
+	if (bvh != VK_NULL_HANDLE) {
+		vkDestroyAccelerationStructure(device->logical_device(), bvh, nullptr);
+		vkFreeMemory(device->logical_device(), bvh_mem, nullptr);
+	}
+}
+
+void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf) {
+	// Determine how much memory the acceleration structure will need
+	VkAccelerationStructureMemoryRequirementsInfoNV mem_info = {};
+	mem_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+	mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV;
+	mem_info.accelerationStructure = bvh;
+
+	VkMemoryRequirements2 mem_reqs = {};
+	vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
+	// TODO WILL: For a single triangle it requests 64k output and 64k scratch? It seems like a lot.
+	std::cout << "TLAS will need " << mem_reqs.memoryRequirements.size << "b output space\n";
+	// Allocate space for the build output
+	bvh_mem = device->alloc(mem_reqs.memoryRequirements.size, mem_reqs.memoryRequirements.memoryTypeBits,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// Determine how much additional memory we need for the build
+	mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
+	vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
+	std::cout << "TLAS will need " << mem_reqs.memoryRequirements.size << "b scratch space\n";
+	scratch = Buffer::device(*device, mem_reqs.memoryRequirements.size, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	// Bind the build output mem to the BVH
+	VkBindAccelerationStructureMemoryInfoNV bind_mem_info = {};
+	bind_mem_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
+	bind_mem_info.accelerationStructure = bvh;
+	bind_mem_info.memory = bvh_mem;
+	CHECK_VULKAN(vkBindAccelerationStructureMemory(device->logical_device(), 1, &bind_mem_info));
+
+	vkCmdBuildAccelerationStructure(cmd_buf, &accel_info, instance_buf->handle(), 0, false,
+			bvh, VK_NULL_HANDLE, scratch->handle(), 0);
+}
+
+void TopLevelBVH::finalize() {
+	scratch = nullptr;
+	CHECK_VULKAN(vkGetAccelerationStructureHandle(device->logical_device(), bvh,
+				sizeof(uint64_t), &handle));
+}
+
+size_t TopLevelBVH::num_instances() const {
+	return accel_info.instanceCount;
+}
+
 }
 

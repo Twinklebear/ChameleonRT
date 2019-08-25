@@ -72,11 +72,10 @@ public:
 
 class TopLevelBVH {
 	Device *device = nullptr;
-	size_t n_instances = 0;
 	VkBuildAccelerationStructureFlagBitsNV build_flags = (VkBuildAccelerationStructureFlagBitsNV)0;
 	VkAccelerationStructureInfoNV accel_info = {};
 
-	VkDeviceMemory bvh_mem;
+	VkDeviceMemory bvh_mem = VK_NULL_HANDLE;
 	std::shared_ptr<Buffer> scratch;
 
 public:
@@ -86,7 +85,7 @@ public:
 
 	// TODO: Re-check on compacting the top-level BVH in DXR, it seems to be do-able
 	// in OptiX, maybe DXR and Vulkan too?
-	TopLevelBVH(Buffer instance_buf, size_t num_instances,
+	TopLevelBVH(Device &dev, std::shared_ptr<Buffer> &instance_buf,
 		uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
 
 	TopLevelBVH() = default;
