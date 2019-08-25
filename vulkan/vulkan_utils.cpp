@@ -480,5 +480,37 @@ VkImageView Texture2D::view_handle() const {
 	return view;
 }
 
+ShaderModule::ShaderModule(Device &vkdevice, const uint32_t *code, size_t code_size)
+	: device(&vkdevice)
+{
+	VkShaderModuleCreateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	info.codeSize = code_size;
+	info.pCode = code;
+	CHECK_VULKAN(vkCreateShaderModule(vkdevice.logical_device(), &info, nullptr, &module));
+}
+
+ShaderModule::~ShaderModule() {
+	if (module != VK_NULL_HANDLE) {
+		vkDestroyShaderModule(device->logical_device(), module, nullptr);
+	}
+}
+
+ShaderModule::ShaderModule(ShaderModule &&sm) : device(sm.device), module(sm.module) {
+	sm.device = nullptr;
+	sm.module = VK_NULL_HANDLE;
+}
+ShaderModule& ShaderModule::operator=(ShaderModule &&sm) {
+	if (module != VK_NULL_HANDLE) {
+		vkDestroyShaderModule(device->logical_device(), module, nullptr);
+	}
+	device = sm.device;
+	module = sm.module;
+
+	sm.device = nullptr;
+	sm.module = VK_NULL_HANDLE;
+	return *this;
+}
+
 }
 

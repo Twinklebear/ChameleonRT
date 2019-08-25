@@ -74,6 +74,8 @@ private:
 	void make_logical_device();
 };
 
+// TODO: Maybe a base resource class which tracks the queue and access flags
+
 class Buffer {
 	size_t buf_size = 0;
 	VkBuffer buf = VK_NULL_HANDLE;
@@ -147,6 +149,21 @@ public:
 
 	VkImage image_handle() const;
 	VkImageView view_handle() const;
+};
+
+struct ShaderModule {
+	Device *device = nullptr;
+	VkShaderModule module = VK_NULL_HANDLE;
+
+	ShaderModule() = default;
+	ShaderModule(Device &device, const uint32_t *code, size_t code_size);
+	~ShaderModule();
+
+	ShaderModule(ShaderModule &&sm);
+	ShaderModule& operator=(ShaderModule &&sm);
+
+	ShaderModule(ShaderModule &) = delete;
+	ShaderModule& operator=(ShaderModule &) = delete;
 };
 
 }
