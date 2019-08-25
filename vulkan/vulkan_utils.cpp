@@ -90,6 +90,10 @@ Device::Device(Device &&d)
 }
 
 Device& Device::operator=(Device &&d) {
+	if (instance != VK_NULL_HANDLE) { 
+		vkDestroyDevice(device, nullptr);
+		vkDestroyInstance(instance, nullptr);
+	}
 	instance = d.instance;
 	physical_device = d.physical_device;
 	device = d.device;
@@ -300,6 +304,10 @@ Buffer::Buffer(Buffer &&b)
 }
 
 Buffer& Buffer::operator=(Buffer &&b) {
+	if (buf != VK_NULL_HANDLE) {
+		vkDestroyBuffer(vkdevice->logical_device(), buf, nullptr);
+		vkFreeMemory(vkdevice->logical_device(), mem, nullptr);
+	}
 	buf_size = b.buf_size;
 	buf = b.buf;
 	mem = b.mem;
