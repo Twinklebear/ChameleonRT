@@ -149,8 +149,7 @@ void RenderVulkan::set_scene(const Scene &scene_data) {
 
 	// Build the bottom level acceleration structure
 	// No compaction for now (does Vulkan have some min space requirement for the BVH?)
-	mesh = std::make_unique<vk::TriangleMesh>(device, vertex_buf, index_buf, normals_buf, uv_buf,
-		VK_GEOMETRY_OPAQUE_BIT_NV, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
+	mesh = std::make_unique<vk::TriangleMesh>(device, vertex_buf, index_buf, normals_buf, uv_buf);
 	// Build the BVH
 	{
 		// TODO: some convenience utils for this
@@ -172,8 +171,7 @@ void RenderVulkan::set_scene(const Scene &scene_data) {
 
 		vkResetCommandPool(device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
 	}
-	std::cout << "Build done\n";
-#if 0
+
 	// Compact the BVH
 	{
 		VkCommandBufferBeginInfo begin_info = {};
@@ -194,7 +192,7 @@ void RenderVulkan::set_scene(const Scene &scene_data) {
 
 		vkResetCommandPool(device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
 	}
-#endif
+
 	mesh->finalize();
 
 	// Setup the instance buffer

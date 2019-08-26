@@ -114,11 +114,13 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf) {
 }
 
 void TriangleMesh::enqueue_compaction(VkCommandBuffer &cmd_buf) {
+	if (!(build_flags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_NV)) {
+		return;
+	}
 	uint64_t compacted_size = 0;
 	CHECK_VULKAN(vkGetQueryPoolResults(device->logical_device(), query_pool, 0, 1,
 		sizeof(uint64_t), &compacted_size, sizeof(uint64_t),
 		VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT));
-	std::cout << "BLAS will compact to " << compacted_size << "\n";
 
 	// Same memory type requirements as the original structure, just less space needed
 	VkAccelerationStructureMemoryRequirementsInfoNV mem_info = {};
@@ -128,8 +130,11 @@ void TriangleMesh::enqueue_compaction(VkCommandBuffer &cmd_buf) {
 
 	VkMemoryRequirements2 mem_reqs = {};
 	vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
+	compacted_size = align_to(compacted_size, mem_reqs.memoryRequirements.alignment);
+	std::cout << "BLAS will compact to " << compacted_size << "\n";
+	
 	compacted_mem = device->alloc(compacted_size, mem_reqs.memoryRequirements.memoryTypeBits,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	VkAccelerationStructureCreateInfoNV create_info = {};
 	create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
