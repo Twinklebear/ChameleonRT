@@ -10,6 +10,8 @@ PFN_vkBindAccelerationStructureMemoryNV vkBindAccelerationStructureMemory = null
 PFN_vkGetAccelerationStructureHandleNV vkGetAccelerationStructureHandle = nullptr;
 PFN_vkGetAccelerationStructureMemoryRequirementsNV vkGetAccelerationStructureMemoryRequirements = nullptr;
 PFN_vkCmdBuildAccelerationStructureNV vkCmdBuildAccelerationStructure = nullptr;
+PFN_vkCmdCopyAccelerationStructureNV vkCmdCopyAccelerationStructure = nullptr;
+PFN_vkCmdWriteAccelerationStructuresPropertiesNV vkCmdWriteAccelerationStructuresProperties = nullptr;
 PFN_vkCreateRayTracingPipelinesNV vkCreateRayTracingPipelines = nullptr;
 PFN_vkGetRayTracingShaderGroupHandlesNV vkGetRayTracingShaderGroupHandles = nullptr;
 PFN_vkCmdTraceRaysNV vkCmdTraceRays = nullptr;
@@ -264,6 +266,8 @@ void Device::make_logical_device() {
 	create_info.ppEnabledExtensionNames = device_extensions.data();
 	create_info.pEnabledFeatures = &device_features;
 	CHECK_VULKAN(vkCreateDevice(physical_device, &create_info, nullptr, &device));
+
+	vkGetDeviceQueue(device, graphics_queue_index, 0, &queue);
 }
 
 VkBufferCreateInfo Buffer::create_info(size_t nbytes, VkBufferUsageFlags usage) {
@@ -450,6 +454,7 @@ std::shared_ptr<Texture2D> Texture2D::device(Device &device, glm::uvec2 dims, Vk
 	view_create_info.subresourceRange.layerCount = 1;
 
 	CHECK_VULKAN(vkCreateImageView(device.logical_device(), &view_create_info, nullptr, &texture->view));
+	return texture;
 }
 
 size_t Texture2D::pixel_size() const {

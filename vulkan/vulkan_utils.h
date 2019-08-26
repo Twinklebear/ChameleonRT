@@ -13,7 +13,6 @@
 		} \
 	}
 
-
 extern PFN_vkCreateAccelerationStructureNV vkCreateAccelerationStructure;
 extern PFN_vkDestroyAccelerationStructureNV vkDestroyAccelerationStructure;
 extern PFN_vkBindAccelerationStructureMemoryNV vkBindAccelerationStructureMemory;
@@ -54,7 +53,7 @@ public:
 	VkQueue graphics_queue();
 	uint32_t queue_index() const;
 
-	VkCommandPool make_command_pool(VkCommandPoolCreateFlagBits flags);
+	VkCommandPool make_command_pool(VkCommandPoolCreateFlagBits flags = (VkCommandPoolCreateFlagBits)0);
 
 	uint32_t memory_type_index(uint32_t type_filter, VkMemoryPropertyFlags props) const;
 	VkDeviceMemory alloc(size_t nbytes, uint32_t type_filter, VkMemoryPropertyFlags props);

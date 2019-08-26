@@ -108,6 +108,5 @@ public:
 	size_t num_instances() const;
 };
 
-
 }
 
