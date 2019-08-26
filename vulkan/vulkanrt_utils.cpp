@@ -85,12 +85,20 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf) {
 	vkCmdBuildAccelerationStructure(cmd_buf, &accel_info, VK_NULL_HANDLE, 0, false, bvh, VK_NULL_HANDLE,
 			scratch->handle(), 0);
 
-	// Enqueue a barrier and read of the compacted size if we're compacting
-	if (build_flags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_NV) {
-		vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
-				VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
-				0, 0, nullptr, 0, nullptr, 0, nullptr);
+	// Memory barrier to have subsequent commands wait on build completion
+	VkMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+	barrier.srcAccessMask =
+		VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV;
+	barrier.dstAccessMask =
+		VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV;
 
+	vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
+		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0,
+		1, &barrier, 0, nullptr, 0, nullptr);
+
+	// Read the compacted size if we're compacting
+	if (build_flags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_NV) {
 		VkQueryPoolCreateInfo pool_ci = {};
 		pool_ci.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
 		pool_ci.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_NV;
@@ -98,16 +106,18 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf) {
 		CHECK_VULKAN(vkCreateQueryPool(device->logical_device(), &pool_ci, nullptr, &query_pool));
 
 		vkCmdResetQueryPool(cmd_buf, query_pool, 0, 1);
-
+		vkCmdBeginQuery(cmd_buf, query_pool, 0, 0);
 		vkCmdWriteAccelerationStructuresProperties(cmd_buf, 1, &bvh,
 				VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_NV, query_pool, 0);
+		vkCmdEndQuery(cmd_buf, query_pool, 0);
 	}
 }
 
 void TriangleMesh::enqueue_compaction(VkCommandBuffer &cmd_buf) {
 	uint64_t compacted_size = 0;
 	CHECK_VULKAN(vkGetQueryPoolResults(device->logical_device(), query_pool, 0, 1,
-				sizeof(uint64_t), &compacted_size, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT));
+		sizeof(uint64_t), &compacted_size, sizeof(uint64_t),
+		VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT));
 	std::cout << "BLAS will compact to " << compacted_size << "\n";
 
 	// Same memory type requirements as the original structure, just less space needed
@@ -214,6 +224,18 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf) {
 
 	vkCmdBuildAccelerationStructure(cmd_buf, &accel_info, instance_buf->handle(), 0, false,
 			bvh, VK_NULL_HANDLE, scratch->handle(), 0);
+
+	// Enqueue a barrier on the build
+	VkMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+	barrier.srcAccessMask =
+		VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV;
+	barrier.dstAccessMask =
+		VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV;
+
+	vkCmdPipelineBarrier(cmd_buf, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
+		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0,
+		1, &barrier, 0, nullptr, 0, nullptr);
 }
 
 void TopLevelBVH::finalize() {
