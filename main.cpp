@@ -110,7 +110,7 @@ int main(int argc, const char **argv) {
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
-	SDL_Window* window = SDL_CreateWindow("rtobj",
+	SDL_Window* window = SDL_CreateWindow("ChameleonRT",
 			SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_width, win_height,
 			SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 

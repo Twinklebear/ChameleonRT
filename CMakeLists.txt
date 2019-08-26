@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(rtobj)
+project(chameleonrt)
 
 if (NOT WIN32)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
@@ -58,31 +58,31 @@ if (NOT ENABLE_OSPRAY AND NOT ENABLE_EMBREE AND NOT ENABLE_OPTIX AND NOT ENABLE_
 		"Enable at least one of: ENABLE_OSPRAY, ENABLE_EMBREE, ENABLE_OPTIX, ENABLE_DXR") 
 endif()
 
-add_executable(rtobj main.cpp)
+add_executable(chameleonrt main.cpp)
 
-set_target_properties(rtobj PROPERTIES
+set_target_properties(chameleonrt PROPERTIES
 	CXX_STANDARD 14
 	CXX_STANDARD_REQUIRED ON)
 
-target_link_libraries(rtobj PUBLIC util)
+target_link_libraries(chameleonrt PUBLIC util)
 
 if (ENABLE_OSPRAY)
-	target_link_libraries(rtobj PUBLIC render_ospray)
+	target_link_libraries(chameleonrt PUBLIC render_ospray)
 endif()
 
 if (ENABLE_EMBREE)
-	target_link_libraries(rtobj PUBLIC render_embree)
+	target_link_libraries(chameleonrt PUBLIC render_embree)
 endif()
 
 if (ENABLE_OPTIX)
-	target_link_libraries(rtobj PUBLIC render_optix)
+	target_link_libraries(chameleonrt PUBLIC render_optix)
 endif()
 
 if (ENABLE_DXR)
-	target_link_libraries(rtobj PUBLIC render_dxr)
+	target_link_libraries(chameleonrt PUBLIC render_dxr)
 endif()
 
 if (ENABLE_VULKAN)
-	target_link_libraries(rtobj PUBLIC render_vulkan)
+	target_link_libraries(chameleonrt PUBLIC render_vulkan)
 endif()
 

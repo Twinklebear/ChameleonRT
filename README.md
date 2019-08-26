@@ -1,4 +1,4 @@
-# rtobj
+# ChameleonRT
 
 An example of OBJ rendering with OSPRay, Embree and OptiX.
 Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files.
@@ -11,7 +11,7 @@ those you compiled with by specifying it as the first argument on
 the command line:
 
 ```
-./rtobj <backend> <mesh.obj>
+./chameleonrt <backend> <mesh.obj>
 ```
 
 All three ray tracing backends use [SDL2](https://www.libsdl.org/index.php) for window management
@@ -25,7 +25,7 @@ run CMake with `-DREPORT_RAY_STATS=ON`. Tracking these statistics can
 impact performance slightly.
 
 
-rtobj only supports per-OBJ group/mesh materials, OBJ files using per-face materials
+ChameleonRT only supports per-OBJ group/mesh materials, OBJ files using per-face materials
 can be reexported from Blender with the "Material Groups" option enabled.
 
 ### Embree
@@ -88,14 +88,14 @@ You can then pass `-ospray` to use the OSPRay backend.
 
 ## Citation
 
-If you find rtobj useful in your work, please cite it as:
+If you find ChameleonRT useful in your work, please cite it as:
 
 ```
-@misc{rtobj,
+@misc{chameleonrt,
 	author = {Will Usher},
 	year = {2019},
-	note = {https://github.com/Twinklebear/rtobj},
-	title = {rtobj}
+	note = {https://github.com/Twinklebear/ChameleonRT},
+	title = {{ChameleonRT}}
 } 
 ```
 

@@ -169,7 +169,7 @@ const VkPhysicalDeviceRayTracingPropertiesNV& Device::raytracing_properties() co
 void Device::make_instance() {
 	VkApplicationInfo app_info = {};
 	app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	app_info.pApplicationName = "rtobj";
+	app_info.pApplicationName = "ChameleonRT";
 	app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
 	app_info.pEngineName = "None";
 	app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
