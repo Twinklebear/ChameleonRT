@@ -79,9 +79,10 @@ void unpack_material(DisneyMaterial &mat, const MaterialParams *p, const float2 
 float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform ray_hits,
 		uint32_t px, uniform RTCIntersectContext *uniform context, uint16_t &ray_stats, PCGRand &rng);
 
-export void trace_rays(void *uniform _scene, RTCRayHitNp *uniform ray_hit,
+export void trace_rays(void *uniform _scene, void *uniform _ray_hit,
 		void *uniform _tile, const void *uniform _view_params)
 {
+	RTCRayHitNp *uniform ray_hit = (RTCRayHitNp *uniform)_ray_hit;
 	SceneContext *uniform scene = (SceneContext *uniform)_scene;
 	const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
 	Tile *uniform tile = (Tile *uniform)_tile;
