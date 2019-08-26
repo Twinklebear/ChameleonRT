@@ -1,6 +1,6 @@
 # ChameleonRT
 
-An example of OBJ rendering with OSPRay, Embree and OptiX.
+An example path tracer which runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan).
 Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files.
 
 ## Ray Tracing Backends  
