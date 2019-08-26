@@ -13,7 +13,7 @@ void main() {
 	const vec2 dims = vec2(gl_LaunchSizeNV.xy);
 	vec2 px = (((vec2(pixel) + 0.5f) / dims.xy) * 2.f - 1.f);
 
-	vec3 origin = vec3(px.x, px.y, 1);
+	vec3 origin = vec3(px.x, -px.y, 1);
 	vec3 dir = vec3(0, 0, -1);
 
 	hitColor = vec4(0, 0, 0, 0);
