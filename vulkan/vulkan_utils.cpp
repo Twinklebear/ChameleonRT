@@ -251,6 +251,11 @@ void Device::make_logical_device() {
 
 	VkPhysicalDeviceFeatures device_features = {};
 
+	VkPhysicalDeviceDescriptorIndexingFeaturesEXT device_desc_features = {};
+	device_desc_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+	device_desc_features.shaderStorageBufferArrayNonUniformIndexing = true;
+	device_desc_features.runtimeDescriptorArray = true;
+
 	const std::vector<const char*> device_extensions = {
 		VK_NV_RAY_TRACING_EXTENSION_NAME,
 		VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
@@ -266,8 +271,7 @@ void Device::make_logical_device() {
 	create_info.enabledExtensionCount = device_extensions.size();
 	create_info.ppEnabledExtensionNames = device_extensions.data();
 	create_info.pEnabledFeatures = &device_features;
-	// TODO: need to set VkPhysicalDeviceDescriptorIndexingFeaturesEXT as an extra param
-	// when initializing the device and request: runtimeDescriptorArray and shaderStorageBufferArrayNonUniformIndexing
+	create_info.pNext = &device_desc_features;
 	CHECK_VULKAN(vkCreateDevice(physical_device, &create_info, nullptr, &device));
 
 	vkGetDeviceQueue(device, graphics_queue_index, 0, &queue);
