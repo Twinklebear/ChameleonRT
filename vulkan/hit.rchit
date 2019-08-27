@@ -12,13 +12,15 @@ struct float3 {
 	float x, y, z;
 };
 
+// TODO: Will these arrays trample each other if they're in the same set
+// and I start sending more buffers? How to set the size of these buffer arrays?
 layout(binding = 3, set = 0, std430) buffer IndexBuffers {
 	uint3 indices[];
 } index_buffers[];
 
 layout(binding = 4, set = 0, std430) buffer VertexBuffers {
 	float3 data[];
-} vertex_buffers[]; // this can be unsized? who knows the size? how's it set?
+} vertex_buffers[];
 
 layout(shaderRecordNV) buffer SBT {
 	float blueness;
