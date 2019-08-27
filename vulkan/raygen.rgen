@@ -1,8 +1,7 @@
 #version 460
 #extension GL_NV_ray_tracing : require
 #extension GL_EXT_scalar_block_layout : require
-// Need later, this is equiv of DXR non uniform resource index
-//#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 layout(binding = 0, set = 0) uniform accelerationStructureNV scene;
 layout(binding = 1, set = 0, rgba8) uniform writeonly image2D framebuffer;
