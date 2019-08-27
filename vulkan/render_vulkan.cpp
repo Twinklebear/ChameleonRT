@@ -2,6 +2,7 @@
 #include <array>
 #include <chrono>
 #include <glm/ext.hpp>
+#include "util.h"
 #include "render_vulkan.h"
 #include "spv_shaders_embedded_spv.h"
 
@@ -21,6 +22,9 @@ RenderVulkan::RenderVulkan() {
 		info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		CHECK_VULKAN(vkCreateFence(device.logical_device(), &info, nullptr, &fence));
 	}
+
+	view_param_buf = vk::Buffer::host(device, 4 * sizeof(glm::vec4) + sizeof(uint32_t),
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 }
 
 RenderVulkan::~RenderVulkan() {
@@ -85,29 +89,22 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height) {
 void RenderVulkan::set_scene(const Scene &scene_data) {
 	frame_id = 0;
 
-	// Just a test triangle for now still
-	const std::array<float, 9> triangle_verts = {
-		0.0, -0.5, 0.0,
-		0.5, 0.5, 0.0,
-		-0.5, 0.5, 0.0
-	};
-
-	const std::array<uint32_t, 3> triangle_indices = { 0, 1, 2 };
+	auto &scene_mesh = scene_data.meshes[0];
 
 	// Upload triangle vertices to the device
-	auto upload_verts = vk::Buffer::host(device, sizeof(float) * triangle_verts.size(),
+	auto upload_verts = vk::Buffer::host(device, scene_mesh.vertices.size() * sizeof(glm::vec3),
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 	{
 		void *map = upload_verts->map();
-		std::memcpy(map, triangle_verts.data(), upload_verts->size());
+		std::memcpy(map, scene_mesh.vertices.data(), upload_verts->size());
 		upload_verts->unmap();
 	}
 
-	auto upload_indices = vk::Buffer::host(device, sizeof(uint32_t) * triangle_indices.size(),
+	auto upload_indices = vk::Buffer::host(device, scene_mesh.indices.size() * sizeof(glm::uvec3),
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 	{
 		void *map = upload_indices->map();
-		std::memcpy(map, triangle_indices.data(), upload_indices->size());
+		std::memcpy(map, scene_mesh.indices.data(), upload_indices->size());
 		upload_indices->unmap();
 	}
 
@@ -273,6 +270,7 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos, const glm::vec3 &dir,
 
 	if (camera_changed) {
 		frame_id = 0;
+		update_view_parameters(pos, dir, up, fovy);
 	}
 
 	// TODO: Save the commands (and do this in the DXR backend too)
@@ -286,10 +284,13 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos, const glm::vec3 &dir,
 		pipeline_layout, 0, 1, &desc_set, 0, nullptr);
 
 	const size_t shader_record_size = device.raytracing_properties().shaderGroupHandleSize;
+	// Testing sending some params through the SBT
+	const size_t hit_record_size = align_to(shader_record_size + sizeof(float),
+		device.raytracing_properties().shaderGroupBaseAlignment);
 	vkCmdTraceRays(command_buffer,
 		shader_table->handle(), 0,
 		shader_table->handle(), shader_record_size, shader_record_size,
-		shader_table->handle(), 2 * shader_record_size, shader_record_size,
+		shader_table->handle(), 2 * shader_record_size, hit_record_size,
 		VK_NULL_HANDLE, 0, 0, render_target->dims().x, render_target->dims().y, 1);
 
 	// Barrier for rendering to finish
@@ -358,8 +359,15 @@ void RenderVulkan::build_raytracing_pipeline() {
 	fb_binding.descriptorCount = 1;
 	fb_binding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
 
-	const std::array<VkDescriptorSetLayoutBinding, 2> desc_set = {
-		scene_binding, fb_binding
+	VkDescriptorSetLayoutBinding view_param_binding = {};
+	view_param_binding.binding = 2;
+	view_param_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	view_param_binding.descriptorCount = 1;
+	view_param_binding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
+
+
+	const std::array<VkDescriptorSetLayoutBinding, 3> desc_set = {
+		scene_binding, fb_binding, view_param_binding
 	};
 
 	VkDescriptorSetLayoutCreateInfo desc_create_info = {};
@@ -431,9 +439,10 @@ void RenderVulkan::build_raytracing_pipeline() {
 }
 
 void RenderVulkan::build_shader_descriptor_table() {
-	const std::array<VkDescriptorPoolSize, 2> pool_sizes = {
+	const std::array<VkDescriptorPoolSize, 3> pool_sizes = {
 			VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1 },
-			VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 }
+			VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
+			VkDescriptorPoolSize{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 }
 	};
 	VkDescriptorPoolCreateInfo pool_create_info = {};
 	pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -474,14 +483,30 @@ void RenderVulkan::build_shader_descriptor_table() {
 	write_img.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	write_img.pImageInfo = &img_desc;
 
-	const std::array<VkWriteDescriptorSet, 2> write_descs = { write_tlas, write_img };
+	VkDescriptorBufferInfo buf_desc = {};
+	buf_desc.buffer = view_param_buf->handle();
+	buf_desc.offset = 0;
+	buf_desc.range = view_param_buf->size();
+
+	VkWriteDescriptorSet write_buf = {};
+	write_buf.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write_buf.dstSet = desc_set;
+	write_buf.dstBinding = 2;
+	write_buf.descriptorCount = 1;
+	write_buf.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	write_buf.pBufferInfo = &buf_desc;
+
+	const std::array<VkWriteDescriptorSet, 3> write_descs = { write_tlas, write_img, write_buf };
 	vkUpdateDescriptorSets(device.logical_device(), write_descs.size(), write_descs.data(), 0, nullptr);
 }
 
 void RenderVulkan::build_shader_binding_table() {
 	const size_t shader_ident_size = device.raytracing_properties().shaderGroupHandleSize;
 	const size_t shader_record_size = device.raytracing_properties().shaderGroupHandleSize;
-	const size_t sbt_size = 3 * shader_record_size;
+	// Testing sending some params through the SBT
+	const size_t hit_record_size = align_to(shader_record_size + sizeof(float),
+		device.raytracing_properties().shaderGroupBaseAlignment);
+	const size_t sbt_size = 2 * shader_record_size + hit_record_size;
 
 	std::cout << "SBT size: " << sbt_size << "\n";
 	auto upload_sbt = vk::Buffer::host(device, sbt_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
@@ -498,6 +523,9 @@ void RenderVulkan::build_shader_binding_table() {
 			shader_identifiers.data() + i * shader_ident_size,
 			shader_ident_size);
 	}
+	// Write the test params to the hit group
+	float test_value = 0.5;
+	std::memcpy(sbt_mapping + 3 * shader_ident_size, &test_value, sizeof(float));
 	upload_sbt->unmap();
 
 	// Upload the SBT to the GPU
@@ -530,5 +558,26 @@ void RenderVulkan::build_shader_binding_table() {
 void RenderVulkan::update_view_parameters(const glm::vec3 &pos, const glm::vec3 &dir,
 	const glm::vec3 &up, const float fovy)
 {
-	// TODO: Send through a uniform buffer
+	glm::vec2 img_plane_size;
+	img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
+	img_plane_size.x = img_plane_size.y
+		* static_cast<float>(render_target->dims().x) / render_target->dims().y;
+
+	const glm::vec3 dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
+	const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
+	const glm::vec3 dir_top_left = dir - 0.5f * dir_du - 0.5f * dir_dv;
+
+	uint8_t* buf = static_cast<uint8_t*>(view_param_buf->map());
+	{
+		glm::vec4* vecs = reinterpret_cast<glm::vec4*>(buf);
+		vecs[0] = glm::vec4(pos, 0.f);
+		vecs[1] = glm::vec4(dir_du, 0.f);
+		vecs[2] = glm::vec4(dir_dv, 0.f);
+		vecs[3] = glm::vec4(dir_top_left, 0.f);
+	}
+	{
+		uint32_t* fid = reinterpret_cast<uint32_t*>(buf + 4 * sizeof(glm::vec4));
+		*fid = frame_id;
+	}
+	view_param_buf->unmap();
 }

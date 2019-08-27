@@ -333,12 +333,16 @@ Buffer& Buffer::operator=(Buffer &&b) {
 	return *this;
 }
 
-std::shared_ptr<Buffer> Buffer::host(Device &device, size_t nbytes, VkBufferUsageFlags usage) {
-	return make_buffer(device, nbytes, usage, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+std::shared_ptr<Buffer> Buffer::host(Device &device, size_t nbytes, VkBufferUsageFlags usage,
+	VkMemoryPropertyFlagBits extra_mem_props)
+{
+	return make_buffer(device, nbytes, usage, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | extra_mem_props);
 }
 
-std::shared_ptr<Buffer> Buffer::device(Device &device, size_t nbytes, VkBufferUsageFlags usage) {
-	return make_buffer(device, nbytes, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+std::shared_ptr<Buffer> Buffer::device(Device &device, size_t nbytes, VkBufferUsageFlags usage,
+	VkMemoryPropertyFlagBits extra_mem_props)
+{
+	return make_buffer(device, nbytes, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | extra_mem_props);
 }
 
 void* Buffer::map() {

@@ -1,28 +1,39 @@
 #version 460
 #extension GL_NV_ray_tracing : require
+#extension GL_EXT_scalar_block_layout : require
 // Need later, this is equiv of DXR non uniform resource index
 //#extension GL_EXT_nonuniform_qualifier : enable
 
 layout(binding = 0, set = 0) uniform accelerationStructureNV scene;
 layout(binding = 1, set = 0, rgba8) uniform writeonly image2D framebuffer;
 
+layout(binding = 2, set = 0, std140) uniform ViewParams {
+	vec4 cam_pos;
+	vec4 cam_du;
+	vec4 cam_dv;
+	vec4 cam_dir_top_left;
+	uint frame_id;
+};
+
 layout(location = 0) rayPayloadNV vec4 hitColor;
 
 void main() {
 	const ivec2 pixel = ivec2(gl_LaunchIDNV.xy);
 	const vec2 dims = vec2(gl_LaunchSizeNV.xy);
-	vec2 px = (((vec2(pixel) + 0.5f) / dims.xy) * 2.f - 1.f);
+	// TODO: PCG port
+	vec2 d = (pixel + vec2(0.5)) / dims;
 
-	vec3 origin = vec3(px.x, -px.y, 1);
-	vec3 dir = vec3(0, 0, -1);
+	vec3 origin = cam_pos.xyz;
+	vec3 dir = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
+	float t_min = 0;
+	float t_max = 1e20f;
 
 	hitColor = vec4(0, 0, 0, 0);
 
 	// TODO Opaque = disable any hit?
 	traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, 0, 0, 0,
-		origin, 0.0, dir, 1e20f, 0);
+		origin, t_min, dir, t_max, 0);
 		
-
-	imageStore(framebuffer, pixel, hitColor);
+	imageStore(framebuffer, pixel, vec4(hitColor.xyz, 1.f));
 }
 

@@ -9,7 +9,7 @@
 struct RenderVulkan : RenderBackend {
 	vk::Device device;
 
-	std::shared_ptr<vk::Buffer> shader_table, img_readback_buf;
+	std::shared_ptr<vk::Buffer> view_param_buf, shader_table, img_readback_buf;
 
 	std::shared_ptr<vk::Texture2D> render_target;
 

@@ -90,8 +90,10 @@ public:
 	Buffer(const Buffer &) = delete;
 	Buffer& operator=(const Buffer &) = delete;
 
-	static std::shared_ptr<Buffer> host(Device &device, size_t nbytes, VkBufferUsageFlags usage);
-	static std::shared_ptr<Buffer> device(Device &device, size_t nbytes, VkBufferUsageFlags usage);
+	static std::shared_ptr<Buffer> host(Device &device, size_t nbytes, VkBufferUsageFlags usage,
+		VkMemoryPropertyFlagBits extra_mem_props = (VkMemoryPropertyFlagBits)0);
+	static std::shared_ptr<Buffer> device(Device &device, size_t nbytes, VkBufferUsageFlags usage,
+		VkMemoryPropertyFlagBits extra_mem_props = (VkMemoryPropertyFlagBits)0);
 
 	// Map the entire range of the buffer
 	void* map();
