@@ -14,6 +14,7 @@ struct float3 {
 
 // TODO: Will these arrays trample each other if they're in the same set
 // and I start sending more buffers? How to set the size of these buffer arrays?
+// Note: these will need to be separate sets for supporting multiple meshes
 layout(binding = 3, set = 0, std430) buffer IndexBuffers {
 	uint3 indices[];
 } index_buffers[];
