@@ -514,6 +514,9 @@ void RenderVulkan::build_shader_descriptor_table() {
 	index_buf_desc.offset = 0;
 	index_buf_desc.range = mesh->index_buf->size();
 
+	// TODO: These probably do need to go in separate sets, because they'll later
+	// have to be made with count = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT
+	// which can only appear at the end of the set.
 	VkWriteDescriptorSet write_index_buf = {};
 	write_index_buf.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	write_index_buf.dstSet = desc_set;
