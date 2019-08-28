@@ -22,9 +22,13 @@ struct RenderVulkan : RenderBackend {
 	VkPipeline rt_pipeline = VK_NULL_HANDLE;
 	VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
 	VkDescriptorSetLayout desc_layout = VK_NULL_HANDLE;
+	VkDescriptorSetLayout buffer_desc_layout = VK_NULL_HANDLE;
 
 	VkDescriptorPool desc_pool = VK_NULL_HANDLE;
+	// We need a set per varying size array of things we're sending
 	VkDescriptorSet desc_set = VK_NULL_HANDLE;
+	VkDescriptorSet index_desc_set = VK_NULL_HANDLE;
+	VkDescriptorSet vert_desc_set = VK_NULL_HANDLE;
 	
 	VkFence fence = VK_NULL_HANDLE;
 	

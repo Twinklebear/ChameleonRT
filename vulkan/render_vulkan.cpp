@@ -280,8 +280,12 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
 
 	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, rt_pipeline);
+
+	std::vector<VkDescriptorSet> descriptor_sets = {
+		desc_set, index_desc_set, vert_desc_set
+	};
 	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV,
-		pipeline_layout, 0, 1, &desc_set, 0, nullptr);
+		pipeline_layout, 0, descriptor_sets.size(), descriptor_sets.data(), 0, nullptr);
 
 	const size_t shader_record_size = device.raytracing_properties().shaderGroupHandleSize;
 	// Testing sending some params through the SBT
@@ -365,34 +369,39 @@ void RenderVulkan::build_raytracing_pipeline() {
 	view_param_binding.descriptorCount = 1;
 	view_param_binding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
 
-	VkDescriptorSetLayoutBinding index_data_binding = {};
-	index_data_binding.binding = 3;
-	index_data_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	index_data_binding.descriptorCount = 1;
-	index_data_binding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV;
-
-	VkDescriptorSetLayoutBinding vert_data_binding = {};
-	vert_data_binding.binding = 4;
-	vert_data_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	vert_data_binding.descriptorCount = 1;
-	vert_data_binding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV;
-
 	const std::vector<VkDescriptorSetLayoutBinding> desc_set = {
-		scene_binding, fb_binding, view_param_binding, index_data_binding, vert_data_binding
+		scene_binding, fb_binding, view_param_binding
 	};
 
 	VkDescriptorSetLayoutCreateInfo desc_create_info = {};
 	desc_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	desc_create_info.bindingCount = desc_set.size();
 	desc_create_info.pBindings = desc_set.data();
-
 	CHECK_VULKAN(vkCreateDescriptorSetLayout(device.logical_device(), &desc_create_info,
 		nullptr, &desc_layout));
 
+	// Make the variable sized descriptor layout for all our varying sized buffer arrays which
+	// we use to send the mesh data
+	VkDescriptorSetLayoutBinding buffer_data_binding = {};
+	buffer_data_binding.binding = 0;
+	buffer_data_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	buffer_data_binding.descriptorCount = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
+	buffer_data_binding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV;
+
+	desc_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	desc_create_info.bindingCount = 1;
+	desc_create_info.pBindings = &buffer_data_binding;
+	CHECK_VULKAN(vkCreateDescriptorSetLayout(device.logical_device(), &desc_create_info,
+		nullptr, &buffer_desc_layout));
+
+	const std::vector<VkDescriptorSetLayout> descriptor_layouts = {
+		desc_layout, buffer_desc_layout, buffer_desc_layout
+	};
+
 	VkPipelineLayoutCreateInfo pipeline_create_info = {};
 	pipeline_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_create_info.setLayoutCount = 1;
-	pipeline_create_info.pSetLayouts = &desc_layout;
+	pipeline_create_info.setLayoutCount = descriptor_layouts.size();
+	pipeline_create_info.pSetLayouts = descriptor_layouts.data();
 
 	CHECK_VULKAN(vkCreatePipelineLayout(device.logical_device(), &pipeline_create_info,
 		nullptr, &pipeline_layout));
@@ -459,7 +468,7 @@ void RenderVulkan::build_shader_descriptor_table() {
 	};
 	VkDescriptorPoolCreateInfo pool_create_info = {};
 	pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	pool_create_info.maxSets = 1;
+	pool_create_info.maxSets = 3;
 	pool_create_info.poolSizeCount = pool_sizes.size();
 	pool_create_info.pPoolSizes = pool_sizes.data();
 	CHECK_VULKAN(vkCreateDescriptorPool(device.logical_device(), &pool_create_info, nullptr, &desc_pool));
@@ -509,21 +518,35 @@ void RenderVulkan::build_shader_descriptor_table() {
 	write_buf.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	write_buf.pBufferInfo = &buf_desc;
 
+	const std::vector<VkWriteDescriptorSet> write_descs = {
+		write_tlas, write_img, write_buf
+	};
+	vkUpdateDescriptorSets(device.logical_device(), write_descs.size(), write_descs.data(), 0, nullptr);
+
+	// Setup and write the index buffer data to its buffer set
+	alloc_info.descriptorPool = desc_pool;
+	alloc_info.descriptorSetCount = 1;
+	alloc_info.pSetLayouts = &buffer_desc_layout;
+	CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &index_desc_set));
+
 	VkDescriptorBufferInfo index_buf_desc = {};
 	index_buf_desc.buffer = mesh->index_buf->handle();
 	index_buf_desc.offset = 0;
 	index_buf_desc.range = mesh->index_buf->size();
-
-	// TODO: These probably do need to go in separate sets, because they'll later
-	// have to be made with count = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT
-	// which can only appear at the end of the set.
+	
 	VkWriteDescriptorSet write_index_buf = {};
 	write_index_buf.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write_index_buf.dstSet = desc_set;
-	write_index_buf.dstBinding = 3;
+	write_index_buf.dstSet = index_desc_set;
+	write_index_buf.dstBinding = 0;
 	write_index_buf.descriptorCount = 1;
 	write_index_buf.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	write_index_buf.pBufferInfo = &index_buf_desc;
+	vkUpdateDescriptorSets(device.logical_device(), 1, &write_index_buf, 0, nullptr);
+
+	alloc_info.descriptorPool = desc_pool;
+	alloc_info.descriptorSetCount = 1;
+	alloc_info.pSetLayouts = &buffer_desc_layout;
+	CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &vert_desc_set));
 
 	VkDescriptorBufferInfo vert_buf_desc = {};
 	vert_buf_desc.buffer = mesh->vertex_buf->handle();
@@ -532,16 +555,12 @@ void RenderVulkan::build_shader_descriptor_table() {
 
 	VkWriteDescriptorSet write_vert_buf = {};
 	write_vert_buf.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write_vert_buf.dstSet = desc_set;
-	write_vert_buf.dstBinding = 4;
+	write_vert_buf.dstSet = vert_desc_set;
+	write_vert_buf.dstBinding = 0;
 	write_vert_buf.descriptorCount = 1;
 	write_vert_buf.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	write_vert_buf.pBufferInfo = &vert_buf_desc;
-
-	const std::vector<VkWriteDescriptorSet> write_descs = {
-		write_tlas, write_img, write_buf, write_index_buf, write_vert_buf
-	};
-	vkUpdateDescriptorSets(device.logical_device(), write_descs.size(), write_descs.data(), 0, nullptr);
+	vkUpdateDescriptorSets(device.logical_device(), 1, &write_vert_buf, 0, nullptr);
 }
 
 void RenderVulkan::build_shader_binding_table() {
