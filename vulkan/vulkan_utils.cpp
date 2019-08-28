@@ -3,6 +3,7 @@
 #include <vector>
 #include <stdexcept>
 #include "vulkan_utils.h"
+#include "vulkanrt_utils.h"
 
 PFN_vkCreateAccelerationStructureNV vkCreateAccelerationStructure = nullptr;
 PFN_vkDestroyAccelerationStructureNV vkDestroyAccelerationStructure = nullptr;
@@ -73,15 +74,10 @@ Device::Device() {
 	props.pNext = &rt_props;
 	props.properties = {};
 	vkGetPhysicalDeviceProperties2(physical_device, &props);
-
-	std::cout << "Raytracing props:\n"
-		<< "max recursion depth: " << rt_props.maxRecursionDepth
-		<< "\nSBT handle size: " << rt_props.shaderGroupHandleSize
-		<< "\nShader group base align: " << rt_props.shaderGroupBaseAlignment << "\n";
 }
 
 Device::~Device() {
-	if (instance != VK_NULL_HANDLE) { 
+	if (instance != VK_NULL_HANDLE) {
 		vkDestroyDevice(device, nullptr);
 		vkDestroyInstance(instance, nullptr);
 	}
@@ -189,7 +185,6 @@ void Device::make_instance() {
 void Device::select_physical_device() {
 	uint32_t device_count = 0;
 	vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
-	std::cout << "Found " << device_count << " devices\n";
 	std::vector<VkPhysicalDevice> devices(device_count, VkPhysicalDevice{});
 	vkEnumeratePhysicalDevices(instance, &device_count, devices.data());
 
@@ -198,17 +193,11 @@ void Device::select_physical_device() {
 		VkPhysicalDeviceFeatures features;
 		vkGetPhysicalDeviceProperties(d, &properties);
 		vkGetPhysicalDeviceFeatures(d, &features);
-		std::cout << properties.deviceName << "\n";
 
 		uint32_t extension_count = 0;
 		vkEnumerateDeviceExtensionProperties(d, nullptr, &extension_count, nullptr);
-		std::cout << "num extensions: " << extension_count << "\n";
 		std::vector<VkExtensionProperties> extensions(extension_count, VkExtensionProperties{});
 		vkEnumerateDeviceExtensionProperties(d, nullptr, &extension_count, extensions.data());
-		std::cout << "Device available extensions:\n";
-		for (const auto& e : extensions) {
-			std::cout << e.extensionName << "\n";
-		}
 
 		// Check for RTX support on this device
 		auto fnd = std::find_if(extensions.begin(), extensions.end(),
@@ -240,7 +229,6 @@ void Device::make_logical_device() {
 		}
 	}
 
-	std::cout << "Graphics queue is " << graphics_queue_index << "\n";
 	const float queue_priority = 1.f;
 
 	VkDeviceQueueCreateInfo queue_create_info = {};
@@ -526,5 +514,154 @@ ShaderModule& ShaderModule::operator=(ShaderModule &&sm) {
 	return *this;
 }
 
+DescriptorSetLayoutBuilder& DescriptorSetLayoutBuilder::add_binding(uint32_t binding, uint32_t count,
+	VkDescriptorType type, uint32_t stage_flags)
+{
+	VkDescriptorSetLayoutBinding desc = {};
+	desc.binding = binding;
+	desc.descriptorCount = count;
+	desc.descriptorType = type;
+	desc.stageFlags = stage_flags;
+	bindings.push_back(desc);
+	return *this;
 }
 
+VkDescriptorSetLayout DescriptorSetLayoutBuilder::build(Device& device) {
+	VkDescriptorSetLayoutCreateInfo create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	create_info.bindingCount = bindings.size();
+	create_info.pBindings = bindings.data();
+	VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+	CHECK_VULKAN(vkCreateDescriptorSetLayout(device.logical_device(), &create_info,
+		nullptr, &layout));
+	return layout;
+}
+
+DescriptorSetUpdater& DescriptorSetUpdater::write_acceleration_structure(VkDescriptorSet set, uint32_t binding,
+	const std::unique_ptr<vk::TopLevelBVH> &bvh)
+{
+	VkWriteDescriptorSetAccelerationStructureNV info = {};
+	info.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV;
+	info.accelerationStructureCount = 1;
+	info.pAccelerationStructures = &bvh->bvh;
+
+	WriteDescriptorInfo write;
+	write.dst_set = set;
+	write.binding = binding;
+	write.count = 1;
+	write.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
+	write.as_index = accel_structs.size();
+
+	accel_structs.push_back(info);
+	writes.push_back(write);
+	return *this;
+}
+
+DescriptorSetUpdater& DescriptorSetUpdater::write_storage_image(VkDescriptorSet set, uint32_t binding,
+	const std::shared_ptr<vk::Texture2D> &img)
+{
+	VkDescriptorImageInfo img_desc = {};
+	img_desc.imageView = img->view_handle();
+	img_desc.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	WriteDescriptorInfo write;
+	write.dst_set = set;
+	write.binding = binding;
+	write.count = 1;
+	write.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	write.img_index = images.size();
+
+	images.push_back(img_desc);
+	writes.push_back(write);
+	return *this;
+}
+
+DescriptorSetUpdater& DescriptorSetUpdater::write_ubo(VkDescriptorSet set, uint32_t binding,
+	const std::shared_ptr<vk::Buffer> &buf)
+{
+	VkDescriptorBufferInfo buf_desc = {};
+	buf_desc.buffer = buf->handle();
+	buf_desc.offset = 0;
+	buf_desc.range = buf->size();
+
+	WriteDescriptorInfo write;
+	write.dst_set = set;
+	write.binding = binding;
+	write.count = 1;
+	write.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	write.buf_index = buffers.size();
+
+	buffers.push_back(buf_desc);
+	writes.push_back(write);
+	return *this;
+}
+	
+DescriptorSetUpdater& DescriptorSetUpdater::write_ssbo(VkDescriptorSet set, uint32_t binding,
+	const std::shared_ptr<vk::Buffer> &buf)
+{
+	VkDescriptorBufferInfo buf_desc = {};
+	buf_desc.buffer = buf->handle();
+	buf_desc.offset = 0;
+	buf_desc.range = buf->size();
+
+	WriteDescriptorInfo write;
+	write.dst_set = set;
+	write.binding = binding;
+	write.count = 1;
+	write.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write.buf_index = buffers.size();
+
+	buffers.push_back(buf_desc);
+	writes.push_back(write);
+	return *this;
+}
+
+DescriptorSetUpdater& DescriptorSetUpdater::write_ssbo_array(VkDescriptorSet set, uint32_t binding,
+	const std::vector<std::shared_ptr<vk::Buffer>> &bufs)
+{
+	WriteDescriptorInfo write;
+	write.dst_set = set;
+	write.binding = binding;
+	write.count = bufs.size();
+	write.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write.buf_index = buffers.size();
+
+	std::transform(bufs.begin(), bufs.end(), std::back_inserter(buffers),
+		[](const std::shared_ptr<vk::Buffer> &b){
+			VkDescriptorBufferInfo buf_desc = {};
+			buf_desc.buffer = b->handle();
+			buf_desc.offset = 0;
+			buf_desc.range = b->size();
+			return buf_desc;
+		});
+
+	writes.push_back(write);
+	return *this;
+}
+
+void DescriptorSetUpdater::update(Device &device) {
+	std::vector<VkWriteDescriptorSet> desc_writes;
+	std::transform(writes.begin(), writes.end(), std::back_inserter(desc_writes),
+		[&](const WriteDescriptorInfo &w) {
+			VkWriteDescriptorSet wd = {};
+			wd.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			wd.dstSet = w.dst_set;
+			wd.dstBinding = w.binding;
+			wd.descriptorCount = w.count;
+			wd.descriptorType = w.type;
+			
+			if (wd.descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV) {
+				wd.pNext = &accel_structs[w.as_index];
+			} else if (wd.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+				|| wd.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+			{
+				wd.pBufferInfo = &buffers[w.buf_index];
+			} else if (wd.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+				wd.pImageInfo = &images[w.img_index];
+			}
+			return wd;
+		});
+	vkUpdateDescriptorSets(device.logical_device(), desc_writes.size(), desc_writes.data(), 0, nullptr);
+}
+
+}

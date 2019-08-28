@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <memory>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
@@ -129,9 +130,6 @@ public:
 	static std::shared_ptr<Texture2D> device(Device &device, glm::uvec2 dims,
 			VkFormat img_format, VkImageUsageFlags usage);
 
-	// TODO: Not sure if we need the padded layout for image readback like is needed in DX12
-	//size_t linear_row_pitch() const;
-
 	// Size of one pixel, in bytes
 	size_t pixel_size() const;
 	VkFormat pixel_format() const;
@@ -154,6 +152,55 @@ struct ShaderModule {
 
 	ShaderModule(ShaderModule &) = delete;
 	ShaderModule& operator=(ShaderModule &) = delete;
+};
+
+class DescriptorSetLayoutBuilder {
+	std::vector<VkDescriptorSetLayoutBinding> bindings;
+
+public:
+
+	DescriptorSetLayoutBuilder& add_binding(uint32_t binding, uint32_t count,
+		VkDescriptorType type, uint32_t stage_flags);
+
+	VkDescriptorSetLayout build(Device& device);
+};
+
+class TopLevelBVH;
+
+struct WriteDescriptorInfo {
+	VkDescriptorSet dst_set = VK_NULL_HANDLE;
+	uint32_t binding = 0;
+	uint32_t count = 0;
+	VkDescriptorType type;
+	size_t as_index = -1;
+	size_t img_index = -1;
+	size_t buf_index = -1;
+};
+
+class DescriptorSetUpdater {
+	std::vector<WriteDescriptorInfo> writes;
+	std::vector<VkWriteDescriptorSetAccelerationStructureNV> accel_structs;
+	std::vector<VkDescriptorImageInfo> images;
+	std::vector<VkDescriptorBufferInfo> buffers;
+
+public:
+	DescriptorSetUpdater& write_acceleration_structure(VkDescriptorSet set, uint32_t binding,
+		const std::unique_ptr<vk::TopLevelBVH> &bvh);
+
+	DescriptorSetUpdater& write_storage_image(VkDescriptorSet set, uint32_t binding,
+		const std::shared_ptr<vk::Texture2D> &img);
+
+	DescriptorSetUpdater& write_ubo(VkDescriptorSet set, uint32_t binding,
+		const std::shared_ptr<vk::Buffer> &buf);
+	
+	DescriptorSetUpdater& write_ssbo(VkDescriptorSet set, uint32_t binding,
+		const std::shared_ptr<vk::Buffer> &buf);
+
+	DescriptorSetUpdater& write_ssbo_array(VkDescriptorSet set, uint32_t binding,
+		const std::vector<std::shared_ptr<vk::Buffer>> &bufs);
+
+	// Commit the writes to the descriptor sets
+	void update(Device &device);
 };
 
 }

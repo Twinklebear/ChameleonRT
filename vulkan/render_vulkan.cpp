@@ -351,49 +351,21 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos, const glm::vec3 &dir,
 }
 
 void RenderVulkan::build_raytracing_pipeline() {
-	VkDescriptorSetLayoutBinding scene_binding = {};
-	scene_binding.binding = 0;
-	scene_binding.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
-	scene_binding.descriptorCount = 1;
-	scene_binding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
-
-	VkDescriptorSetLayoutBinding fb_binding = {};
-	fb_binding.binding = 1;
-	fb_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	fb_binding.descriptorCount = 1;
-	fb_binding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
-
-	VkDescriptorSetLayoutBinding view_param_binding = {};
-	view_param_binding.binding = 2;
-	view_param_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	view_param_binding.descriptorCount = 1;
-	view_param_binding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_NV;
-
-	const std::vector<VkDescriptorSetLayoutBinding> desc_set = {
-		scene_binding, fb_binding, view_param_binding
-	};
-
-	VkDescriptorSetLayoutCreateInfo desc_create_info = {};
-	desc_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	desc_create_info.bindingCount = desc_set.size();
-	desc_create_info.pBindings = desc_set.data();
-	CHECK_VULKAN(vkCreateDescriptorSetLayout(device.logical_device(), &desc_create_info,
-		nullptr, &desc_layout));
+	// Maybe have the builder auto compute the binding numbers? May be annoying if tweaking layouts
+	// or something though
+	desc_layout = vk::DescriptorSetLayoutBuilder()
+		.add_binding(0, 1, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+		.add_binding(1, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+		.add_binding(2, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+		.build(device);
 
 	// Make the variable sized descriptor layout for all our varying sized buffer arrays which
 	// we use to send the mesh data
-	VkDescriptorSetLayoutBinding buffer_data_binding = {};
-	buffer_data_binding.binding = 0;
-	buffer_data_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	buffer_data_binding.descriptorCount = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
-	buffer_data_binding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV;
-
-	desc_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	desc_create_info.bindingCount = 1;
-	desc_create_info.pBindings = &buffer_data_binding;
-	CHECK_VULKAN(vkCreateDescriptorSetLayout(device.logical_device(), &desc_create_info,
-		nullptr, &buffer_desc_layout));
-
+	buffer_desc_layout = vk::DescriptorSetLayoutBuilder()
+		.add_binding(0, VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV)
+		.build(device);
+	
 	const std::vector<VkDescriptorSetLayout> descriptor_layouts = {
 		desc_layout, buffer_desc_layout, buffer_desc_layout
 	};
@@ -412,7 +384,7 @@ void RenderVulkan::build_raytracing_pipeline() {
 	vk::ShaderModule closest_hit_shader(device, hit_spv, sizeof(hit_spv));
 
 	std::array<VkPipelineShaderStageCreateInfo, 3> shader_create_info = { VkPipelineShaderStageCreateInfo{} };
-	for (auto& ci : shader_create_info) {
+	for (auto &ci : shader_create_info) {
 		ci.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		ci.pName = "main";
 	}
@@ -426,7 +398,7 @@ void RenderVulkan::build_raytracing_pipeline() {
 	shader_create_info[2].module = closest_hit_shader.module;
 
 	std::array<VkRayTracingShaderGroupCreateInfoNV, 3> rt_shader_groups = { VkRayTracingShaderGroupCreateInfoNV{} };
-	for (auto& g : rt_shader_groups) {
+	for (auto &g : rt_shader_groups) {
 		g.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV;
 		g.generalShader = VK_SHADER_UNUSED_NV;
 		g.closestHitShader = VK_SHADER_UNUSED_NV;
@@ -479,88 +451,20 @@ void RenderVulkan::build_shader_descriptor_table() {
 	alloc_info.descriptorSetCount = 1;
 	alloc_info.pSetLayouts = &desc_layout;
 	CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &desc_set));
-
-	VkWriteDescriptorSetAccelerationStructureNV write_tlas_info = {};
-	write_tlas_info.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV;
-	write_tlas_info.accelerationStructureCount = 1;
-	write_tlas_info.pAccelerationStructures = &scene->bvh;
-
-	VkWriteDescriptorSet write_tlas = {};
-	write_tlas.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write_tlas.pNext = &write_tlas_info;
-	write_tlas.dstSet = desc_set;
-	write_tlas.dstBinding = 0;
-	write_tlas.descriptorCount = 1;
-	write_tlas.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV;
-
-	VkDescriptorImageInfo img_desc = {};
-	img_desc.imageView = render_target->view_handle();
-	img_desc.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-	VkWriteDescriptorSet write_img = {};
-	write_img.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write_img.dstSet = desc_set;
-	write_img.dstBinding = 1;
-	write_img.descriptorCount = 1;
-	write_img.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	write_img.pImageInfo = &img_desc;
-
-	VkDescriptorBufferInfo buf_desc = {};
-	buf_desc.buffer = view_param_buf->handle();
-	buf_desc.offset = 0;
-	buf_desc.range = view_param_buf->size();
-
-	VkWriteDescriptorSet write_buf = {};
-	write_buf.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write_buf.dstSet = desc_set;
-	write_buf.dstBinding = 2;
-	write_buf.descriptorCount = 1;
-	write_buf.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	write_buf.pBufferInfo = &buf_desc;
-
-	const std::vector<VkWriteDescriptorSet> write_descs = {
-		write_tlas, write_img, write_buf
-	};
-	vkUpdateDescriptorSets(device.logical_device(), write_descs.size(), write_descs.data(), 0, nullptr);
-
-	// Setup and write the index buffer data to its buffer set
+	
 	alloc_info.descriptorPool = desc_pool;
 	alloc_info.descriptorSetCount = 1;
 	alloc_info.pSetLayouts = &buffer_desc_layout;
 	CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &index_desc_set));
-
-	VkDescriptorBufferInfo index_buf_desc = {};
-	index_buf_desc.buffer = mesh->index_buf->handle();
-	index_buf_desc.offset = 0;
-	index_buf_desc.range = mesh->index_buf->size();
-	
-	VkWriteDescriptorSet write_index_buf = {};
-	write_index_buf.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write_index_buf.dstSet = index_desc_set;
-	write_index_buf.dstBinding = 0;
-	write_index_buf.descriptorCount = 1;
-	write_index_buf.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	write_index_buf.pBufferInfo = &index_buf_desc;
-	vkUpdateDescriptorSets(device.logical_device(), 1, &write_index_buf, 0, nullptr);
-
-	alloc_info.descriptorPool = desc_pool;
-	alloc_info.descriptorSetCount = 1;
-	alloc_info.pSetLayouts = &buffer_desc_layout;
 	CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &vert_desc_set));
 
-	VkDescriptorBufferInfo vert_buf_desc = {};
-	vert_buf_desc.buffer = mesh->vertex_buf->handle();
-	vert_buf_desc.offset = 0;
-	vert_buf_desc.range = mesh->vertex_buf->size();
-
-	VkWriteDescriptorSet write_vert_buf = {};
-	write_vert_buf.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write_vert_buf.dstSet = vert_desc_set;
-	write_vert_buf.dstBinding = 0;
-	write_vert_buf.descriptorCount = 1;
-	write_vert_buf.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	write_vert_buf.pBufferInfo = &vert_buf_desc;
-	vkUpdateDescriptorSets(device.logical_device(), 1, &write_vert_buf, 0, nullptr);
+	vk::DescriptorSetUpdater()
+		.write_acceleration_structure(desc_set, 0, scene)
+		.write_storage_image(desc_set, 1, render_target)
+		.write_ubo(desc_set, 2, view_param_buf)
+		.write_ssbo(index_desc_set, 0, mesh->index_buf)
+		.write_ssbo(vert_desc_set, 0, mesh->vertex_buf)
+		.update(device);
 }
 
 void RenderVulkan::build_shader_binding_table() {
