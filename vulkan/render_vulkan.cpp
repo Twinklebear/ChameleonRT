@@ -30,7 +30,7 @@ RenderVulkan::RenderVulkan() {
 RenderVulkan::~RenderVulkan() {
 	vkDestroyFence(device.logical_device(), fence, nullptr);
 	vkDestroyCommandPool(device.logical_device(), command_pool, nullptr);
-	vkDestroyPipeline(device.logical_device(), rt_pipeline, nullptr);
+	vkDestroyPipeline(device.logical_device(), rt_pipeline.handle(), nullptr);
 	vkDestroyDescriptorPool(device.logical_device(), desc_pool, nullptr);
 }
 
@@ -279,7 +279,7 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
 
-	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, rt_pipeline);
+	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, rt_pipeline.handle());
 
 	std::vector<VkDescriptorSet> descriptor_sets = {
 		desc_set, index_desc_set, vert_desc_set
@@ -378,56 +378,18 @@ void RenderVulkan::build_raytracing_pipeline() {
 	CHECK_VULKAN(vkCreatePipelineLayout(device.logical_device(), &pipeline_create_info,
 		nullptr, &pipeline_layout));
 
-	// Load the shader modules for our pipeline
-	vk::ShaderModule raygen_shader(device, raygen_spv, sizeof(raygen_spv));
-	vk::ShaderModule miss_shader(device, miss_spv, sizeof(miss_spv));
-	vk::ShaderModule closest_hit_shader(device, hit_spv, sizeof(hit_spv));
+	// Load the shader modules for our pipeline and build the pipeline
+	auto raygen_shader = std::make_shared<vk::ShaderModule>(device, raygen_spv, sizeof(raygen_spv));
+	auto miss_shader = std::make_shared<vk::ShaderModule>(device, miss_spv, sizeof(miss_spv));
+	auto closest_hit_shader = std::make_shared<vk::ShaderModule>(device, hit_spv, sizeof(hit_spv));
 
-	std::array<VkPipelineShaderStageCreateInfo, 3> shader_create_info = { VkPipelineShaderStageCreateInfo{} };
-	for (auto &ci : shader_create_info) {
-		ci.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		ci.pName = "main";
-	}
-	shader_create_info[0].stage = VK_SHADER_STAGE_RAYGEN_BIT_NV;
-	shader_create_info[0].module = raygen_shader.module;
-
-	shader_create_info[1].stage = VK_SHADER_STAGE_MISS_BIT_NV;
-	shader_create_info[1].module = miss_shader.module;
-
-	shader_create_info[2].stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV;
-	shader_create_info[2].module = closest_hit_shader.module;
-
-	std::array<VkRayTracingShaderGroupCreateInfoNV, 3> rt_shader_groups = { VkRayTracingShaderGroupCreateInfoNV{} };
-	for (auto &g : rt_shader_groups) {
-		g.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV;
-		g.generalShader = VK_SHADER_UNUSED_NV;
-		g.closestHitShader = VK_SHADER_UNUSED_NV;
-		g.anyHitShader = VK_SHADER_UNUSED_NV;
-		g.intersectionShader = VK_SHADER_UNUSED_NV;
-	}
-
-	// Raygen group [0]
-	rt_shader_groups[0].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
-	rt_shader_groups[0].generalShader = 0;
-
-	// Miss group [1]
-	rt_shader_groups[1].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV;
-	rt_shader_groups[1].generalShader = 1;
-
-	// Hit group [2]
-	rt_shader_groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_NV;
-	rt_shader_groups[2].closestHitShader = 2;
-
-	VkRayTracingPipelineCreateInfoNV rt_pipeline_create_info = {};
-	rt_pipeline_create_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV;
-	rt_pipeline_create_info.stageCount = shader_create_info.size();
-	rt_pipeline_create_info.pStages = shader_create_info.data();
-	rt_pipeline_create_info.groupCount = rt_shader_groups.size();
-	rt_pipeline_create_info.pGroups = rt_shader_groups.data();
-	rt_pipeline_create_info.maxRecursionDepth = 1;
-	rt_pipeline_create_info.layout = pipeline_layout;
-	CHECK_VULKAN(vkCreateRayTracingPipelines(device.logical_device(), VK_NULL_HANDLE,
-		1, &rt_pipeline_create_info, nullptr, &rt_pipeline));
+	rt_pipeline = vk::RTPipelineBuilder()
+		.set_raygen("raygen", raygen_shader)
+		.add_miss("miss", miss_shader)
+		.add_hitgroup("closest_hit", closest_hit_shader)
+		.set_recursion_depth(1)
+		.set_layout(pipeline_layout)
+		.build(device);
 }
 
 void RenderVulkan::build_shader_descriptor_table() {
@@ -468,8 +430,7 @@ void RenderVulkan::build_shader_descriptor_table() {
 }
 
 void RenderVulkan::build_shader_binding_table() {
-	const size_t shader_ident_size = device.raytracing_properties().shaderGroupHandleSize;
-	const size_t shader_record_size = device.raytracing_properties().shaderGroupHandleSize;
+	const size_t shader_record_size = rt_pipeline.shader_ident_size();
 	// Testing sending some params through the SBT
 	const size_t hit_record_size = align_to(shader_record_size + sizeof(float),
 		device.raytracing_properties().shaderGroupBaseAlignment);
@@ -477,22 +438,20 @@ void RenderVulkan::build_shader_binding_table() {
 
 	std::cout << "SBT size: " << sbt_size << "\n";
 	auto upload_sbt = vk::Buffer::host(device, sbt_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+	uint8_t* sbt_mapping = reinterpret_cast<uint8_t*>(upload_sbt->map());
 
-	uint8_t *sbt_mapping = reinterpret_cast<uint8_t*>(upload_sbt->map());
-	// Get the shader identifiers
-	// Note: for now this is the same size as the SBT, but this will not always be the case
-	std::vector<uint8_t> shader_identifiers(3 * shader_ident_size, 0);
-	CHECK_VULKAN(vkGetRayTracingShaderGroupHandles(device.logical_device(), rt_pipeline, 0, 3,
-		shader_identifiers.size(), shader_identifiers.data()));
+	std::memcpy(sbt_mapping, rt_pipeline.shader_ident("raygen"),
+		rt_pipeline.shader_ident_size());
+	
+	std::memcpy(sbt_mapping + shader_record_size,rt_pipeline.shader_ident("miss"),
+		rt_pipeline.shader_ident_size());
+	
+	std::memcpy(sbt_mapping + 2 * shader_record_size, rt_pipeline.shader_ident("closest_hit"),
+		rt_pipeline.shader_ident_size());
 
-	for (size_t i = 0; i < 3; ++i) {
-		std::memcpy(sbt_mapping + i * shader_ident_size,
-			shader_identifiers.data() + i * shader_ident_size,
-			shader_ident_size);
-	}
 	// Write the test params to the hit group
 	float test_value = 0.5;
-	std::memcpy(sbt_mapping + 3 * shader_ident_size, &test_value, sizeof(float));
+	std::memcpy(sbt_mapping + 3 * rt_pipeline.shader_ident_size(), &test_value, sizeof(float));
 	upload_sbt->unmap();
 
 	// Upload the SBT to the GPU

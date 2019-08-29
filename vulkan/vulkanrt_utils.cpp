@@ -253,5 +253,118 @@ size_t TopLevelBVH::num_instances() const {
 	return accel_info.instanceCount;
 }
 
+const uint8_t* RTPipeline::shader_ident(const std::string &name) const {
+	auto fnd = shader_ident_offsets.find(name);
+	if (fnd == shader_ident_offsets.end()) {
+		throw std::runtime_error("Shader identifier " + name + " not found!");
+	}
+	return &shader_identifiers[fnd->second];
 }
 
+size_t RTPipeline::shader_ident_size() const {
+	return ident_size;
+}
+
+VkPipeline RTPipeline::handle() {
+	return pipeline;
+}
+
+ShaderGroup::ShaderGroup(const std::string &name, const std::shared_ptr<vk::ShaderModule> &shader_module,
+	const std::string &entry_point, VkShaderStageFlagBits stage, VkRayTracingShaderGroupTypeNV group)
+	: shader_module(shader_module), stage(stage), group(group), name(name), entry_point(entry_point)
+{}
+
+RTPipelineBuilder& RTPipelineBuilder::set_raygen(const std::string &name, const std::shared_ptr<vk::ShaderModule> &shader,
+	const std::string &entry_point)
+{
+	shaders.emplace_back(name, shader, entry_point, VK_SHADER_STAGE_RAYGEN_BIT_NV,
+		VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV);
+	return *this;
+}
+
+RTPipelineBuilder& RTPipelineBuilder::add_miss(const std::string &name, const std::shared_ptr<vk::ShaderModule> &shader,
+	const std::string &entry_point)
+{
+	shaders.emplace_back(name, shader, entry_point, VK_SHADER_STAGE_MISS_BIT_NV,
+		VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_NV);
+	return *this;
+}
+
+RTPipelineBuilder& RTPipelineBuilder::add_hitgroup(const std::string &name, const std::shared_ptr<vk::ShaderModule> &shader,
+	const std::string &entry_point)
+{
+	shaders.emplace_back(name, shader, entry_point, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
+		VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_NV);
+	return *this;
+}
+
+RTPipelineBuilder& RTPipelineBuilder::set_layout(VkPipelineLayout l) {
+	layout = l;
+	return *this;
+}
+
+RTPipelineBuilder& RTPipelineBuilder::set_recursion_depth(uint32_t depth) {
+	recursion_depth = depth;
+	return *this;
+}
+
+RTPipeline RTPipelineBuilder::build(Device &device) {
+	std::vector<VkPipelineShaderStageCreateInfo> shader_info;
+	std::vector<VkRayTracingShaderGroupCreateInfoNV> group_info;
+
+	RTPipeline pipeline;
+
+	pipeline.ident_size = device.raytracing_properties().shaderGroupHandleSize;
+	for (const auto &sg : shaders) {
+		VkPipelineShaderStageCreateInfo ss_ci = {};
+		ss_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		ss_ci.stage = sg.stage;
+		ss_ci.module = sg.shader_module->module;
+		ss_ci.pName = sg.entry_point.c_str();
+		std::cout << "sg " << sg.name << " entry " << sg.entry_point << "\n";
+
+		VkRayTracingShaderGroupCreateInfoNV g_ci = {};
+		g_ci.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV;
+		g_ci.type = sg.group;
+		if (sg.stage == VK_SHADER_STAGE_RAYGEN_BIT_NV || sg.stage == VK_SHADER_STAGE_MISS_BIT_NV) {
+			g_ci.generalShader = shader_info.size();
+			g_ci.closestHitShader = VK_SHADER_UNUSED_NV;
+			g_ci.anyHitShader = VK_SHADER_UNUSED_NV;
+			g_ci.intersectionShader = VK_SHADER_UNUSED_NV;
+		} else if (sg.stage == VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV) {
+			g_ci.generalShader = VK_SHADER_UNUSED_NV;
+			g_ci.closestHitShader = shader_info.size();
+			g_ci.anyHitShader = VK_SHADER_UNUSED_NV;
+			g_ci.intersectionShader = VK_SHADER_UNUSED_NV;
+		} else {
+			throw std::runtime_error("Unhandled shader stage!");
+		}
+
+		pipeline.shader_ident_offsets[sg.name] = shader_info.size() * pipeline.ident_size;
+
+		shader_info.push_back(ss_ci);
+		group_info.push_back(g_ci);
+	}
+
+	std::cout << "group info size: " << group_info.size()
+		<< "\nshader info size: " << shader_info.size() << "\n";
+
+	VkRayTracingPipelineCreateInfoNV pipeline_create_info = {};
+	pipeline_create_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV;
+	pipeline_create_info.stageCount = shader_info.size();
+	pipeline_create_info.pStages = shader_info.data();
+	pipeline_create_info.groupCount = group_info.size();
+	pipeline_create_info.pGroups = group_info.data();
+	pipeline_create_info.maxRecursionDepth = recursion_depth;
+	pipeline_create_info.layout = layout;
+	CHECK_VULKAN(vkCreateRayTracingPipelines(device.logical_device(), VK_NULL_HANDLE,
+		1, &pipeline_create_info, nullptr, &pipeline.pipeline));
+
+	pipeline.shader_identifiers.resize(shader_info.size() * pipeline.ident_size, 0);
+	CHECK_VULKAN(vkGetRayTracingShaderGroupHandles(device.logical_device(), pipeline.pipeline,
+		0, shader_info.size(), pipeline.shader_identifiers.size(), pipeline.shader_identifiers.data()));
+
+	return pipeline;	
+}
+
+}

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <memory>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
@@ -106,6 +107,57 @@ public:
 	void finalize();
 
 	size_t num_instances() const;
+};
+
+class RTPipeline {
+	std::vector<uint8_t> shader_identifiers;
+	std::unordered_map<std::string, size_t> shader_ident_offsets;
+	size_t ident_size = 0;
+	VkPipeline pipeline = VK_NULL_HANDLE;
+
+	friend class RTPipelineBuilder;
+
+public:
+	const uint8_t* shader_ident(const std::string &name) const;
+
+	size_t shader_ident_size() const;
+
+	VkPipeline handle();
+};
+
+// TODO: The numebr of these is not tied to the number of entries in the SBT right?
+struct ShaderGroup {
+	const std::shared_ptr<vk::ShaderModule> shader_module;
+	VkShaderStageFlagBits stage;
+	VkRayTracingShaderGroupTypeNV group;
+	std::string name;
+	std::string entry_point;
+
+	ShaderGroup(const std::string& name, const std::shared_ptr<vk::ShaderModule> &shader_module,
+		const std::string& entry_point, VkShaderStageFlagBits stage,
+		VkRayTracingShaderGroupTypeNV group);
+};
+
+class RTPipelineBuilder {
+	std::vector<ShaderGroup> shaders;
+	VkPipelineLayout layout = VK_NULL_HANDLE;
+	uint32_t recursion_depth = 1;
+
+public:
+	RTPipelineBuilder& set_raygen(const std::string &name, const std::shared_ptr<vk::ShaderModule> &shader,
+		const std::string &entry_point = "main");
+
+	RTPipelineBuilder& add_miss(const std::string &name, const std::shared_ptr<vk::ShaderModule> &shader,
+		const std::string &entry_point = "main");
+	
+	RTPipelineBuilder& add_hitgroup(const std::string &name, const std::shared_ptr<vk::ShaderModule> &shader,
+		const std::string &entry_point = "main");
+
+	RTPipelineBuilder& set_layout(VkPipelineLayout layout);
+
+	RTPipelineBuilder& set_recursion_depth(uint32_t depth);
+
+	RTPipeline build(Device &device);
 };
 
 }

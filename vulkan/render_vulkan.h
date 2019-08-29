@@ -19,7 +19,7 @@ struct RenderVulkan : RenderBackend {
 	VkCommandPool command_pool = VK_NULL_HANDLE;
 	VkCommandBuffer command_buffer = VK_NULL_HANDLE;
 
-	VkPipeline rt_pipeline = VK_NULL_HANDLE;
+	vk::RTPipeline rt_pipeline;
 	VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
 	VkDescriptorSetLayout desc_layout = VK_NULL_HANDLE;
 	VkDescriptorSetLayout buffer_desc_layout = VK_NULL_HANDLE;
