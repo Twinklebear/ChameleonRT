@@ -432,13 +432,13 @@ ShaderBindingTable SBTBuilder::build(Device &device) {
 	const size_t ident_size = device.raytracing_properties().shaderGroupHandleSize;
 	size_t offset = 0;
 	// Copy the shader identifier and record where to write the parameters
-	std::memcpy(sbt.sbt_mapping, pipeline->shader_ident(raygen.name), ident_size);
+	std::memcpy(sbt.sbt_mapping, pipeline->shader_ident(raygen.shader_name), ident_size);
 	sbt.sbt_param_offsets[raygen.name] = ident_size;
 	
 	offset = sbt.miss_start;
 	for (const auto &m : miss_records) {
 		// Copy the shader identifier and record where to write the parameters
-		std::memcpy(sbt.sbt_mapping + offset, pipeline->shader_ident(m.name), ident_size);
+		std::memcpy(sbt.sbt_mapping + offset, pipeline->shader_ident(m.shader_name), ident_size);
 		sbt.sbt_param_offsets[m.name] = offset + ident_size;
 		offset += sbt.miss_stride;
 	}
@@ -446,7 +446,7 @@ ShaderBindingTable SBTBuilder::build(Device &device) {
 	offset = sbt.hitgroup_start;
 	for (const auto &hg : hitgroups) {
 		// Copy the shader identifier and record where to write the parameters
-		std::memcpy(sbt.sbt_mapping + offset, pipeline->shader_ident(hg.name), ident_size);
+		std::memcpy(sbt.sbt_mapping + offset, pipeline->shader_ident(hg.shader_name), ident_size);
 		sbt.sbt_param_offsets[hg.name] = offset + ident_size;
 		offset += sbt.hitgroup_stride;
 	}

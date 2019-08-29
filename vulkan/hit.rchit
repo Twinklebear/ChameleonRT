@@ -25,10 +25,10 @@ layout(shaderRecordNV) buffer SBT {
 };
 
 void main() {
-	const uint3 indices = index_buffers[nonuniformEXT(gl_InstanceID)].indices[gl_PrimitiveID];
-	const float3 va = vertex_buffers[nonuniformEXT(gl_InstanceID)].verts[indices.x];
-	const float3 vb = vertex_buffers[nonuniformEXT(gl_InstanceID)].verts[indices.y];
-	const float3 vc = vertex_buffers[nonuniformEXT(gl_InstanceID)].verts[indices.z];
+	const uint3 indices = index_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].indices[gl_PrimitiveID];
+	const float3 va = vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].verts[indices.x];
+	const float3 vb = vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].verts[indices.y];
+	const float3 vc = vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].verts[indices.z];
 	const vec3 n = normalize(cross(vec3(vb.x, vb.y, vb.z) - vec3(va.x, va.y, va.z),
 				vec3(vc.x, vc.y, vc.z) - vec3(va.x, va.y, va.z))); 
 

@@ -193,21 +193,22 @@ void RenderVulkan::set_scene(const Scene &scene_data) {
 	mesh->finalize();
 
 	// Setup the instance buffer
-	auto upload_instances = vk::Buffer::host(device, sizeof(vk::GeometryInstance), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-	{
-		vk::GeometryInstance *map = reinterpret_cast<vk::GeometryInstance*>(upload_instances->map());
-		map->transform[0] = 1.f;
-		map->transform[5] = 1.f;
-		map->transform[10] = 1.f;
+	auto upload_instances = vk::Buffer::host(device, 2 * sizeof(vk::GeometryInstance), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+	vk::GeometryInstance* map = reinterpret_cast<vk::GeometryInstance*>(upload_instances->map());
+	for (size_t i = 0; i < 2; ++i) {	
+		map[i].transform[0] = 1.f;
+		map[i].transform[3] = 3.f * i - 1.5f;
+		map[i].transform[5] = 1.f;
+		map[i].transform[10] = 1.f;
 
-		map->instance_custom_index = 0;
-		map->mask = 0xff;
-		map->instance_offset = 0;
-		map->flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_NV | VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
-		map->acceleration_structure_handle = mesh->handle;
-
-		upload_instances->unmap();
+		// Same mesh but just testing shader table stuff
+		map[i].instance_custom_index = 0;
+		map[i].mask = 0xff;
+		map[i].instance_offset = i;
+		map[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_NV | VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
+		map[i].acceleration_structure_handle = mesh->handle;
 	}
+	upload_instances->unmap();
 
 	auto instance_buf = vk::Buffer::device(device, upload_instances->size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 	// Upload the instance data to the device
@@ -430,12 +431,17 @@ void RenderVulkan::build_shader_binding_table() {
 		.set_raygen(vk::ShaderRecord("raygen", "raygen", 0))
 		.add_miss(vk::ShaderRecord("miss", "miss", 0))
 		.add_hitgroup(vk::ShaderRecord("closest_hit", "closest_hit", sizeof(float)))
+		.add_hitgroup(vk::ShaderRecord("closest_hit1", "closest_hit", sizeof(float)))
+
 		.build(device);
 
 	shader_table.map_sbt();
 	
 	float test_value = 0.5;
 	std::memcpy(shader_table.sbt_params("closest_hit"), &test_value, sizeof(float));
+
+	test_value = 0.f;
+	std::memcpy(shader_table.sbt_params("closest_hit1"), &test_value, sizeof(float));
 
 	shader_table.unmap_sbt();
 
