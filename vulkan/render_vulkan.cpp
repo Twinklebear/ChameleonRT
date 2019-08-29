@@ -287,14 +287,10 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos, const glm::vec3 &dir,
 	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV,
 		pipeline_layout, 0, descriptor_sets.size(), descriptor_sets.data(), 0, nullptr);
 
-	const size_t shader_record_size = device.raytracing_properties().shaderGroupHandleSize;
-	// Testing sending some params through the SBT
-	const size_t hit_record_size = align_to(shader_record_size + sizeof(float),
-		device.raytracing_properties().shaderGroupBaseAlignment);
 	vkCmdTraceRays(command_buffer,
-		shader_table->handle(), 0,
-		shader_table->handle(), shader_record_size, shader_record_size,
-		shader_table->handle(), 2 * shader_record_size, hit_record_size,
+		shader_table.sbt->handle(), 0,
+		shader_table.sbt->handle(), shader_table.miss_start, shader_table.miss_stride,
+		shader_table.sbt->handle(), shader_table.hitgroup_start, shader_table.hitgroup_stride,
 		VK_NULL_HANDLE, 0, 0, render_target->dims().x, render_target->dims().y, 1);
 
 	// Barrier for rendering to finish
@@ -430,33 +426,18 @@ void RenderVulkan::build_shader_descriptor_table() {
 }
 
 void RenderVulkan::build_shader_binding_table() {
-	const size_t shader_record_size = rt_pipeline.shader_ident_size();
-	// Testing sending some params through the SBT
-	const size_t hit_record_size = align_to(shader_record_size + sizeof(float),
-		device.raytracing_properties().shaderGroupBaseAlignment);
-	const size_t sbt_size = 2 * shader_record_size + hit_record_size;
+	shader_table = vk::SBTBuilder(&rt_pipeline)
+		.set_raygen(vk::ShaderRecord("raygen", "raygen", 0))
+		.add_miss(vk::ShaderRecord("miss", "miss", 0))
+		.add_hitgroup(vk::ShaderRecord("closest_hit", "closest_hit", sizeof(float)))
+		.build(device);
 
-	std::cout << "SBT size: " << sbt_size << "\n";
-	auto upload_sbt = vk::Buffer::host(device, sbt_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-	uint8_t* sbt_mapping = reinterpret_cast<uint8_t*>(upload_sbt->map());
-
-	std::memcpy(sbt_mapping, rt_pipeline.shader_ident("raygen"),
-		rt_pipeline.shader_ident_size());
+	shader_table.map_sbt();
 	
-	std::memcpy(sbt_mapping + shader_record_size,rt_pipeline.shader_ident("miss"),
-		rt_pipeline.shader_ident_size());
-	
-	std::memcpy(sbt_mapping + 2 * shader_record_size, rt_pipeline.shader_ident("closest_hit"),
-		rt_pipeline.shader_ident_size());
-
-	// Write the test params to the hit group
 	float test_value = 0.5;
-	std::memcpy(sbt_mapping + 3 * rt_pipeline.shader_ident_size(), &test_value, sizeof(float));
-	upload_sbt->unmap();
+	std::memcpy(shader_table.sbt_params("closest_hit"), &test_value, sizeof(float));
 
-	// Upload the SBT to the GPU
-	shader_table = vk::Buffer::device(device, upload_sbt->size(),
-		VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+	shader_table.unmap_sbt();
 
 	{
 		VkCommandBufferBeginInfo begin_info = {};
@@ -465,8 +446,8 @@ void RenderVulkan::build_shader_binding_table() {
 		CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
 
 		VkBufferCopy copy_cmd = {};
-		copy_cmd.size = upload_sbt->size();
-		vkCmdCopyBuffer(command_buffer, upload_sbt->handle(), shader_table->handle(), 1, &copy_cmd);
+		copy_cmd.size = shader_table.upload_sbt->size();
+		vkCmdCopyBuffer(command_buffer, shader_table.upload_sbt->handle(), shader_table.sbt->handle(), 1, &copy_cmd);
 
 		CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
 

@@ -33,5 +33,6 @@ void main() {
 				vec3(vc.x, vc.y, vc.z) - vec3(va.x, va.y, va.z))); 
 
 	hitColor = vec4((n + vec3(1)) * 0.5f, 1.f);
+	hitColor.b += blueness;
 }
 

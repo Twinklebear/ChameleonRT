@@ -160,5 +160,57 @@ public:
 	RTPipeline build(Device &device);
 };
 
+struct ShaderRecord {
+	std::string name;
+	std::string shader_name;
+	size_t param_size = 0;
+
+	ShaderRecord() = default;
+	ShaderRecord(const std::string& name, const std::string& shader_name, size_t param_size);
+};
+
+struct ShaderBindingTable {
+	std::unordered_map<std::string, size_t> sbt_param_offsets;
+	std::shared_ptr<vk::Buffer> upload_sbt;
+	uint8_t* sbt_mapping = nullptr;
+
+	std::shared_ptr<vk::Buffer> sbt;
+	
+	size_t raygen_stride = 0;
+
+	size_t miss_start = 0;
+	size_t miss_stride = 0;
+
+	size_t hitgroup_start = 0;
+	size_t hitgroup_stride = 0;
+
+	void map_sbt();
+
+	uint8_t* sbt_params(const std::string &name);
+
+	void unmap_sbt();
+};
+
+class SBTBuilder {
+	const RTPipeline* pipeline = nullptr;
+	ShaderRecord raygen;
+	std::vector<ShaderRecord> miss_records;
+	std::vector<ShaderRecord> hitgroups;
+
+public:
+	SBTBuilder(const RTPipeline *pipeline);
+
+	SBTBuilder& set_raygen(const ShaderRecord &sr);
+	
+	SBTBuilder& add_miss(const ShaderRecord &sr);
+
+	// TODO: Maybe similar to DXR where we take the per-ray type hit groups? Or should I change the DXR
+	// one to work more like this? How would the shader indexing work out easiest if I start mixing
+	// multiple geometries into a bottom level BVH?
+	SBTBuilder& add_hitgroup(const ShaderRecord &sr);
+
+	ShaderBindingTable build(Device &device);
+};
+
 }
 

@@ -9,7 +9,7 @@
 struct RenderVulkan : RenderBackend {
 	vk::Device device;
 
-	std::shared_ptr<vk::Buffer> view_param_buf, shader_table, img_readback_buf;
+	std::shared_ptr<vk::Buffer> view_param_buf, img_readback_buf;
 
 	std::shared_ptr<vk::Texture2D> render_target;
 
@@ -29,6 +29,8 @@ struct RenderVulkan : RenderBackend {
 	VkDescriptorSet desc_set = VK_NULL_HANDLE;
 	VkDescriptorSet index_desc_set = VK_NULL_HANDLE;
 	VkDescriptorSet vert_desc_set = VK_NULL_HANDLE;
+
+	vk::ShaderBindingTable shader_table;
 	
 	VkFence fence = VK_NULL_HANDLE;
 	

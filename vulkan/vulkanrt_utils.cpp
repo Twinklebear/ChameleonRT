@@ -1,4 +1,6 @@
 #include <iostream>
+#include <cmath>
+#include <algorithm>
 #include <glm/glm.hpp>
 #include "util.h"
 #include "vulkanrt_utils.h"
@@ -321,7 +323,6 @@ RTPipeline RTPipelineBuilder::build(Device &device) {
 		ss_ci.stage = sg.stage;
 		ss_ci.module = sg.shader_module->module;
 		ss_ci.pName = sg.entry_point.c_str();
-		std::cout << "sg " << sg.name << " entry " << sg.entry_point << "\n";
 
 		VkRayTracingShaderGroupCreateInfoNV g_ci = {};
 		g_ci.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV;
@@ -346,9 +347,6 @@ RTPipeline RTPipelineBuilder::build(Device &device) {
 		group_info.push_back(g_ci);
 	}
 
-	std::cout << "group info size: " << group_info.size()
-		<< "\nshader info size: " << shader_info.size() << "\n";
-
 	VkRayTracingPipelineCreateInfoNV pipeline_create_info = {};
 	pipeline_create_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV;
 	pipeline_create_info.stageCount = shader_info.size();
@@ -365,6 +363,97 @@ RTPipeline RTPipelineBuilder::build(Device &device) {
 		0, shader_info.size(), pipeline.shader_identifiers.size(), pipeline.shader_identifiers.data()));
 
 	return pipeline;	
+}
+
+ShaderRecord::ShaderRecord(const std::string &name, const std::string &shader_name, size_t param_size)
+	: name(name), shader_name(shader_name), param_size(param_size)
+{}
+
+void ShaderBindingTable::map_sbt() {
+	assert(!sbt_mapping);
+	sbt_mapping = reinterpret_cast<uint8_t*>(upload_sbt->map());
+}
+
+uint8_t* ShaderBindingTable::sbt_params(const std::string &name) {
+	assert(sbt_mapping);
+	auto fnd = sbt_param_offsets.find(name);
+	if (fnd == sbt_param_offsets.end()) {
+		throw std::runtime_error("Failed to find SBT entry for group " + name);
+	}
+	return sbt_mapping + fnd->second;
+}
+
+void ShaderBindingTable::unmap_sbt() {
+	upload_sbt->unmap();
+	sbt_mapping = nullptr;
+}
+
+SBTBuilder::SBTBuilder(const RTPipeline *pipeline) : pipeline(pipeline) {}
+
+SBTBuilder& SBTBuilder::set_raygen(const ShaderRecord &sr) {
+	raygen = sr;
+	return *this;
+}
+
+SBTBuilder& SBTBuilder::add_miss(const ShaderRecord &sr) {
+	miss_records.push_back(sr);
+	return *this;
+}
+
+SBTBuilder& SBTBuilder::add_hitgroup(const ShaderRecord &sr) {
+	hitgroups.push_back(sr);
+	return *this;
+}
+
+ShaderBindingTable SBTBuilder::build(Device &device) {
+	ShaderBindingTable sbt;
+	sbt.raygen_stride = device.raytracing_properties().shaderGroupHandleSize + raygen.param_size;
+	sbt.miss_start = align_to(sbt.raygen_stride, device.raytracing_properties().shaderGroupBaseAlignment);
+	
+	for (const auto &m : miss_records) {
+		sbt.miss_stride = std::max(sbt.miss_stride,
+			device.raytracing_properties().shaderGroupHandleSize + m.param_size);
+	}
+
+	sbt.hitgroup_start = align_to(sbt.miss_start + sbt.miss_stride + miss_records.size(),
+		device.raytracing_properties().shaderGroupBaseAlignment);
+	for (const auto &h : hitgroups) {
+		sbt.hitgroup_stride = std::max(sbt.hitgroup_stride,
+			device.raytracing_properties().shaderGroupHandleSize + h.param_size);
+	}
+
+	const size_t sbt_size = align_to(sbt.hitgroup_start + sbt.hitgroup_stride * hitgroups.size(),
+		device.raytracing_properties().shaderGroupBaseAlignment);
+	sbt.upload_sbt = Buffer::host(device, sbt_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+	sbt.sbt = Buffer::host(device, sbt_size, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+
+	sbt.map_sbt();
+
+	const size_t ident_size = device.raytracing_properties().shaderGroupHandleSize;
+	size_t offset = 0;
+	// Copy the shader identifier and record where to write the parameters
+	std::memcpy(sbt.sbt_mapping, pipeline->shader_ident(raygen.name), ident_size);
+	sbt.sbt_param_offsets[raygen.name] = ident_size;
+	
+	offset = sbt.miss_start;
+	for (const auto &m : miss_records) {
+		// Copy the shader identifier and record where to write the parameters
+		std::memcpy(sbt.sbt_mapping + offset, pipeline->shader_ident(m.name), ident_size);
+		sbt.sbt_param_offsets[m.name] = offset + ident_size;
+		offset += sbt.miss_stride;
+	}
+
+	offset = sbt.hitgroup_start;
+	for (const auto &hg : hitgroups) {
+		// Copy the shader identifier and record where to write the parameters
+		std::memcpy(sbt.sbt_mapping + offset, pipeline->shader_ident(hg.name), ident_size);
+		sbt.sbt_param_offsets[hg.name] = offset + ident_size;
+		offset += sbt.hitgroup_stride;
+	}
+
+	sbt.unmap_sbt();
+
+	return sbt;
 }
 
 }
