@@ -73,9 +73,6 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
 
     VkMemoryRequirements2 mem_reqs = {};
     vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
-    // TODO WILL: For a single triangle it requests 64k output and 64k scratch? It seems like a lot.
-    std::cout << "BLAS will need " << pretty_print_count(mem_reqs.memoryRequirements.size)
-              << "b output space\n";
     // Allocate space for the build output
     bvh_mem = device->alloc(mem_reqs.memoryRequirements.size,
                             mem_reqs.memoryRequirements.memoryTypeBits,
@@ -84,9 +81,6 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
     // Allocate scratch space for the build
     mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
     vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
-    // TODO WILL: For a single triangle it requests 64k output and 64k scratch? It seems like a lot.
-    std::cout << "BLAS will need " << pretty_print_count(mem_reqs.memoryRequirements.size)
-              << "b scratch space\n";
     scratch = Buffer::device(
         *device, mem_reqs.memoryRequirements.size, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
@@ -165,7 +159,6 @@ void TriangleMesh::enqueue_compaction(VkCommandBuffer &cmd_buf)
     VkMemoryRequirements2 mem_reqs = {};
     vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
     compacted_size = align_to(compacted_size, mem_reqs.memoryRequirements.alignment);
-    std::cout << "BLAS will compact to " << compacted_size << "\n";
 
     compacted_mem = device->alloc(compacted_size,
                                   mem_reqs.memoryRequirements.memoryTypeBits,
@@ -253,8 +246,6 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
 
     VkMemoryRequirements2 mem_reqs = {};
     vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
-    // TODO WILL: For a single triangle it requests 64k output and 64k scratch? It seems like a lot.
-    std::cout << "TLAS will need " << mem_reqs.memoryRequirements.size << "b output space\n";
     // Allocate space for the build output
     bvh_mem = device->alloc(mem_reqs.memoryRequirements.size,
                             mem_reqs.memoryRequirements.memoryTypeBits,
@@ -263,7 +254,6 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
     // Determine how much additional memory we need for the build
     mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
     vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
-    std::cout << "TLAS will need " << mem_reqs.memoryRequirements.size << "b scratch space\n";
     scratch = Buffer::device(
         *device, mem_reqs.memoryRequirements.size, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
