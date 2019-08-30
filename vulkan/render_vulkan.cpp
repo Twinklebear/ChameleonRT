@@ -102,6 +102,10 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
         vkResetCommandPool(
             device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
     }
+
+    if (desc_set != VK_NULL_HANDLE) {
+        vkrt::DescriptorSetUpdater().write_storage_image(desc_set, 1, render_target).update(device);
+    }
 }
 
 void RenderVulkan::set_scene(const Scene &scene_data)
@@ -350,8 +354,9 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos,
 
     if (camera_changed) {
         frame_id = 0;
-        update_view_parameters(pos, dir, up, fovy);
     }
+
+    update_view_parameters(pos, dir, up, fovy);
 
     // TODO: Save the commands (and do this in the DXR backend too)
     // instead of re-recording each frame
