@@ -7,16 +7,8 @@
 #include <pmmintrin.h>
 #include <tbb/parallel_for.h>
 #include <xmmintrin.h>
-#include <glm/ext.hpp>
-// Some issues w/ these structs being incorrectly exported due to bug,
-// so just say that we did export them to avoid them being compiled
-// on the C++ side.
-#define __ISPC_STRUCT_RTCBounds__
-#define __ISPC_STRUCT_RTCLinearBounds__
-#define __ISPC_STRUCT_RTCRay__
-#define __ISPC_STRUCT_RTCPointQuery__
-#define __ISPC_STRUCT_RTCPointQueryContext__
 #include "render_embree_ispc.h"
+#include <glm/ext.hpp>
 
 RenderEmbree::RenderEmbree()
 {
