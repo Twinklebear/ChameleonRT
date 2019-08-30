@@ -549,5 +549,4 @@ ShaderBindingTable SBTBuilder::build(Device &device)
 
     return sbt;
 }
-
 }
