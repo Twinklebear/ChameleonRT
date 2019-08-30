@@ -1,7 +1,7 @@
 #pragma once
 
-#include <utility>
 #include <memory>
+#include <utility>
 #include <vector>
 #include <embree3/rtcore.h>
 #include "embree_utils.h"
@@ -9,28 +9,30 @@
 #include "render_backend.h"
 
 struct RenderEmbree : RenderBackend {
-	RTCDevice device;
-	glm::uvec2 fb_dims;
+    RTCDevice device;
+    glm::uvec2 fb_dims;
 
-	std::shared_ptr<embree::TopLevelBVH> scene;
+    std::shared_ptr<embree::TopLevelBVH> scene;
 
-	std::vector<embree::MaterialParams> material_params;
-	std::vector<QuadLight> lights;
-	std::vector<Image> textures;
-	std::vector<embree::ISPCTexture2D> ispc_textures;
+    std::vector<embree::MaterialParams> material_params;
+    std::vector<QuadLight> lights;
+    std::vector<Image> textures;
+    std::vector<embree::ISPCTexture2D> ispc_textures;
 
-	uint32_t frame_id = 0;
-	glm::uvec2 tile_size = glm::uvec2(64);
-	std::vector<std::vector<float>> tiles;
-	std::vector<std::vector<uint16_t>> ray_stats;
-	std::vector<std::pair<embree::RaySoA, embree::HitSoA>> primary_rays;
+    uint32_t frame_id = 0;
+    glm::uvec2 tile_size = glm::uvec2(64);
+    std::vector<std::vector<float>> tiles;
+    std::vector<std::vector<uint16_t>> ray_stats;
+    std::vector<std::pair<embree::RaySoA, embree::HitSoA>> primary_rays;
 
-	RenderEmbree();
+    RenderEmbree();
 
-	std::string name() override;
-	void initialize(const int fb_width, const int fb_height) override;
-	void set_scene(const Scene &scene) override;
-	RenderStats render(const glm::vec3 &pos, const glm::vec3 &dir,
-			const glm::vec3 &up, const float fovy, const bool camera_changed) override;
+    std::string name() override;
+    void initialize(const int fb_width, const int fb_height) override;
+    void set_scene(const Scene &scene) override;
+    RenderStats render(const glm::vec3 &pos,
+                       const glm::vec3 &dir,
+                       const glm::vec3 &up,
+                       const float fovy,
+                       const bool camera_changed) override;
 };
-

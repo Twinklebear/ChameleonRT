@@ -1,24 +1,25 @@
 #pragma once
 
-#include <vector>
 #include <memory>
-#include <glm/glm.hpp>
+#include <vector>
 #include <vulkan/vulkan.h>
+#include <glm/glm.hpp>
 
-#define CHECK_VULKAN(FN) \
-	{ \
-		VkResult r = FN; \
-		if (r != VK_SUCCESS) {\
-			std::cout << #FN << " failed\n" << std::flush; \
-			throw std::runtime_error(#FN " failed!");  \
-		} \
-	}
+#define CHECK_VULKAN(FN)                                   \
+    {                                                      \
+        VkResult r = FN;                                   \
+        if (r != VK_SUCCESS) {                             \
+            std::cout << #FN << " failed\n" << std::flush; \
+            throw std::runtime_error(#FN " failed!");      \
+        }                                                  \
+    }
 
 extern PFN_vkCreateAccelerationStructureNV vkCreateAccelerationStructure;
 extern PFN_vkDestroyAccelerationStructureNV vkDestroyAccelerationStructure;
 extern PFN_vkBindAccelerationStructureMemoryNV vkBindAccelerationStructureMemory;
 extern PFN_vkGetAccelerationStructureHandleNV vkGetAccelerationStructureHandle;
-extern PFN_vkGetAccelerationStructureMemoryRequirementsNV vkGetAccelerationStructureMemoryRequirements;
+extern PFN_vkGetAccelerationStructureMemoryRequirementsNV
+    vkGetAccelerationStructureMemoryRequirements;
 extern PFN_vkCmdBuildAccelerationStructureNV vkCmdBuildAccelerationStructure;
 extern PFN_vkCmdCopyAccelerationStructureNV vkCmdCopyAccelerationStructure;
 extern PFN_vkCmdWriteAccelerationStructuresPropertiesNV vkCmdWriteAccelerationStructuresProperties;
@@ -29,179 +30,195 @@ extern PFN_vkCmdTraceRaysNV vkCmdTraceRays;
 namespace vk {
 
 class Device {
-	VkInstance instance = VK_NULL_HANDLE;
-	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-	VkDevice device = VK_NULL_HANDLE;
-	VkQueue queue = VK_NULL_HANDLE;
+    VkInstance instance = VK_NULL_HANDLE;
+    VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+    VkDevice device = VK_NULL_HANDLE;
+    VkQueue queue = VK_NULL_HANDLE;
 
-	uint32_t graphics_queue_index = -1;
+    uint32_t graphics_queue_index = -1;
 
-	VkPhysicalDeviceMemoryProperties mem_props = {};
-	VkPhysicalDeviceRayTracingPropertiesNV rt_props = {};
+    VkPhysicalDeviceMemoryProperties mem_props = {};
+    VkPhysicalDeviceRayTracingPropertiesNV rt_props = {};
 
 public:
-	Device();
-	~Device();
+    Device();
+    ~Device();
 
-	Device(Device &&d);
-	Device& operator=(Device &&d);
+    Device(Device &&d);
+    Device &operator=(Device &&d);
 
-	Device(const Device &) = delete;
-	Device& operator=(const Device &) = delete;
+    Device(const Device &) = delete;
+    Device &operator=(const Device &) = delete;
 
-	VkDevice logical_device();
+    VkDevice logical_device();
 
-	VkQueue graphics_queue();
-	uint32_t queue_index() const;
+    VkQueue graphics_queue();
+    uint32_t queue_index() const;
 
-	VkCommandPool make_command_pool(VkCommandPoolCreateFlagBits flags = (VkCommandPoolCreateFlagBits)0);
+    VkCommandPool make_command_pool(
+        VkCommandPoolCreateFlagBits flags = (VkCommandPoolCreateFlagBits)0);
 
-	uint32_t memory_type_index(uint32_t type_filter, VkMemoryPropertyFlags props) const;
-	VkDeviceMemory alloc(size_t nbytes, uint32_t type_filter, VkMemoryPropertyFlags props);
+    uint32_t memory_type_index(uint32_t type_filter, VkMemoryPropertyFlags props) const;
+    VkDeviceMemory alloc(size_t nbytes, uint32_t type_filter, VkMemoryPropertyFlags props);
 
-	const VkPhysicalDeviceMemoryProperties& memory_properties() const;
-	const VkPhysicalDeviceRayTracingPropertiesNV& raytracing_properties() const;
+    const VkPhysicalDeviceMemoryProperties &memory_properties() const;
+    const VkPhysicalDeviceRayTracingPropertiesNV &raytracing_properties() const;
 
 private:
-	void make_instance();
-	void select_physical_device();
-	void make_logical_device();
+    void make_instance();
+    void select_physical_device();
+    void make_logical_device();
 };
 
 // TODO: Maybe a base resource class which tracks the queue and access flags
 
 class Buffer {
-	size_t buf_size = 0;
-	VkBuffer buf = VK_NULL_HANDLE;
-	VkDeviceMemory mem = VK_NULL_HANDLE;
-	Device *vkdevice = nullptr;
-	bool host_visible = false;
+    size_t buf_size = 0;
+    VkBuffer buf = VK_NULL_HANDLE;
+    VkDeviceMemory mem = VK_NULL_HANDLE;
+    Device *vkdevice = nullptr;
+    bool host_visible = false;
 
-	static VkBufferCreateInfo create_info(size_t nbytes, VkBufferUsageFlags usage);
+    static VkBufferCreateInfo create_info(size_t nbytes, VkBufferUsageFlags usage);
 
-	static std::shared_ptr<Buffer> make_buffer(Device &device, size_t nbytes, VkBufferUsageFlags usage,
-			VkMemoryPropertyFlags mem_props);
+    static std::shared_ptr<Buffer> make_buffer(Device &device,
+                                               size_t nbytes,
+                                               VkBufferUsageFlags usage,
+                                               VkMemoryPropertyFlags mem_props);
 
 public:
-	Buffer() = default;
-	~Buffer();
-	Buffer(Buffer &&b);
-	Buffer& operator=(Buffer &&b);
+    Buffer() = default;
+    ~Buffer();
+    Buffer(Buffer &&b);
+    Buffer &operator=(Buffer &&b);
 
-	Buffer(const Buffer &) = delete;
-	Buffer& operator=(const Buffer &) = delete;
+    Buffer(const Buffer &) = delete;
+    Buffer &operator=(const Buffer &) = delete;
 
-	static std::shared_ptr<Buffer> host(Device &device, size_t nbytes, VkBufferUsageFlags usage,
-		VkMemoryPropertyFlagBits extra_mem_props = (VkMemoryPropertyFlagBits)0);
-	static std::shared_ptr<Buffer> device(Device &device, size_t nbytes, VkBufferUsageFlags usage,
-		VkMemoryPropertyFlagBits extra_mem_props = (VkMemoryPropertyFlagBits)0);
+    static std::shared_ptr<Buffer> host(
+        Device &device,
+        size_t nbytes,
+        VkBufferUsageFlags usage,
+        VkMemoryPropertyFlagBits extra_mem_props = (VkMemoryPropertyFlagBits)0);
+    static std::shared_ptr<Buffer> device(
+        Device &device,
+        size_t nbytes,
+        VkBufferUsageFlags usage,
+        VkMemoryPropertyFlagBits extra_mem_props = (VkMemoryPropertyFlagBits)0);
 
-	// Map the entire range of the buffer
-	void* map();
-	// Map a subset of the buffer starting at offset of some size
-	void* map(size_t offset, size_t size);
+    // Map the entire range of the buffer
+    void *map();
+    // Map a subset of the buffer starting at offset of some size
+    void *map(size_t offset, size_t size);
 
-	void unmap();
+    void unmap();
 
-	size_t size() const;
+    size_t size() const;
 
-	VkBuffer handle() const;
+    VkBuffer handle() const;
 };
 
 class Texture2D {
-	glm::uvec2 tdims = glm::uvec2(0);
-	VkFormat img_format;
-	VkImageLayout img_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-	VkImage image = VK_NULL_HANDLE;
-	VkDeviceMemory mem = VK_NULL_HANDLE;
-	VkImageView view = VK_NULL_HANDLE;
-	Device *vkdevice = nullptr;
+    glm::uvec2 tdims = glm::uvec2(0);
+    VkFormat img_format;
+    VkImageLayout img_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory mem = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    Device *vkdevice = nullptr;
 
 public:
-	Texture2D() = default;
-	~Texture2D();
-	Texture2D(Texture2D &&t);
-	Texture2D& operator=(Texture2D &&t);
+    Texture2D() = default;
+    ~Texture2D();
+    Texture2D(Texture2D &&t);
+    Texture2D &operator=(Texture2D &&t);
 
-	Texture2D(Texture2D &t) = delete;
-	Texture2D& operator=(Texture2D &t) = delete;
+    Texture2D(Texture2D &t) = delete;
+    Texture2D &operator=(Texture2D &t) = delete;
 
-	// Note after creation image will be in the image_layout_undefined layout
-	static std::shared_ptr<Texture2D> device(Device &device, glm::uvec2 dims,
-			VkFormat img_format, VkImageUsageFlags usage);
+    // Note after creation image will be in the image_layout_undefined layout
+    static std::shared_ptr<Texture2D> device(Device &device,
+                                             glm::uvec2 dims,
+                                             VkFormat img_format,
+                                             VkImageUsageFlags usage);
 
-	// Size of one pixel, in bytes
-	size_t pixel_size() const;
-	VkFormat pixel_format() const;
-	glm::uvec2 dims() const;
+    // Size of one pixel, in bytes
+    size_t pixel_size() const;
+    VkFormat pixel_format() const;
+    glm::uvec2 dims() const;
 
-	VkImage image_handle() const;
-	VkImageView view_handle() const;
+    VkImage image_handle() const;
+    VkImageView view_handle() const;
 };
 
 struct ShaderModule {
-	Device *device = nullptr;
-	VkShaderModule module = VK_NULL_HANDLE;
+    Device *device = nullptr;
+    VkShaderModule module = VK_NULL_HANDLE;
 
-	ShaderModule() = default;
-	ShaderModule(Device &device, const uint32_t *code, size_t code_size);
-	~ShaderModule();
+    ShaderModule() = default;
+    ShaderModule(Device &device, const uint32_t *code, size_t code_size);
+    ~ShaderModule();
 
-	ShaderModule(ShaderModule &&sm);
-	ShaderModule& operator=(ShaderModule &&sm);
+    ShaderModule(ShaderModule &&sm);
+    ShaderModule &operator=(ShaderModule &&sm);
 
-	ShaderModule(ShaderModule &) = delete;
-	ShaderModule& operator=(ShaderModule &) = delete;
+    ShaderModule(ShaderModule &) = delete;
+    ShaderModule &operator=(ShaderModule &) = delete;
 };
 
 class DescriptorSetLayoutBuilder {
-	std::vector<VkDescriptorSetLayoutBinding> bindings;
+    std::vector<VkDescriptorSetLayoutBinding> bindings;
 
 public:
+    DescriptorSetLayoutBuilder &add_binding(uint32_t binding,
+                                            uint32_t count,
+                                            VkDescriptorType type,
+                                            uint32_t stage_flags);
 
-	DescriptorSetLayoutBuilder& add_binding(uint32_t binding, uint32_t count,
-		VkDescriptorType type, uint32_t stage_flags);
-
-	VkDescriptorSetLayout build(Device& device);
+    VkDescriptorSetLayout build(Device &device);
 };
 
 class TopLevelBVH;
 
 struct WriteDescriptorInfo {
-	VkDescriptorSet dst_set = VK_NULL_HANDLE;
-	uint32_t binding = 0;
-	uint32_t count = 0;
-	VkDescriptorType type;
-	size_t as_index = -1;
-	size_t img_index = -1;
-	size_t buf_index = -1;
+    VkDescriptorSet dst_set = VK_NULL_HANDLE;
+    uint32_t binding = 0;
+    uint32_t count = 0;
+    VkDescriptorType type;
+    size_t as_index = -1;
+    size_t img_index = -1;
+    size_t buf_index = -1;
 };
 
 class DescriptorSetUpdater {
-	std::vector<WriteDescriptorInfo> writes;
-	std::vector<VkWriteDescriptorSetAccelerationStructureNV> accel_structs;
-	std::vector<VkDescriptorImageInfo> images;
-	std::vector<VkDescriptorBufferInfo> buffers;
+    std::vector<WriteDescriptorInfo> writes;
+    std::vector<VkWriteDescriptorSetAccelerationStructureNV> accel_structs;
+    std::vector<VkDescriptorImageInfo> images;
+    std::vector<VkDescriptorBufferInfo> buffers;
 
 public:
-	DescriptorSetUpdater& write_acceleration_structure(VkDescriptorSet set, uint32_t binding,
-		const std::unique_ptr<vk::TopLevelBVH> &bvh);
+    DescriptorSetUpdater &write_acceleration_structure(VkDescriptorSet set,
+                                                       uint32_t binding,
+                                                       const std::unique_ptr<vk::TopLevelBVH> &bvh);
 
-	DescriptorSetUpdater& write_storage_image(VkDescriptorSet set, uint32_t binding,
-		const std::shared_ptr<vk::Texture2D> &img);
+    DescriptorSetUpdater &write_storage_image(VkDescriptorSet set,
+                                              uint32_t binding,
+                                              const std::shared_ptr<vk::Texture2D> &img);
 
-	DescriptorSetUpdater& write_ubo(VkDescriptorSet set, uint32_t binding,
-		const std::shared_ptr<vk::Buffer> &buf);
-	
-	DescriptorSetUpdater& write_ssbo(VkDescriptorSet set, uint32_t binding,
-		const std::shared_ptr<vk::Buffer> &buf);
+    DescriptorSetUpdater &write_ubo(VkDescriptorSet set,
+                                    uint32_t binding,
+                                    const std::shared_ptr<vk::Buffer> &buf);
 
-	DescriptorSetUpdater& write_ssbo_array(VkDescriptorSet set, uint32_t binding,
-		const std::vector<std::shared_ptr<vk::Buffer>> &bufs);
+    DescriptorSetUpdater &write_ssbo(VkDescriptorSet set,
+                                     uint32_t binding,
+                                     const std::shared_ptr<vk::Buffer> &buf);
 
-	// Commit the writes to the descriptor sets
-	void update(Device &device);
+    DescriptorSetUpdater &write_ssbo_array(VkDescriptorSet set,
+                                           uint32_t binding,
+                                           const std::vector<std::shared_ptr<vk::Buffer>> &bufs);
+
+    // Commit the writes to the descriptor sets
+    void update(Device &device);
 };
 
 }
-
