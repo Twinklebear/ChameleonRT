@@ -60,10 +60,8 @@ void main() {
 		float2 uvc = uv_buffers[nonuniformEXT(uv_buf)].uv[idx.z];
 		uv = (1.f - attrib.x - attrib.y) * vec2(uva.x, uva.y)
 			+ attrib.x * vec2(uvb.x, uvb.y) + attrib.y * vec2(uvc.x, uvc.y);
-        hitColor = vec4(uv.x, uv.y, 0.f, 1.f);
-	} else {
-        hitColor = vec4((n + vec3(1)) * 0.5f, 1.f);
     }
-    //hitColor = vec4(1.f - attrib.x - attrib.y, attrib.x, attrib.y, 1.f);
+
+    hitColor = vec4((n + vec3(1)) * 0.5f, 1.f);
 }
 
