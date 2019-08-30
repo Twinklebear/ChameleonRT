@@ -109,7 +109,6 @@ function(add_spirv_embed_library)
 		list(APPEND GLSL_COMPILE_DEFNS "-D${def}")
 	endforeach()
 
-	# TODO: Dependency tracking for shader includes (-MM to glslc)
 	# Compile each GLSL file to embedded SPIRV bytecode
 	set(SPIRV_LIB ${ARGV0})
 	set(SPIRV_BINARIES "")
@@ -118,11 +117,22 @@ function(add_spirv_embed_library)
 		set(SPV_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.spv)
 		list(APPEND SPIRV_BINARIES ${SPV_OUTPUT})
 
+        # Determine the dependencies for the shader and track them
+        execute_process(
+            COMMAND ${SPIRV_COMPILER} ${CMAKE_CURRENT_LIST_DIR}/${shader}
+			${GLSL_INCLUDE_DIRECTORIES} ${GLSL_COMPILE_DEFNS}
+            --target-env=vulkan1.1 ${SPIRV_COMPILE_OPTIONS} -MM
+            OUTPUT_VARIABLE SPV_DEPS_STRING)
+
+        # The first item is the spv file name formatted as <shader>.spv:, so remove that
+        string(REPLACE " " ";" SPV_DEPS_LIST "${SPV_DEPS_STRING}")
+        list(REMOVE_AT SPV_DEPS_LIST 0)
+
 		add_custom_command(OUTPUT ${SPV_OUTPUT}
 			COMMAND ${SPIRV_COMPILER} ${CMAKE_CURRENT_LIST_DIR}/${shader}
 			${GLSL_INCLUDE_DIRECTORIES} ${GLSL_COMPILE_DEFNS}
 			--target-env=vulkan1.1 -mfmt=c -o ${SPV_OUTPUT} ${SPIRV_COMPILE_OPTIONS}
-			DEPENDS ${CMAKE_CURRENT_LIST_DIR}/${shader}
+            DEPENDS ${SPV_DEPS_LIST}
 			COMMENT "Compiling ${CMAKE_CURRENT_LIST_DIR}/${shader} to ${SPV_OUTPUT}")
 	endforeach()
 
