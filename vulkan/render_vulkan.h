@@ -13,7 +13,7 @@ struct RenderVulkan : RenderBackend {
 
     std::shared_ptr<vk::Texture2D> render_target;
 
-    std::unique_ptr<vk::TriangleMesh> mesh;
+    std::vector<std::unique_ptr<vk::TriangleMesh>> meshes;
     std::unique_ptr<vk::TopLevelBVH> scene;
 
     VkCommandPool command_pool = VK_NULL_HANDLE;

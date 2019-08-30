@@ -2,6 +2,7 @@
 #include <array>
 #include <chrono>
 #include <iostream>
+#include <string>
 #include "spv_shaders_embedded_spv.h"
 #include "util.h"
 #include <glm/ext.hpp>
@@ -107,134 +108,141 @@ void RenderVulkan::set_scene(const Scene &scene_data)
 {
     frame_id = 0;
 
-    auto &scene_mesh = scene_data.meshes[0];
+    // TODO: We can actually run all these uploads and BVH builds in parallel
+    // using multiple command lists, as long as the BVH builds don't need so
+    // much build + scratch that we run out of GPU memory.
+    // Some helpers for managing the temp upload heap buf allocation and queuing of
+    // the commands would help to make it easier to write the parallel load version
+    for (const auto &mesh : scene_data.meshes) {
+        // Upload triangle vertices to the device
+        auto upload_verts = vk::Buffer::host(
+            device, mesh.vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+        {
+            void *map = upload_verts->map();
+            std::memcpy(map, mesh.vertices.data(), upload_verts->size());
+            upload_verts->unmap();
+        }
 
-    // Upload triangle vertices to the device
-    auto upload_verts = vk::Buffer::host(
-        device, scene_mesh.vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    {
-        void *map = upload_verts->map();
-        std::memcpy(map, scene_mesh.vertices.data(), upload_verts->size());
-        upload_verts->unmap();
+        auto upload_indices = vk::Buffer::host(
+            device, mesh.indices.size() * sizeof(glm::uvec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+        {
+            void *map = upload_indices->map();
+            std::memcpy(map, mesh.indices.data(), upload_indices->size());
+            upload_indices->unmap();
+        }
+
+        // Note: eventually the data will be passed to the hit program likely as a shader storage
+        // buffer
+        auto vertex_buf = vk::Buffer::device(
+            device,
+            upload_verts->size(),
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+        auto index_buf = vk::Buffer::device(
+            device,
+            upload_indices->size(),
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+        // Execute the upload to the device
+        {
+            VkCommandBufferBeginInfo begin_info = {};
+            begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+            VkBufferCopy copy_cmd = {};
+            copy_cmd.size = upload_verts->size();
+            vkCmdCopyBuffer(
+                command_buffer, upload_verts->handle(), vertex_buf->handle(), 1, &copy_cmd);
+
+            copy_cmd.size = upload_indices->size();
+            vkCmdCopyBuffer(
+                command_buffer, upload_indices->handle(), index_buf->handle(), 1, &copy_cmd);
+
+            CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+
+            VkSubmitInfo submit_info = {};
+            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submit_info.commandBufferCount = 1;
+            submit_info.pCommandBuffers = &command_buffer;
+            CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+            vkQueueWaitIdle(device.graphics_queue());
+
+            vkResetCommandPool(
+                device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        }
+
+        std::shared_ptr<vk::Buffer> normals_buf = nullptr;
+        std::shared_ptr<vk::Buffer> uv_buf = nullptr;
+
+        // Build the bottom level acceleration structure
+        // No compaction for now (does Vulkan have some min space requirement for the BVH?)
+        auto bvh =
+            std::make_unique<vk::TriangleMesh>(device, vertex_buf, index_buf, normals_buf, uv_buf);
+        // Build the BVH
+        {
+            // TODO: some convenience utils for this
+            VkCommandBufferBeginInfo begin_info = {};
+            begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+            bvh->enqueue_build(command_buffer);
+
+            CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+
+            VkSubmitInfo submit_info = {};
+            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submit_info.commandBufferCount = 1;
+            submit_info.pCommandBuffers = &command_buffer;
+            CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+            vkQueueWaitIdle(device.graphics_queue());
+
+            vkResetCommandPool(
+                device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        }
+
+        // Compact the BVH
+        {
+            VkCommandBufferBeginInfo begin_info = {};
+            begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+            bvh->enqueue_compaction(command_buffer);
+
+            CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+
+            VkSubmitInfo submit_info = {};
+            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submit_info.commandBufferCount = 1;
+            submit_info.pCommandBuffers = &command_buffer;
+            CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+            vkQueueWaitIdle(device.graphics_queue());
+
+            vkResetCommandPool(
+                device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        }
+
+        bvh->finalize();
+        meshes.emplace_back(std::move(bvh));
     }
-
-    auto upload_indices = vk::Buffer::host(
-        device, scene_mesh.indices.size() * sizeof(glm::uvec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    {
-        void *map = upload_indices->map();
-        std::memcpy(map, scene_mesh.indices.data(), upload_indices->size());
-        upload_indices->unmap();
-    }
-
-    // Note: eventually the data will be passed to the hit program likely as a shader storage buffer
-    auto vertex_buf =
-        vk::Buffer::device(device,
-                           upload_verts->size(),
-                           VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-    auto index_buf =
-        vk::Buffer::device(device,
-                           upload_indices->size(),
-                           VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-    // Execute the upload to the device
-    {
-        VkCommandBufferBeginInfo begin_info = {};
-        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
-
-        VkBufferCopy copy_cmd = {};
-        copy_cmd.size = upload_verts->size();
-        vkCmdCopyBuffer(command_buffer, upload_verts->handle(), vertex_buf->handle(), 1, &copy_cmd);
-
-        copy_cmd.size = upload_indices->size();
-        vkCmdCopyBuffer(
-            command_buffer, upload_indices->handle(), index_buf->handle(), 1, &copy_cmd);
-
-        CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
-
-        VkSubmitInfo submit_info = {};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &command_buffer;
-        CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
-        vkQueueWaitIdle(device.graphics_queue());
-
-        vkResetCommandPool(
-            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
-    }
-
-    std::shared_ptr<vk::Buffer> normals_buf = nullptr;
-    std::shared_ptr<vk::Buffer> uv_buf = nullptr;
-
-    // Build the bottom level acceleration structure
-    // No compaction for now (does Vulkan have some min space requirement for the BVH?)
-    mesh = std::make_unique<vk::TriangleMesh>(device, vertex_buf, index_buf, normals_buf, uv_buf);
-    // Build the BVH
-    {
-        // TODO: some convenience utils for this
-        VkCommandBufferBeginInfo begin_info = {};
-        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
-
-        mesh->enqueue_build(command_buffer);
-
-        CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
-
-        VkSubmitInfo submit_info = {};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &command_buffer;
-        CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
-        vkQueueWaitIdle(device.graphics_queue());
-
-        vkResetCommandPool(
-            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
-    }
-
-    // Compact the BVH
-    {
-        VkCommandBufferBeginInfo begin_info = {};
-        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
-
-        mesh->enqueue_compaction(command_buffer);
-
-        CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
-
-        VkSubmitInfo submit_info = {};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &command_buffer;
-        CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
-        vkQueueWaitIdle(device.graphics_queue());
-
-        vkResetCommandPool(
-            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
-    }
-
-    mesh->finalize();
 
     // Setup the instance buffer
     auto upload_instances = vk::Buffer::host(
-        device, 2 * sizeof(vk::GeometryInstance), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+        device, meshes.size() * sizeof(vk::GeometryInstance), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     vk::GeometryInstance *map = reinterpret_cast<vk::GeometryInstance *>(upload_instances->map());
-    for (size_t i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        std::memset(&map[i], 0, sizeof(vk::GeometryInstance));
         map[i].transform[0] = 1.f;
-        map[i].transform[3] = 3.f * i - 1.5f;
         map[i].transform[5] = 1.f;
         map[i].transform[10] = 1.f;
-
-        // Same mesh but just testing shader table stuff
-        map[i].instance_custom_index = 0;
         map[i].mask = 0xff;
+        map[i].instance_custom_index = i;
         map[i].instance_offset = i;
         map[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_NV |
                        VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
-        map[i].acceleration_structure_handle = mesh->handle;
+        map[i].acceleration_structure_handle = meshes[i]->handle;
     }
     upload_instances->unmap();
 
@@ -422,9 +430,12 @@ void RenderVulkan::build_raytracing_pipeline()
 
     // Make the variable sized descriptor layout for all our varying sized buffer arrays which
     // we use to send the mesh data
+    // TODO: Should I be setting a flag through for
+    // VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT ? the final number of entries in the
+    // buffer is fixed ahead of time, so do I actually need to set that flag here?
     buffer_desc_layout = vk::DescriptorSetLayoutBuilder()
                              .add_binding(0,
-                                          VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT,
+                                          meshes.size(),
                                           VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                                           VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV)
                              .build(device);
@@ -460,9 +471,9 @@ void RenderVulkan::build_shader_descriptor_table()
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2}
+        // If use the variable desc. count do they count as one descriptor or many?
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, uint32_t(2 * meshes.size())}};
 
-    };
     VkDescriptorPoolCreateInfo pool_create_info = {};
     pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     pool_create_info.maxSets = 3;
@@ -484,33 +495,39 @@ void RenderVulkan::build_shader_descriptor_table()
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &index_desc_set));
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &vert_desc_set));
 
+    std::vector<std::shared_ptr<vk::Buffer>> index_buffers;
+    std::transform(meshes.begin(),
+                   meshes.end(),
+                   std::back_inserter(index_buffers),
+                   [](const std::unique_ptr<vk::TriangleMesh> &m) { return m->index_buf; });
+
+    std::vector<std::shared_ptr<vk::Buffer>> vertex_buffers;
+    std::transform(meshes.begin(),
+                   meshes.end(),
+                   std::back_inserter(vertex_buffers),
+                   [](const std::unique_ptr<vk::TriangleMesh> &m) { return m->vertex_buf; });
+
     vk::DescriptorSetUpdater()
         .write_acceleration_structure(desc_set, 0, scene)
         .write_storage_image(desc_set, 1, render_target)
         .write_ubo(desc_set, 2, view_param_buf)
-        .write_ssbo(index_desc_set, 0, mesh->index_buf)
-        .write_ssbo(vert_desc_set, 0, mesh->vertex_buf)
+        .write_ssbo_array(index_desc_set, 0, index_buffers)
+        .write_ssbo_array(vert_desc_set, 0, vertex_buffers)
         .update(device);
 }
 
 void RenderVulkan::build_shader_binding_table()
 {
-    shader_table = vk::SBTBuilder(&rt_pipeline)
-                       .set_raygen(vk::ShaderRecord("raygen", "raygen", 0))
-                       .add_miss(vk::ShaderRecord("miss", "miss", 0))
-                       .add_hitgroup(vk::ShaderRecord("closest_hit", "closest_hit", sizeof(float)))
-                       .add_hitgroup(vk::ShaderRecord("closest_hit1", "closest_hit", sizeof(float)))
-                       .build(device);
+    vk::SBTBuilder sbt_builder(&rt_pipeline);
+    sbt_builder.set_raygen(vk::ShaderRecord("raygen", "raygen", 0))
+        .add_miss(vk::ShaderRecord("miss", "miss", 0));
 
-    shader_table.map_sbt();
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        sbt_builder.add_hitgroup(
+            vk::ShaderRecord("closest_hit_inst" + std::to_string(i), "closest_hit", 0));
+    }
 
-    float test_value = 0.5;
-    std::memcpy(shader_table.sbt_params("closest_hit"), &test_value, sizeof(float));
-
-    test_value = 0.f;
-    std::memcpy(shader_table.sbt_params("closest_hit1"), &test_value, sizeof(float));
-
-    shader_table.unmap_sbt();
+    shader_table = sbt_builder.build(device);
 
     {
         VkCommandBufferBeginInfo begin_info = {};

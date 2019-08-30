@@ -256,6 +256,7 @@ void Device::make_logical_device()
     device_desc_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
     device_desc_features.shaderStorageBufferArrayNonUniformIndexing = true;
     device_desc_features.runtimeDescriptorArray = true;
+    device_desc_features.descriptorBindingVariableDescriptorCount = true;
 
     const std::vector<const char *> device_extensions = {
         VK_NV_RAY_TRACING_EXTENSION_NAME,
