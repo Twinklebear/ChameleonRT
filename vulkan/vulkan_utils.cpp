@@ -569,7 +569,8 @@ ShaderModule &ShaderModule::operator=(ShaderModule &&sm)
 DescriptorSetLayoutBuilder &DescriptorSetLayoutBuilder::add_binding(uint32_t binding,
                                                                     uint32_t count,
                                                                     VkDescriptorType type,
-                                                                    uint32_t stage_flags)
+                                                                    uint32_t stage_flags,
+                                                                    uint32_t ext_flags)
 {
     VkDescriptorSetLayoutBinding desc = {};
     desc.binding = binding;
@@ -577,15 +578,23 @@ DescriptorSetLayoutBuilder &DescriptorSetLayoutBuilder::add_binding(uint32_t bin
     desc.descriptorType = type;
     desc.stageFlags = stage_flags;
     bindings.push_back(desc);
+    binding_ext_flags.push_back(ext_flags);
     return *this;
 }
 
 VkDescriptorSetLayout DescriptorSetLayoutBuilder::build(Device &device)
 {
+    VkDescriptorSetLayoutBindingFlagsCreateInfoEXT ext_flags = {};
+    ext_flags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
+    ext_flags.bindingCount = binding_ext_flags.size();
+    ext_flags.pBindingFlags = binding_ext_flags.data();
+
     VkDescriptorSetLayoutCreateInfo create_info = {};
     create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     create_info.bindingCount = bindings.size();
     create_info.pBindings = bindings.data();
+    create_info.pNext = &ext_flags;
+
     VkDescriptorSetLayout layout = VK_NULL_HANDLE;
     CHECK_VULKAN(
         vkCreateDescriptorSetLayout(device.logical_device(), &create_info, nullptr, &layout));

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 #include <vulkan/vulkan.h>
 #include "render_backend.h"
 #include "vulkan_utils.h"
@@ -29,6 +30,12 @@ struct RenderVulkan : RenderBackend {
     VkDescriptorSet desc_set = VK_NULL_HANDLE;
     VkDescriptorSet index_desc_set = VK_NULL_HANDLE;
     VkDescriptorSet vert_desc_set = VK_NULL_HANDLE;
+    VkDescriptorSet normals_desc_set = VK_NULL_HANDLE;
+    VkDescriptorSet uv_desc_set = VK_NULL_HANDLE;
+
+    // Mapping to track which meshes use which normal/uv buffers in
+    // the case some don't have these
+    std::unordered_map<size_t, uint32_t> normal_buf_index, uv_buf_index;
 
     vk::ShaderBindingTable shader_table;
 

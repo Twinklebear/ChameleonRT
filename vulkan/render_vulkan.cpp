@@ -131,8 +131,36 @@ void RenderVulkan::set_scene(const Scene &scene_data)
             upload_indices->unmap();
         }
 
-        // Note: eventually the data will be passed to the hit program likely as a shader storage
-        // buffer
+        std::shared_ptr<vk::Buffer> upload_normals = nullptr;
+        std::shared_ptr<vk::Buffer> normals_buf = nullptr;
+        if (!mesh.normals.empty()) {
+            upload_normals = vk::Buffer::host(
+                device, mesh.normals.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+            normals_buf = vk::Buffer::device(
+                device,
+                upload_normals->size(),
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+            void *map = upload_normals->map();
+            std::memcpy(map, mesh.normals.data(), upload_normals->size());
+            upload_normals->unmap();
+        }
+
+        std::shared_ptr<vk::Buffer> upload_uvs = nullptr;
+        std::shared_ptr<vk::Buffer> uvs_buf = nullptr;
+        if (!mesh.uvs.empty()) {
+            upload_uvs = vk::Buffer::host(
+                device, mesh.uvs.size() * sizeof(glm::vec2), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+            uvs_buf = vk::Buffer::device(
+                device,
+                upload_uvs->size(),
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+            void *map = upload_uvs->map();
+            std::memcpy(map, mesh.uvs.data(), upload_uvs->size());
+            upload_uvs->unmap();
+        }
+
         auto vertex_buf = vk::Buffer::device(
             device,
             upload_verts->size(),
@@ -159,6 +187,18 @@ void RenderVulkan::set_scene(const Scene &scene_data)
             vkCmdCopyBuffer(
                 command_buffer, upload_indices->handle(), index_buf->handle(), 1, &copy_cmd);
 
+            if (upload_normals) {
+                copy_cmd.size = upload_normals->size();
+                vkCmdCopyBuffer(
+                    command_buffer, upload_normals->handle(), normals_buf->handle(), 1, &copy_cmd);
+            }
+
+            if (upload_uvs) {
+                copy_cmd.size = upload_uvs->size();
+                vkCmdCopyBuffer(
+                    command_buffer, upload_uvs->handle(), uvs_buf->handle(), 1, &copy_cmd);
+            }
+
             CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
 
             VkSubmitInfo submit_info = {};
@@ -172,14 +212,10 @@ void RenderVulkan::set_scene(const Scene &scene_data)
                 device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
         }
 
-        std::shared_ptr<vk::Buffer> normals_buf = nullptr;
-        std::shared_ptr<vk::Buffer> uv_buf = nullptr;
-
         // Build the bottom level acceleration structure
-        // No compaction for now (does Vulkan have some min space requirement for the BVH?)
         auto bvh =
-            std::make_unique<vk::TriangleMesh>(device, vertex_buf, index_buf, normals_buf, uv_buf);
-        // Build the BVH
+            std::make_unique<vk::TriangleMesh>(device, vertex_buf, index_buf, normals_buf, uvs_buf);
+
         {
             // TODO: some convenience utils for this
             VkCommandBufferBeginInfo begin_info = {};
@@ -223,7 +259,6 @@ void RenderVulkan::set_scene(const Scene &scene_data)
             vkResetCommandPool(
                 device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
         }
-
         bvh->finalize();
         meshes.emplace_back(std::move(bvh));
     }
@@ -325,7 +360,9 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos,
 
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, rt_pipeline.handle());
 
-    std::vector<VkDescriptorSet> descriptor_sets = {desc_set, index_desc_set, vert_desc_set};
+    const std::vector<VkDescriptorSet> descriptor_sets = {
+        desc_set, index_desc_set, vert_desc_set, normals_desc_set, uv_desc_set};
+
     vkCmdBindDescriptorSets(command_buffer,
                             VK_PIPELINE_BIND_POINT_RAY_TRACING_NV,
                             pipeline_layout,
@@ -437,11 +474,15 @@ void RenderVulkan::build_raytracing_pipeline()
                              .add_binding(0,
                                           meshes.size(),
                                           VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV)
+                                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
+                                          VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)
                              .build(device);
 
-    const std::vector<VkDescriptorSetLayout> descriptor_layouts = {
-        desc_layout, buffer_desc_layout, buffer_desc_layout};
+    std::vector<VkDescriptorSetLayout> descriptor_layouts = {desc_layout,
+                                                             buffer_desc_layout,
+                                                             buffer_desc_layout,
+                                                             buffer_desc_layout,
+                                                             buffer_desc_layout};
 
     VkPipelineLayoutCreateInfo pipeline_create_info = {};
     pipeline_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -471,12 +512,11 @@ void RenderVulkan::build_shader_descriptor_table()
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-        // If use the variable desc. count do they count as one descriptor or many?
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, uint32_t(2 * meshes.size())}};
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, uint32_t(4 * meshes.size())}};
 
     VkDescriptorPoolCreateInfo pool_create_info = {};
     pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_create_info.maxSets = 3;
+    pool_create_info.maxSets = 5;
     pool_create_info.poolSizeCount = pool_sizes.size();
     pool_create_info.pPoolSizes = pool_sizes.data();
     CHECK_VULKAN(
@@ -494,26 +534,43 @@ void RenderVulkan::build_shader_descriptor_table()
     alloc_info.pSetLayouts = &buffer_desc_layout;
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &index_desc_set));
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &vert_desc_set));
+    CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &normals_desc_set));
+    CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &uv_desc_set));
 
-    std::vector<std::shared_ptr<vk::Buffer>> index_buffers;
-    std::transform(meshes.begin(),
-                   meshes.end(),
-                   std::back_inserter(index_buffers),
-                   [](const std::unique_ptr<vk::TriangleMesh> &m) { return m->index_buf; });
+    std::vector<std::shared_ptr<vk::Buffer>> index_buffers, vertex_buffers, normal_buffers,
+        uv_buffers;
 
-    std::vector<std::shared_ptr<vk::Buffer>> vertex_buffers;
-    std::transform(meshes.begin(),
-                   meshes.end(),
-                   std::back_inserter(vertex_buffers),
-                   [](const std::unique_ptr<vk::TriangleMesh> &m) { return m->vertex_buf; });
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        const auto &m = meshes[i];
 
-    vk::DescriptorSetUpdater()
-        .write_acceleration_structure(desc_set, 0, scene)
-        .write_storage_image(desc_set, 1, render_target)
-        .write_ubo(desc_set, 2, view_param_buf)
-        .write_ssbo_array(index_desc_set, 0, index_buffers)
-        .write_ssbo_array(vert_desc_set, 0, vertex_buffers)
-        .update(device);
+        index_buffers.emplace_back(m->index_buf);
+        vertex_buffers.emplace_back(m->vertex_buf);
+
+        if (m->normal_buf) {
+            normal_buf_index[i] = normal_buffers.size();
+            normal_buffers.emplace_back(m->normal_buf);
+        }
+
+        if (m->uv_buf) {
+            uv_buf_index[i] = uv_buffers.size();
+            uv_buffers.emplace_back(m->uv_buf);
+        }
+    }
+
+    auto updater = vk::DescriptorSetUpdater()
+                       .write_acceleration_structure(desc_set, 0, scene)
+                       .write_storage_image(desc_set, 1, render_target)
+                       .write_ubo(desc_set, 2, view_param_buf)
+                       .write_ssbo_array(index_desc_set, 0, index_buffers)
+                       .write_ssbo_array(vert_desc_set, 0, vertex_buffers);
+
+    if (!normal_buffers.empty()) {
+        updater.write_ssbo_array(normals_desc_set, 0, normal_buffers);
+    }
+    if (!uv_buffers.empty()) {
+        updater.write_ssbo_array(uv_desc_set, 0, uv_buffers);
+    }
+    updater.update(device);
 }
 
 void RenderVulkan::build_shader_binding_table()
@@ -523,11 +580,33 @@ void RenderVulkan::build_shader_binding_table()
         .add_miss(vk::ShaderRecord("miss", "miss", 0));
 
     for (size_t i = 0; i < meshes.size(); ++i) {
-        sbt_builder.add_hitgroup(
-            vk::ShaderRecord("closest_hit_inst" + std::to_string(i), "closest_hit", 0));
+        sbt_builder.add_hitgroup(vk::ShaderRecord(
+            "closest_hit_inst" + std::to_string(i), "closest_hit", 4 * sizeof(uint32_t)));
     }
 
     shader_table = sbt_builder.build(device);
+
+    shader_table.map_sbt();
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        uint32_t *params = reinterpret_cast<uint32_t *>(
+            shader_table.sbt_params("closest_hit_inst" + std::to_string(i)));
+
+        if (meshes[i]->normal_buf) {
+            params[0] = normal_buf_index[i];
+            params[1] = meshes[i]->normal_buf->size() / sizeof(glm::vec3);
+        } else {
+            params[0] = -1;
+            params[1] = 0;
+        }
+
+        if (meshes[i]->uv_buf) {
+            params[2] = uv_buf_index[i];
+            params[3] = meshes[i]->uv_buf->size() / sizeof(glm::vec2);
+        } else {
+            params[2] = -1;
+            params[3] = 0;
+        }
+    }
 
     {
         VkCommandBufferBeginInfo begin_info = {};

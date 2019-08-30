@@ -168,12 +168,14 @@ struct ShaderModule {
 
 class DescriptorSetLayoutBuilder {
     std::vector<VkDescriptorSetLayoutBinding> bindings;
+    std::vector<VkDescriptorBindingFlagsEXT> binding_ext_flags;
 
 public:
     DescriptorSetLayoutBuilder &add_binding(uint32_t binding,
                                             uint32_t count,
                                             VkDescriptorType type,
-                                            uint32_t stage_flags);
+                                            uint32_t stage_flags,
+                                            uint32_t ext_flags = 0);
 
     VkDescriptorSetLayout build(Device &device);
 };
