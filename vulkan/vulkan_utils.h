@@ -27,7 +27,7 @@ extern PFN_vkCreateRayTracingPipelinesNV vkCreateRayTracingPipelines;
 extern PFN_vkGetRayTracingShaderGroupHandlesNV vkGetRayTracingShaderGroupHandles;
 extern PFN_vkCmdTraceRaysNV vkCmdTraceRays;
 
-namespace vk {
+namespace vkrt {
 
 class Device {
     VkInstance instance = VK_NULL_HANDLE;
@@ -201,23 +201,23 @@ class DescriptorSetUpdater {
 public:
     DescriptorSetUpdater &write_acceleration_structure(VkDescriptorSet set,
                                                        uint32_t binding,
-                                                       const std::unique_ptr<vk::TopLevelBVH> &bvh);
+                                                       const std::unique_ptr<TopLevelBVH> &bvh);
 
     DescriptorSetUpdater &write_storage_image(VkDescriptorSet set,
                                               uint32_t binding,
-                                              const std::shared_ptr<vk::Texture2D> &img);
+                                              const std::shared_ptr<Texture2D> &img);
 
     DescriptorSetUpdater &write_ubo(VkDescriptorSet set,
                                     uint32_t binding,
-                                    const std::shared_ptr<vk::Buffer> &buf);
+                                    const std::shared_ptr<Buffer> &buf);
 
     DescriptorSetUpdater &write_ssbo(VkDescriptorSet set,
                                      uint32_t binding,
-                                     const std::shared_ptr<vk::Buffer> &buf);
+                                     const std::shared_ptr<Buffer> &buf);
 
     DescriptorSetUpdater &write_ssbo_array(VkDescriptorSet set,
                                            uint32_t binding,
-                                           const std::vector<std::shared_ptr<vk::Buffer>> &bufs);
+                                           const std::vector<std::shared_ptr<Buffer>> &bufs);
 
     // Commit the writes to the descriptor sets
     void update(Device &device);

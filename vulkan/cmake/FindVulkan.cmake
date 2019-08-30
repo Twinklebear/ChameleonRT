@@ -72,20 +72,20 @@ else()
 	find_path(Vulkan_INCLUDE_DIR
 		NAMES vulkan/vulkan.h
 		PATHS
-		${VULKAN_SDK}/include
-		$ENV{VULKAN_SDK}/include
+		${VULKAN_SDK}/x86_64/include
+		$ENV{VULKAN_SDK}/x86_64/include
 	)
 	find_library(Vulkan_LIBRARY
 		NAMES vulkan
 		PATHS
-		${VULKAN_SDK}/lib
-		$ENV{VULKAN_SDK}/lib
+		${VULKAN_SDK}/x86_64/lib
+		$ENV{VULKAN_SDK}/x86_64/lib
 	)
 	find_program(SPIRV_COMPILER
 		NAMES glslc
 		PATHS
-		${VULKAN_SDK}/bin
-		$ENV{VULKAN_SDK}/bin
+		${VULKAN_SDK}/x86_64/bin
+		$ENV{VULKAN_SDK}/x86_64/bin
 	)
 endif()
 

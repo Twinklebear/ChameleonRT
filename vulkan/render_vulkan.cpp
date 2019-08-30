@@ -25,10 +25,10 @@ RenderVulkan::RenderVulkan()
         CHECK_VULKAN(vkCreateFence(device.logical_device(), &info, nullptr, &fence));
     }
 
-    view_param_buf = vk::Buffer::host(device,
-                                      4 * sizeof(glm::vec4) + sizeof(uint32_t),
-                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    view_param_buf = vkrt::Buffer::host(device,
+                                        4 * sizeof(glm::vec4) + sizeof(uint32_t),
+                                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 }
 
 RenderVulkan::~RenderVulkan()
@@ -50,12 +50,12 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
     img.resize(fb_width * fb_height);
 
     render_target =
-        vk::Texture2D::device(device,
-                              glm::uvec2(fb_width, fb_height),
-                              VK_FORMAT_R8G8B8A8_UNORM,
-                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
+        vkrt::Texture2D::device(device,
+                                glm::uvec2(fb_width, fb_height),
+                                VK_FORMAT_R8G8B8A8_UNORM,
+                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
 
-    img_readback_buf = vk::Buffer::host(
+    img_readback_buf = vkrt::Buffer::host(
         device, img.size() * render_target->pixel_size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
     // Change image to the general layout
@@ -115,7 +115,7 @@ void RenderVulkan::set_scene(const Scene &scene_data)
     // the commands would help to make it easier to write the parallel load version
     for (const auto &mesh : scene_data.meshes) {
         // Upload triangle vertices to the device
-        auto upload_verts = vk::Buffer::host(
+        auto upload_verts = vkrt::Buffer::host(
             device, mesh.vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
         {
             void *map = upload_verts->map();
@@ -123,7 +123,7 @@ void RenderVulkan::set_scene(const Scene &scene_data)
             upload_verts->unmap();
         }
 
-        auto upload_indices = vk::Buffer::host(
+        auto upload_indices = vkrt::Buffer::host(
             device, mesh.indices.size() * sizeof(glm::uvec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
         {
             void *map = upload_indices->map();
@@ -131,12 +131,12 @@ void RenderVulkan::set_scene(const Scene &scene_data)
             upload_indices->unmap();
         }
 
-        std::shared_ptr<vk::Buffer> upload_normals = nullptr;
-        std::shared_ptr<vk::Buffer> normals_buf = nullptr;
+        std::shared_ptr<vkrt::Buffer> upload_normals = nullptr;
+        std::shared_ptr<vkrt::Buffer> normals_buf = nullptr;
         if (!mesh.normals.empty()) {
-            upload_normals = vk::Buffer::host(
+            upload_normals = vkrt::Buffer::host(
                 device, mesh.normals.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-            normals_buf = vk::Buffer::device(
+            normals_buf = vkrt::Buffer::device(
                 device,
                 upload_normals->size(),
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -146,12 +146,12 @@ void RenderVulkan::set_scene(const Scene &scene_data)
             upload_normals->unmap();
         }
 
-        std::shared_ptr<vk::Buffer> upload_uvs = nullptr;
-        std::shared_ptr<vk::Buffer> uvs_buf = nullptr;
+        std::shared_ptr<vkrt::Buffer> upload_uvs = nullptr;
+        std::shared_ptr<vkrt::Buffer> uvs_buf = nullptr;
         if (!mesh.uvs.empty()) {
-            upload_uvs = vk::Buffer::host(
+            upload_uvs = vkrt::Buffer::host(
                 device, mesh.uvs.size() * sizeof(glm::vec2), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-            uvs_buf = vk::Buffer::device(
+            uvs_buf = vkrt::Buffer::device(
                 device,
                 upload_uvs->size(),
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -161,12 +161,12 @@ void RenderVulkan::set_scene(const Scene &scene_data)
             upload_uvs->unmap();
         }
 
-        auto vertex_buf = vk::Buffer::device(
+        auto vertex_buf = vkrt::Buffer::device(
             device,
             upload_verts->size(),
             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
-        auto index_buf = vk::Buffer::device(
+        auto index_buf = vkrt::Buffer::device(
             device,
             upload_indices->size(),
             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -213,8 +213,8 @@ void RenderVulkan::set_scene(const Scene &scene_data)
         }
 
         // Build the bottom level acceleration structure
-        auto bvh =
-            std::make_unique<vk::TriangleMesh>(device, vertex_buf, index_buf, normals_buf, uvs_buf);
+        auto bvh = std::make_unique<vkrt::TriangleMesh>(
+            device, vertex_buf, index_buf, normals_buf, uvs_buf);
 
         {
             // TODO: some convenience utils for this
@@ -264,11 +264,12 @@ void RenderVulkan::set_scene(const Scene &scene_data)
     }
 
     // Setup the instance buffer
-    auto upload_instances = vk::Buffer::host(
-        device, meshes.size() * sizeof(vk::GeometryInstance), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    vk::GeometryInstance *map = reinterpret_cast<vk::GeometryInstance *>(upload_instances->map());
+    auto upload_instances = vkrt::Buffer::host(
+        device, meshes.size() * sizeof(vkrt::GeometryInstance), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    vkrt::GeometryInstance *map =
+        reinterpret_cast<vkrt::GeometryInstance *>(upload_instances->map());
     for (size_t i = 0; i < meshes.size(); ++i) {
-        std::memset(&map[i], 0, sizeof(vk::GeometryInstance));
+        std::memset(&map[i], 0, sizeof(vkrt::GeometryInstance));
         map[i].transform[0] = 1.f;
         map[i].transform[5] = 1.f;
         map[i].transform[10] = 1.f;
@@ -282,7 +283,7 @@ void RenderVulkan::set_scene(const Scene &scene_data)
     upload_instances->unmap();
 
     auto instance_buf =
-        vk::Buffer::device(device, upload_instances->size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        vkrt::Buffer::device(device, upload_instances->size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     // Upload the instance data to the device
     {
         VkCommandBufferBeginInfo begin_info = {};
@@ -309,7 +310,7 @@ void RenderVulkan::set_scene(const Scene &scene_data)
     }
 
     // Build the top level BVH
-    scene = std::make_unique<vk::TopLevelBVH>(device, instance_buf);
+    scene = std::make_unique<vkrt::TopLevelBVH>(device, instance_buf);
     {
         // TODO: some convenience utils for this
         VkCommandBufferBeginInfo begin_info = {};
@@ -458,7 +459,7 @@ void RenderVulkan::build_raytracing_pipeline()
     // Maybe have the builder auto compute the binding numbers? May be annoying if tweaking layouts
     // or something though
     desc_layout =
-        vk::DescriptorSetLayoutBuilder()
+        vkrt::DescriptorSetLayoutBuilder()
             .add_binding(
                 0, 1, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .add_binding(1, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
@@ -470,7 +471,7 @@ void RenderVulkan::build_raytracing_pipeline()
     // TODO: Should I be setting a flag through for
     // VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT ? the final number of entries in the
     // buffer is fixed ahead of time, so do I actually need to set that flag here?
-    buffer_desc_layout = vk::DescriptorSetLayoutBuilder()
+    buffer_desc_layout = vkrt::DescriptorSetLayoutBuilder()
                              .add_binding(0,
                                           meshes.size(),
                                           VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
@@ -493,11 +494,13 @@ void RenderVulkan::build_raytracing_pipeline()
         device.logical_device(), &pipeline_create_info, nullptr, &pipeline_layout));
 
     // Load the shader modules for our pipeline and build the pipeline
-    auto raygen_shader = std::make_shared<vk::ShaderModule>(device, raygen_spv, sizeof(raygen_spv));
-    auto miss_shader = std::make_shared<vk::ShaderModule>(device, miss_spv, sizeof(miss_spv));
-    auto closest_hit_shader = std::make_shared<vk::ShaderModule>(device, hit_spv, sizeof(hit_spv));
+    auto raygen_shader =
+        std::make_shared<vkrt::ShaderModule>(device, raygen_spv, sizeof(raygen_spv));
+    auto miss_shader = std::make_shared<vkrt::ShaderModule>(device, miss_spv, sizeof(miss_spv));
+    auto closest_hit_shader =
+        std::make_shared<vkrt::ShaderModule>(device, hit_spv, sizeof(hit_spv));
 
-    rt_pipeline = vk::RTPipelineBuilder()
+    rt_pipeline = vkrt::RTPipelineBuilder()
                       .set_raygen("raygen", raygen_shader)
                       .add_miss("miss", miss_shader)
                       .add_hitgroup("closest_hit", closest_hit_shader)
@@ -537,7 +540,7 @@ void RenderVulkan::build_shader_descriptor_table()
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &normals_desc_set));
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &uv_desc_set));
 
-    std::vector<std::shared_ptr<vk::Buffer>> index_buffers, vertex_buffers, normal_buffers,
+    std::vector<std::shared_ptr<vkrt::Buffer>> index_buffers, vertex_buffers, normal_buffers,
         uv_buffers;
 
     for (size_t i = 0; i < meshes.size(); ++i) {
@@ -555,7 +558,7 @@ void RenderVulkan::build_shader_descriptor_table()
         }
     }
 
-    auto updater = vk::DescriptorSetUpdater()
+    auto updater = vkrt::DescriptorSetUpdater()
                        .write_acceleration_structure(desc_set, 0, scene)
                        .write_storage_image(desc_set, 1, render_target)
                        .write_ubo(desc_set, 2, view_param_buf)
@@ -573,12 +576,12 @@ void RenderVulkan::build_shader_descriptor_table()
 
 void RenderVulkan::build_shader_binding_table()
 {
-    vk::SBTBuilder sbt_builder(&rt_pipeline);
-    sbt_builder.set_raygen(vk::ShaderRecord("raygen", "raygen", 0))
-        .add_miss(vk::ShaderRecord("miss", "miss", 0));
+    vkrt::SBTBuilder sbt_builder(&rt_pipeline);
+    sbt_builder.set_raygen(vkrt::ShaderRecord("raygen", "raygen", 0))
+        .add_miss(vkrt::ShaderRecord("miss", "miss", 0));
 
     for (size_t i = 0; i < meshes.size(); ++i) {
-        sbt_builder.add_hitgroup(vk::ShaderRecord(
+        sbt_builder.add_hitgroup(vkrt::ShaderRecord(
             "closest_hit_inst" + std::to_string(i), "closest_hit", 4 * sizeof(uint32_t)));
     }
 

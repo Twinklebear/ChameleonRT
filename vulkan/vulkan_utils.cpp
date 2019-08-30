@@ -19,7 +19,7 @@ PFN_vkCreateRayTracingPipelinesNV vkCreateRayTracingPipelines = nullptr;
 PFN_vkGetRayTracingShaderGroupHandlesNV vkGetRayTracingShaderGroupHandles = nullptr;
 PFN_vkCmdTraceRaysNV vkCmdTraceRays = nullptr;
 
-namespace vk {
+namespace vkrt {
 
 void load_nv_rtx(VkDevice &device)
 {
@@ -185,8 +185,10 @@ void Device::make_instance()
     create_info.pApplicationInfo = &app_info;
     create_info.enabledExtensionCount = 0;
     create_info.ppEnabledExtensionNames = nullptr;
+#ifdef _WIN32
     create_info.enabledLayerCount = validation_layers.size();
     create_info.ppEnabledLayerNames = validation_layers.data();
+#endif
 
     CHECK_VULKAN(vkCreateInstance(&create_info, nullptr, &instance));
 }
@@ -602,7 +604,7 @@ VkDescriptorSetLayout DescriptorSetLayoutBuilder::build(Device &device)
 }
 
 DescriptorSetUpdater &DescriptorSetUpdater::write_acceleration_structure(
-    VkDescriptorSet set, uint32_t binding, const std::unique_ptr<vk::TopLevelBVH> &bvh)
+    VkDescriptorSet set, uint32_t binding, const std::unique_ptr<TopLevelBVH> &bvh)
 {
     VkWriteDescriptorSetAccelerationStructureNV info = {};
     info.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV;
@@ -622,7 +624,7 @@ DescriptorSetUpdater &DescriptorSetUpdater::write_acceleration_structure(
 }
 
 DescriptorSetUpdater &DescriptorSetUpdater::write_storage_image(
-    VkDescriptorSet set, uint32_t binding, const std::shared_ptr<vk::Texture2D> &img)
+    VkDescriptorSet set, uint32_t binding, const std::shared_ptr<Texture2D> &img)
 {
     VkDescriptorImageInfo img_desc = {};
     img_desc.imageView = img->view_handle();
@@ -642,7 +644,7 @@ DescriptorSetUpdater &DescriptorSetUpdater::write_storage_image(
 
 DescriptorSetUpdater &DescriptorSetUpdater::write_ubo(VkDescriptorSet set,
                                                       uint32_t binding,
-                                                      const std::shared_ptr<vk::Buffer> &buf)
+                                                      const std::shared_ptr<Buffer> &buf)
 {
     VkDescriptorBufferInfo buf_desc = {};
     buf_desc.buffer = buf->handle();
@@ -663,7 +665,7 @@ DescriptorSetUpdater &DescriptorSetUpdater::write_ubo(VkDescriptorSet set,
 
 DescriptorSetUpdater &DescriptorSetUpdater::write_ssbo(VkDescriptorSet set,
                                                        uint32_t binding,
-                                                       const std::shared_ptr<vk::Buffer> &buf)
+                                                       const std::shared_ptr<Buffer> &buf)
 {
     VkDescriptorBufferInfo buf_desc = {};
     buf_desc.buffer = buf->handle();
@@ -683,7 +685,7 @@ DescriptorSetUpdater &DescriptorSetUpdater::write_ssbo(VkDescriptorSet set,
 }
 
 DescriptorSetUpdater &DescriptorSetUpdater::write_ssbo_array(
-    VkDescriptorSet set, uint32_t binding, const std::vector<std::shared_ptr<vk::Buffer>> &bufs)
+    VkDescriptorSet set, uint32_t binding, const std::vector<std::shared_ptr<Buffer>> &bufs)
 {
     WriteDescriptorInfo write;
     write.dst_set = set;
@@ -695,7 +697,7 @@ DescriptorSetUpdater &DescriptorSetUpdater::write_ssbo_array(
     std::transform(bufs.begin(),
                    bufs.end(),
                    std::back_inserter(buffers),
-                   [](const std::shared_ptr<vk::Buffer> &b) {
+                   [](const std::shared_ptr<Buffer> &b) {
                        VkDescriptorBufferInfo buf_desc = {};
                        buf_desc.buffer = b->handle();
                        buf_desc.offset = 0;

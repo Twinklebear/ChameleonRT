@@ -8,19 +8,19 @@
 #include "vulkanrt_utils.h"
 
 struct RenderVulkan : RenderBackend {
-    vk::Device device;
+    vkrt::Device device;
 
-    std::shared_ptr<vk::Buffer> view_param_buf, img_readback_buf;
+    std::shared_ptr<vkrt::Buffer> view_param_buf, img_readback_buf;
 
-    std::shared_ptr<vk::Texture2D> render_target;
+    std::shared_ptr<vkrt::Texture2D> render_target;
 
-    std::vector<std::unique_ptr<vk::TriangleMesh>> meshes;
-    std::unique_ptr<vk::TopLevelBVH> scene;
+    std::vector<std::unique_ptr<vkrt::TriangleMesh>> meshes;
+    std::unique_ptr<vkrt::TopLevelBVH> scene;
 
     VkCommandPool command_pool = VK_NULL_HANDLE;
     VkCommandBuffer command_buffer = VK_NULL_HANDLE;
 
-    vk::RTPipeline rt_pipeline;
+    vkrt::RTPipeline rt_pipeline;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout desc_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout buffer_desc_layout = VK_NULL_HANDLE;
@@ -33,7 +33,7 @@ struct RenderVulkan : RenderBackend {
     VkDescriptorSet normals_desc_set = VK_NULL_HANDLE;
     VkDescriptorSet uv_desc_set = VK_NULL_HANDLE;
 
-    vk::ShaderBindingTable shader_table;
+    vkrt::ShaderBindingTable shader_table;
 
     VkFence fence = VK_NULL_HANDLE;
 

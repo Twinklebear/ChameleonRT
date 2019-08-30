@@ -5,7 +5,7 @@
 #include "util.h"
 #include <glm/glm.hpp>
 
-namespace vk {
+namespace vkrt {
 
 TriangleMesh::TriangleMesh(Device &dev,
                            std::shared_ptr<Buffer> &verts,
@@ -15,11 +15,11 @@ TriangleMesh::TriangleMesh(Device &dev,
                            uint32_t geom_flags,
                            uint32_t build_flags)
     : device(&dev),
+      build_flags((VkBuildAccelerationStructureFlagBitsNV)build_flags),
       vertex_buf(verts),
       index_buf(indices),
       normal_buf(normals),
-      uv_buf(uvs),
-      build_flags((VkBuildAccelerationStructureFlagBitsNV)build_flags)
+      uv_buf(uvs)
 {
     geom_desc.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
     geom_desc.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_NV;
@@ -336,7 +336,7 @@ VkPipeline RTPipeline::handle()
 }
 
 ShaderGroup::ShaderGroup(const std::string &name,
-                         const std::shared_ptr<vk::ShaderModule> &shader_module,
+                         const std::shared_ptr<ShaderModule> &shader_module,
                          const std::string &entry_point,
                          VkShaderStageFlagBits stage,
                          VkRayTracingShaderGroupTypeNV group)
@@ -345,7 +345,7 @@ ShaderGroup::ShaderGroup(const std::string &name,
 }
 
 RTPipelineBuilder &RTPipelineBuilder::set_raygen(const std::string &name,
-                                                 const std::shared_ptr<vk::ShaderModule> &shader,
+                                                 const std::shared_ptr<ShaderModule> &shader,
                                                  const std::string &entry_point)
 {
     shaders.emplace_back(name,
@@ -357,7 +357,7 @@ RTPipelineBuilder &RTPipelineBuilder::set_raygen(const std::string &name,
 }
 
 RTPipelineBuilder &RTPipelineBuilder::add_miss(const std::string &name,
-                                               const std::shared_ptr<vk::ShaderModule> &shader,
+                                               const std::shared_ptr<ShaderModule> &shader,
                                                const std::string &entry_point)
 {
     shaders.emplace_back(name,
@@ -369,7 +369,7 @@ RTPipelineBuilder &RTPipelineBuilder::add_miss(const std::string &name,
 }
 
 RTPipelineBuilder &RTPipelineBuilder::add_hitgroup(const std::string &name,
-                                                   const std::shared_ptr<vk::ShaderModule> &shader,
+                                                   const std::shared_ptr<ShaderModule> &shader,
                                                    const std::string &entry_point)
 {
     shaders.emplace_back(name,

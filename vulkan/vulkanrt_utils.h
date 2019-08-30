@@ -2,11 +2,11 @@
 
 #include <memory>
 #include <unordered_map>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include "vulkan_utils.h"
 #include <glm/glm.hpp>
 
-namespace vk {
+namespace vkrt {
 
 // See
 // https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html#acceleration-structure-instance
@@ -131,14 +131,14 @@ public:
 
 // TODO: The numebr of these is not tied to the number of entries in the SBT right?
 struct ShaderGroup {
-    const std::shared_ptr<vk::ShaderModule> shader_module;
+    const std::shared_ptr<ShaderModule> shader_module;
     VkShaderStageFlagBits stage;
     VkRayTracingShaderGroupTypeNV group;
     std::string name;
     std::string entry_point;
 
     ShaderGroup(const std::string &name,
-                const std::shared_ptr<vk::ShaderModule> &shader_module,
+                const std::shared_ptr<ShaderModule> &shader_module,
                 const std::string &entry_point,
                 VkShaderStageFlagBits stage,
                 VkRayTracingShaderGroupTypeNV group);
@@ -151,15 +151,15 @@ class RTPipelineBuilder {
 
 public:
     RTPipelineBuilder &set_raygen(const std::string &name,
-                                  const std::shared_ptr<vk::ShaderModule> &shader,
+                                  const std::shared_ptr<ShaderModule> &shader,
                                   const std::string &entry_point = "main");
 
     RTPipelineBuilder &add_miss(const std::string &name,
-                                const std::shared_ptr<vk::ShaderModule> &shader,
+                                const std::shared_ptr<ShaderModule> &shader,
                                 const std::string &entry_point = "main");
 
     RTPipelineBuilder &add_hitgroup(const std::string &name,
-                                    const std::shared_ptr<vk::ShaderModule> &shader,
+                                    const std::shared_ptr<ShaderModule> &shader,
                                     const std::string &entry_point = "main");
 
     RTPipelineBuilder &set_layout(VkPipelineLayout layout);
@@ -180,10 +180,10 @@ struct ShaderRecord {
 
 struct ShaderBindingTable {
     std::unordered_map<std::string, size_t> sbt_param_offsets;
-    std::shared_ptr<vk::Buffer> upload_sbt;
+    std::shared_ptr<Buffer> upload_sbt;
     uint8_t *sbt_mapping = nullptr;
 
-    std::shared_ptr<vk::Buffer> sbt;
+    std::shared_ptr<Buffer> sbt;
 
     size_t raygen_stride = 0;
 
