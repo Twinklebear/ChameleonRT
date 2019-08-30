@@ -33,10 +33,6 @@ struct RenderVulkan : RenderBackend {
     VkDescriptorSet normals_desc_set = VK_NULL_HANDLE;
     VkDescriptorSet uv_desc_set = VK_NULL_HANDLE;
 
-    // Mapping to track which meshes use which normal/uv buffers in
-    // the case some don't have these
-    std::unordered_map<size_t, uint32_t> normal_buf_index, uv_buf_index;
-
     vk::ShaderBindingTable shader_table;
 
     VkFence fence = VK_NULL_HANDLE;

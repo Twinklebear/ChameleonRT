@@ -547,12 +547,10 @@ void RenderVulkan::build_shader_descriptor_table()
         vertex_buffers.emplace_back(m->vertex_buf);
 
         if (m->normal_buf) {
-            normal_buf_index[i] = normal_buffers.size();
             normal_buffers.emplace_back(m->normal_buf);
         }
 
         if (m->uv_buf) {
-            uv_buf_index[i] = uv_buffers.size();
             uv_buffers.emplace_back(m->uv_buf);
         }
     }
@@ -587,12 +585,14 @@ void RenderVulkan::build_shader_binding_table()
     shader_table = sbt_builder.build(device);
 
     shader_table.map_sbt();
+    uint32_t normal_buf_idx = 0;
+    uint32_t uv_buf_idx = 0;
     for (size_t i = 0; i < meshes.size(); ++i) {
         uint32_t *params = reinterpret_cast<uint32_t *>(
             shader_table.sbt_params("closest_hit_inst" + std::to_string(i)));
 
         if (meshes[i]->normal_buf) {
-            params[0] = normal_buf_index[i];
+            params[0] = normal_buf_idx++;
             params[1] = meshes[i]->normal_buf->size() / sizeof(glm::vec3);
         } else {
             params[0] = -1;
@@ -600,7 +600,7 @@ void RenderVulkan::build_shader_binding_table()
         }
 
         if (meshes[i]->uv_buf) {
-            params[2] = uv_buf_index[i];
+            params[2] = uv_buf_idx++;
             params[3] = meshes[i]->uv_buf->size() / sizeof(glm::vec2);
         } else {
             params[2] = -1;
