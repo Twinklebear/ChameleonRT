@@ -5,7 +5,7 @@ Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files.
 
 ## Ray Tracing Backends  
 
-The currently implemented backends are: OSPRay, Embree and OptiX.
+The currently implemented backends are: Embree, DXR, OptiX, and Vulkan.
 When running the program, you can pick which backend you want from
 those you compiled with by specifying it as the first argument on
 the command line:
@@ -23,7 +23,6 @@ in your GLM distribution by passing `-Dglm_DIR=<path>`.
 To track and report statistics about the number of rays traced per-second
 run CMake with `-DREPORT_RAY_STATS=ON`. Tracking these statistics can
 impact performance slightly.
-
 
 ChameleonRT only supports per-OBJ group/mesh materials, OBJ files using per-face materials
 can be reexported from Blender with the "Material Groups" option enabled.
@@ -74,7 +73,26 @@ cmake .. -DENABLE_DXR=ON
 
 You can then pass `-dxr` to use the DXR backend.
 
-### OSPRay
+### Vulkan NV Ray Tracing
+
+Dependencies: [Vulkan](https://vulkan.lunarg.com/).
+
+To build the Vulkan backend run CMake with:
+
+```
+cmake .. -DENABLE_VULKAN=ON
+```
+
+You can then pass `-vulkan` to use the Vulkan backend.
+
+If CMake doesn't find your install of Vulkan you can tell it where it's
+installed with `-DVULKAN_SDK`. This path should be to the specific version
+of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.1.114.0/`
+
+### OSPRay [stale]
+
+The OSPRay reference backend has gotten stale during the path tracer implementation
+in the other backends, but is on the list to get back up to date.
 
 Dependencies: [OSPRay](http://www.ospray.org/).
 
