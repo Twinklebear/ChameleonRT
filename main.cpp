@@ -32,7 +32,7 @@
 #endif
 
 const std::string USAGE =
-    "Usage: (backend) <obj_file> [camera]\n"
+    "Usage: <backend> <obj_file> [options]\n"
     "Backends:\n"
 #if ENABLE_OSPRAY
     "\t-ospray    Render with OSPRay\n"
@@ -49,6 +49,10 @@ const std::string USAGE =
 #if ENABLE_VULKAN
     "\t-vulkan    Render with Vulkan Ray Tracing\n"
 #endif
+    "Options:\n"
+    "\t-eye <x> <y> <z>       Set the camera position\n"
+    "\t-center <x> <y> <z>    Set the camera focus point\n"
+    "\t-up <x> <y> <z>        Set the camera up vector\n"
     "\n";
 
 const std::string fullscreen_quad_vs = R"(
@@ -90,7 +94,11 @@ glm::vec2 transform_mouse(glm::vec2 in)
 
 int main(int argc, const char **argv)
 {
-    if (argc < 3) {
+    const std::vector<std::string> args(argv, argv + argc);
+    auto fnd_help = std::find_if(
+        args.begin(), args.end(), [](const std::string &a) { return a == "-h" || a == "--help"; });
+
+    if (argc < 3 || fnd_help != args.end()) {
         std::cout << USAGE;
         return 1;
     }
@@ -137,8 +145,6 @@ int main(int argc, const char **argv)
     // Setup Platform/Renderer bindings
     ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
     ImGui_ImplOpenGL3_Init(glsl_version);
-
-    std::vector<std::string> args(argv, argv + argc);
 
     run_app(args, window);
 
@@ -208,6 +214,10 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
     }
     if (!renderer) {
         std::cout << "Error: No renderer backend or invalid backend name specified\n" << USAGE;
+        std::exit(1);
+    }
+    if (scene_file.empty()) {
+        std::cout << "Error: No model file specified\n" << USAGE;
         std::exit(1);
     }
 

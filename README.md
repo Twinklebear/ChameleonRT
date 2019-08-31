@@ -7,8 +7,8 @@ Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files.
 
 The currently implemented backends are: Embree, DXR, OptiX, and Vulkan.
 When running the program, you can pick which backend you want from
-those you compiled with by specifying it as the first argument on
-the command line:
+those you compiled with on the command line. Running the program with no
+arguments will print help information.
 
 ```
 ./chameleonrt <backend> <mesh.obj>
