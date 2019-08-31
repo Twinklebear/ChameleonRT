@@ -279,12 +279,12 @@ void RenderVulkan::set_scene(const Scene &scene_data)
         map[i].transform[10] = 1.f;
         map[i].mask = 0xff;
         map[i].instance_custom_index = i;
-        map[i].instance_offset = i;
+        map[i].instance_offset = 2 * i;
         map[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_NV |
                        VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
         map[i].acceleration_structure_handle = meshes[i]->handle;
-        
-		material_ids.push_back(scene_data.meshes[i].material_id);
+
+        material_ids.push_back(scene_data.meshes[i].material_id);
     }
     upload_instances->unmap();
 
@@ -659,14 +659,22 @@ void RenderVulkan::build_raytracing_pipeline()
     // Load the shader modules for our pipeline and build the pipeline
     auto raygen_shader =
         std::make_shared<vkrt::ShaderModule>(device, raygen_spv, sizeof(raygen_spv));
+
     auto miss_shader = std::make_shared<vkrt::ShaderModule>(device, miss_spv, sizeof(miss_spv));
+    auto occlusion_miss_shader = std::make_shared<vkrt::ShaderModule>(
+        device, occlusion_miss_spv, sizeof(occlusion_miss_spv));
+
     auto closest_hit_shader =
         std::make_shared<vkrt::ShaderModule>(device, hit_spv, sizeof(hit_spv));
+    auto occlusion_hit_shader =
+        std::make_shared<vkrt::ShaderModule>(device, occlusion_hit_spv, sizeof(occlusion_hit_spv));
 
     rt_pipeline = vkrt::RTPipelineBuilder()
                       .set_raygen("raygen", raygen_shader)
                       .add_miss("miss", miss_shader)
+                      .add_miss("occlusion_miss", occlusion_miss_shader)
                       .add_hitgroup("closest_hit", closest_hit_shader)
+                      .add_hitgroup("occlusion_hit", occlusion_hit_shader)
                       .set_recursion_depth(1)
                       .set_layout(pipeline_layout)
                       .build(device);
@@ -753,11 +761,15 @@ void RenderVulkan::build_shader_binding_table()
 {
     vkrt::SBTBuilder sbt_builder(&rt_pipeline);
     sbt_builder.set_raygen(vkrt::ShaderRecord("raygen", "raygen", 0))
-        .add_miss(vkrt::ShaderRecord("miss", "miss", 0));
+        .add_miss(vkrt::ShaderRecord("miss", "miss", 0))
+        .add_miss(vkrt::ShaderRecord("occlusion_miss", "occlusion_miss", 0));
 
     for (size_t i = 0; i < meshes.size(); ++i) {
-        sbt_builder.add_hitgroup(vkrt::ShaderRecord(
-            "closest_hit_inst" + std::to_string(i), "closest_hit", 3 * sizeof(uint32_t)));
+        sbt_builder
+            .add_hitgroup(vkrt::ShaderRecord(
+                "closest_hit_inst" + std::to_string(i), "closest_hit", 3 * sizeof(uint32_t)))
+            .add_hitgroup(
+                vkrt::ShaderRecord("occlusion_hit_inst" + std::to_string(i), "occlusion_hit", 0));
     }
 
     shader_table = sbt_builder.build(device);
@@ -781,7 +793,7 @@ void RenderVulkan::build_shader_binding_table()
             params[1] = -1;
         }
 
-		params[2] = material_ids[i];
+        params[2] = material_ids[i];
     }
 
     {

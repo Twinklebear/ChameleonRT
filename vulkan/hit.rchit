@@ -4,7 +4,7 @@
 
 #include "types.glsl"
 
-layout(location = 0) rayPayloadInNV vec4 hit_color;
+layout(location = 0) rayPayloadInNV RayPayload payload;
 
 hitAttributeNV vec3 attrib;
 
@@ -47,6 +47,9 @@ void main() {
 			+ attrib.x * vec2(uvb.x, uvb.y) + attrib.y * vec2(uvc.x, uvc.y);
     }
 
-    hit_color = vec4(uv.x, uv.y, 0.f, material_id);
+    payload.normal = n;
+    payload.dist = gl_RayTmaxNV;
+    payload.uv = uv;
+    payload.material_id = material_id;
 }
 

@@ -16,5 +16,13 @@ struct float2 {
 	float x, y;
 };
 
+struct RayPayload {
+    vec3 normal;
+    float dist;
+    vec2 uv;
+    uint material_id;
+    float pad;
+};
+
 #endif
 

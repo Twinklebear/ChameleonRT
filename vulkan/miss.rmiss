@@ -1,9 +1,11 @@
 #version 460
 #extension GL_NV_ray_tracing : require
 
-layout(location = 0) rayPayloadInNV vec4 hit_color;
+#include "types.glsl"
+
+layout(location = 0) rayPayloadInNV RayPayload payload;
 
 void main() {
-	hit_color = vec4(0, 0, 0, -1);
+    payload.dist = -1;
 }
 

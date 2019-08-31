@@ -3,7 +3,8 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 find_package(Vulkan REQUIRED)
 
 add_spirv_embed_library(spv_shaders raygen.rgen miss.rmiss hit.rchit
-	COMPILE_OPTIONS -g)
+    occlusion_hit.rchit occlusion_miss.rmiss
+	COMPILE_OPTIONS -O)
 
 add_library(render_vulkan render_vulkan.cpp vulkan_utils.cpp vulkanrt_utils.cpp)
 
