@@ -60,7 +60,7 @@ Texture2D textures[] : register(t3);
 SamplerState tex_sampler : register(s0);
 
 void unpack_material(inout DisneyMaterial mat, uint id, float2 uv_coords) {
-	MaterialParams p = material_params[id];
+	MaterialParams p = material_params[NonUniformResourceIndex(id)];
 	if (p.color_tex_id < 0) {
 		mat.base_color = p.base_color;
 	} else {
@@ -87,7 +87,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 
 	uint32_t light_id = pcg32_randomf(rng) * num_lights;
 	light_id = min(light_id, num_lights - 1);
-	QuadLight light = lights[light_id];
+	QuadLight light = lights[NonUniformResourceIndex(light_id)];
 
 	OcclusionHitInfo shadow_hit;
 	RayDesc shadow_ray;
@@ -264,11 +264,11 @@ cbuffer MeshData : register(b0, space1) {
 
 [shader("closesthit")] 
 void ClosestHit(inout HitInfo payload, Attributes attrib) {
-	uint3 idx = indices[PrimitiveIndex()];
+	uint3 idx = indices[NonUniformResourceIndex(PrimitiveIndex())];
 
-	float3 va = vertices[idx.x];
-	float3 vb = vertices[idx.y];
-	float3 vc = vertices[idx.z];
+	float3 va = vertices[NonUniformResourceIndex(idx.x)];
+	float3 vb = vertices[NonUniformResourceIndex(idx.y)];
+	float3 vc = vertices[NonUniformResourceIndex(idx.z)];
 	float3 ng = normalize(cross(vb - va, vc - va));
 
 	float3 n = ng;
@@ -276,9 +276,9 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 	// even on some models which do seem well tesselated?
 	/*
 	if (num_normals > 0) {
-		float3 na = normals[idx.x];
-		float3 nb = normals[idx.y];
-		float3 nc = normals[idx.z];
+		float3 na = normals[NonUniformResourceIndex(idx.x)];
+		float3 nb = normals[NonUniformResourceIndex(idx.y)];
+		float3 nc = normals[NonUniformResourceIndex(idx.z)];
 		n = normalize((1.f - attrib.bary.x - attrib.bary.y) * na
 			+ attrib.bary.x * nb + attrib.bary.y * nc);
 	}
@@ -286,9 +286,9 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 
 	float2 uv = float2(0, 0);
 	if (num_uvs > 0) {
-		float2 uva = uvs[idx.x];
-		float2 uvb = uvs[idx.y];
-		float2 uvc = uvs[idx.z];
+		float2 uva = uvs[NonUniformResourceIndex(idx.x)];
+		float2 uvb = uvs[NonUniformResourceIndex(idx.y)];
+		float2 uvc = uvs[NonUniformResourceIndex(idx.z)];
 		uv = (1.f - attrib.bary.x - attrib.bary.y) * uva
 			+ attrib.bary.x * uvb + attrib.bary.y * uvc;
 	}
