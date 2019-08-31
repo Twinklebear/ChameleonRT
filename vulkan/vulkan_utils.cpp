@@ -253,6 +253,8 @@ void Device::make_logical_device()
     queue_create_info.pQueuePriorities = &queue_priority;
 
     VkPhysicalDeviceFeatures device_features = {};
+    device_features.shaderFloat64 = true;
+    device_features.shaderInt64 = true;
 
     VkPhysicalDeviceDescriptorIndexingFeaturesEXT device_desc_features = {};
     device_desc_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;

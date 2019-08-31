@@ -1,27 +1,25 @@
 #version 460
-#extension GL_NV_ray_tracing : require
-#extension GL_EXT_nonuniform_qualifier : enable
 
-#include "types.glsl"
+#include "util.glsl"
 
-layout(location = 0) rayPayloadInNV RayPayload payload;
+layout(location = PRIMARY_RAY) rayPayloadInNV RayPayload payload;
 
 hitAttributeNV vec3 attrib;
 
 layout(binding = 0, set = 1, std430) buffer IndexBuffers {
-	uint3 i[];
+    pack_uint3 i[];
 } index_buffers[];
 
 layout(binding = 0, set = 2, std430) buffer VertexBuffers {
-	float3 v[];
+    pack_float3 v[];
 } vertex_buffers[];
 
 layout(binding = 0, set = 3, std430) buffer NormalBuffers {
-	float3 n[];
+    pack_float3 n[];
 } normal_buffers[];
 
 layout(binding = 0, set = 4, std430) buffer UVBuffers {
-	float2 uv[];
+    vec2 uv[];
 } uv_buffers[];
 
 layout(shaderRecordNV) buffer SBT {
@@ -31,22 +29,23 @@ layout(shaderRecordNV) buffer SBT {
 };
 
 void main() {
-	const uint3 idx = index_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].i[gl_PrimitiveID];
-	const float3 va = vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].v[idx.x];
-	const float3 vb = vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].v[idx.y];
-	const float3 vc = vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].v[idx.z];
-	const vec3 n = normalize(cross(vec3(vb.x, vb.y, vb.z) - vec3(va.x, va.y, va.z),
-				vec3(vc.x, vc.y, vc.z) - vec3(va.x, va.y, va.z))); 
+    const uvec3 idx = unpack_uint3(index_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].i[gl_PrimitiveID]);
+    const vec3 va = unpack_float3(vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].v[idx.x]);
+    const vec3 vb = unpack_float3(vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].v[idx.y]);
+    const vec3 vc = unpack_float3(vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].v[idx.z]);
+    const vec3 n = normalize(cross(vb - va, vc - va));
 
-	vec2 uv = vec2(0);
-	if (uv_buf != uint32_t(-1)) {
-		float2 uva = uv_buffers[nonuniformEXT(uv_buf)].uv[idx.x];
-		float2 uvb = uv_buffers[nonuniformEXT(uv_buf)].uv[idx.y];
-		float2 uvc = uv_buffers[nonuniformEXT(uv_buf)].uv[idx.z];
-		uv = (1.f - attrib.x - attrib.y) * vec2(uva.x, uva.y)
-			+ attrib.x * vec2(uvb.x, uvb.y) + attrib.y * vec2(uvc.x, uvc.y);
+    vec2 uv = vec2(0);
+    if (uv_buf != uint32_t(-1)) {
+        vec2 uva = uv_buffers[nonuniformEXT(uv_buf)].uv[idx.x];
+        vec2 uvb = uv_buffers[nonuniformEXT(uv_buf)].uv[idx.y];
+        vec2 uvc = uv_buffers[nonuniformEXT(uv_buf)].uv[idx.z];
+        uv = (1.f - attrib.x - attrib.y) * uva
+            + attrib.x * uvb + attrib.y * uvc;
     }
 
+    // TODO: transform normal back to world space, right now our transform is just
+    // the identity
     payload.normal = n;
     payload.dist = gl_RayTmaxNV;
     payload.uv = uv;

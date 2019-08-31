@@ -1,12 +1,10 @@
 #version 460
-#extension GL_NV_ray_tracing : require
-#extension GL_EXT_scalar_block_layout : require
-#extension GL_EXT_nonuniform_qualifier : enable
 
-#include "types.glsl"
+#include "util.glsl"
+#include "pcg_rng.glsl"
 
 struct DisneyMaterial {
-    float3 base_color;
+    pack_float3 base_color;
     float metallic;
 
     float specular;
@@ -21,21 +19,21 @@ struct DisneyMaterial {
 
     float ior;
     float specular_transmission;
-    float2 pad;
+    vec2 pad;
 
     uint color_tex_id;
-    uint3 tex_pad;
+    pack_uint3 tex_pad;
 };
 
 layout(binding = 0, set = 0) uniform accelerationStructureNV scene;
 layout(binding = 1, set = 0, rgba8) uniform writeonly image2D framebuffer;
 
 layout(binding = 2, set = 0, std140) uniform ViewParams {
-	vec4 cam_pos;
-	vec4 cam_du;
-	vec4 cam_dv;
-	vec4 cam_dir_top_left;
-	uint frame_id;
+    vec4 cam_pos;
+    vec4 cam_du;
+    vec4 cam_dv;
+    vec4 cam_dir_top_left;
+    int frame_id;
 };
 
 layout(binding = 3, set = 0, std430) buffer MaterialParams {
@@ -44,24 +42,24 @@ layout(binding = 3, set = 0, std430) buffer MaterialParams {
 
 layout(binding = 0, set = 5) uniform sampler2D textures[];
 
-layout(location = 0) rayPayloadNV RayPayload payload;
+layout(location = PRIMARY_RAY) rayPayloadNV RayPayload payload;
 
-layout(location = 1) rayPayloadNV bool occlusion_hit;
+layout(location = OCCLUSION_RAY) rayPayloadNV bool occlusion_hit;
 
 void main() {
-	const ivec2 pixel = ivec2(gl_LaunchIDNV.xy);
-	const vec2 dims = vec2(gl_LaunchSizeNV.xy);
-	// TODO: PCG port
-	vec2 d = (pixel + vec2(0.5)) / dims;
+    const ivec2 pixel = ivec2(gl_LaunchIDNV.xy);
+    const vec2 dims = vec2(gl_LaunchSizeNV.xy);
+    PCGRand rng = get_rng(frame_id);
+    vec2 d = (pixel + vec2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
 
-	vec3 origin = cam_pos.xyz;
-	vec3 dir = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
-	float t_min = 0;
-	float t_max = 1e20f;
+    vec3 origin = cam_pos.xyz;
+    vec3 dir = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
+    float t_min = 0;
+    float t_max = 1e20f;
 
-	// TODO Opaque = disable any hit?
-	traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, 0, 0, 0,
-		origin, t_min, dir, t_max, 0);
+    // TODO Opaque = disable any hit?
+    traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, PRIMARY_RAY, 0, PRIMARY_RAY,
+            origin, t_min, dir, t_max, PRIMARY_RAY);
 
     vec3 shade_color = vec3(0);
     if (payload.dist > 0.f) {
@@ -77,16 +75,16 @@ void main() {
 
         occlusion_hit = false;
         // Now trace a shadow ray to a "light"
-        vec3 light_dir = normalize(vec3(0.0f, 1.f, 0.5f));
+        vec3 light_dir = normalize(vec3(0.2f, 1.f, 0.5f));
         vec3 hit_p = origin + dir * payload.dist;
         // TODO: In all backends could use the skip closest hit flag here
-        traceNV(scene, gl_RayFlagsTerminateOnFirstHitNV | gl_RayFlagsOpaqueNV, 0xff, 1, 0, 1,
-                hit_p, 0.0001, light_dir, t_max, 1);
+        traceNV(scene, gl_RayFlagsTerminateOnFirstHitNV | gl_RayFlagsOpaqueNV, 0xff,
+                OCCLUSION_RAY, 0, OCCLUSION_RAY, hit_p, EPSILON, light_dir, t_max, OCCLUSION_RAY);
         if (occlusion_hit) {
-            shade_color *= 0.1;
+            shade_color *= 0.5;
         }
     }
 
-	imageStore(framebuffer, pixel, vec4(shade_color, 1.f));
+    imageStore(framebuffer, pixel, vec4(shade_color, 1.f));
 }
 

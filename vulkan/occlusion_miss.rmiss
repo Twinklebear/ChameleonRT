@@ -1,9 +1,10 @@
 #version 460
-#extension GL_NV_ray_tracing : require
 
-layout(location = 1) rayPayloadInNV bool occlusion_hit;
+#include "util.glsl"
+
+layout(location = OCCLUSION_RAY) rayPayloadInNV bool occlusion_hit;
 
 void main() {
-	occlusion_hit = false;
+    occlusion_hit = false;
 }
 

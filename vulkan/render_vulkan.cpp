@@ -7,6 +7,8 @@
 #include "util.h"
 #include <glm/ext.hpp>
 
+#define NUM_RAY_TYPES 2
+
 RenderVulkan::RenderVulkan()
 {
     command_pool = device.make_command_pool();
@@ -279,7 +281,7 @@ void RenderVulkan::set_scene(const Scene &scene_data)
         map[i].transform[10] = 1.f;
         map[i].mask = 0xff;
         map[i].instance_custom_index = i;
-        map[i].instance_offset = 2 * i;
+        map[i].instance_offset = NUM_RAY_TYPES * i;
         map[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_NV |
                        VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
         map[i].acceleration_structure_handle = meshes[i]->handle;
@@ -792,7 +794,6 @@ void RenderVulkan::build_shader_binding_table()
         } else {
             params[1] = -1;
         }
-
         params[2] = material_ids[i];
     }
 
