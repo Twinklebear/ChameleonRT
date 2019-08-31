@@ -3,6 +3,30 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#include "types.glsl"
+
+struct DisneyMaterial {
+    float3 base_color;
+    float metallic;
+
+    float specular;
+    float roughness;
+    float specular_tint;
+    float anisotropy;
+
+    float sheen;
+    float sheen_tint;
+    float clearcoat;
+    float clearcoat_gloss;
+
+    float ior;
+    float specular_transmission;
+    float2 pad;
+
+    uint color_tex_id;
+    uint3 tex_pad;
+};
+
 layout(binding = 0, set = 0) uniform accelerationStructureNV scene;
 layout(binding = 1, set = 0, rgba8) uniform writeonly image2D framebuffer;
 
@@ -14,7 +38,13 @@ layout(binding = 2, set = 0, std140) uniform ViewParams {
 	uint frame_id;
 };
 
-layout(location = 0) rayPayloadNV vec4 hitColor;
+layout(binding = 3, set = 0, std430) buffer MaterialParams {
+    DisneyMaterial materials[];
+};
+
+layout(binding = 0, set = 5) uniform sampler2D textures[];
+
+layout(location = 0) rayPayloadNV vec4 hit_color;
 
 void main() {
 	const ivec2 pixel = ivec2(gl_LaunchIDNV.xy);
@@ -27,12 +57,23 @@ void main() {
 	float t_min = 0;
 	float t_max = 1e20f;
 
-	hitColor = vec4(0, 0, 0, 0);
+	hit_color = vec4(0, 0, 0, 0);
 
 	// TODO Opaque = disable any hit?
 	traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, 0, 0, 0,
 		origin, t_min, dir, t_max, 0);
-		
-	imageStore(framebuffer, pixel, vec4(hitColor.xyz, 1.f));
+
+    vec3 shade_color = vec3(0);
+    if (hit_color.w >= 0.f) {
+        DisneyMaterial mat = materials[nonuniformEXT(uint(hit_color.w))];
+        shade_color.x = mat.base_color.x;
+        shade_color.y = mat.base_color.y;
+        shade_color.z = mat.base_color.z;
+
+        if (mat.color_tex_id != uint(-1)) {
+            shade_color = texture(textures[nonuniformEXT(mat.color_tex_id)], hit_color.xy).xyz;
+        }
+    }
+	imageStore(framebuffer, pixel, vec4(shade_color.xyz, 1.f));
 }
 

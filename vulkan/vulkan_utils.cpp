@@ -259,6 +259,7 @@ void Device::make_logical_device()
     device_desc_features.shaderStorageBufferArrayNonUniformIndexing = true;
     device_desc_features.runtimeDescriptorArray = true;
     device_desc_features.descriptorBindingVariableDescriptorCount = true;
+    device_desc_features.shaderSampledImageArrayNonUniformIndexing = true;
 
     const std::vector<const char *> device_extensions = {
         VK_NV_RAY_TRACING_EXTENSION_NAME,
@@ -568,6 +569,11 @@ ShaderModule &ShaderModule::operator=(ShaderModule &&sm)
     return *this;
 }
 
+CombinedImageSampler::CombinedImageSampler(const std::shared_ptr<Texture2D> &t, VkSampler sampler)
+    : texture(t), sampler(sampler)
+{
+}
+
 DescriptorSetLayoutBuilder &DescriptorSetLayoutBuilder::add_binding(uint32_t binding,
                                                                     uint32_t count,
                                                                     VkDescriptorType type,
@@ -709,6 +715,33 @@ DescriptorSetUpdater &DescriptorSetUpdater::write_ssbo_array(
     return *this;
 }
 
+DescriptorSetUpdater &DescriptorSetUpdater::write_combined_sampler_array(
+    VkDescriptorSet set,
+    uint32_t binding,
+    const std::vector<CombinedImageSampler> &combined_samplers)
+{
+    WriteDescriptorInfo write;
+    write.dst_set = set;
+    write.binding = binding;
+    write.count = combined_samplers.size();
+    write.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.img_index = images.size();
+
+    std::transform(combined_samplers.begin(),
+                   combined_samplers.end(),
+                   std::back_inserter(images),
+                   [](const CombinedImageSampler &cs) {
+                       VkDescriptorImageInfo desc = {};
+                       desc.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                       desc.imageView = cs.texture->view_handle();
+                       desc.sampler = cs.sampler;
+                       return desc;
+                   });
+
+    writes.push_back(write);
+    return *this;
+}
+
 void DescriptorSetUpdater::update(Device &device)
 {
     std::vector<VkWriteDescriptorSet> desc_writes;
@@ -728,7 +761,8 @@ void DescriptorSetUpdater::update(Device &device)
                        } else if (wd.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
                                   wd.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
                            wd.pBufferInfo = &buffers[w.buf_index];
-                       } else if (wd.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+                       } else if (wd.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
+                                  wd.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
                            wd.pImageInfo = &images[w.img_index];
                        }
                        return wd;

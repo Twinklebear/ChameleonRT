@@ -154,7 +154,7 @@ void RenderVulkan::set_scene(const Scene &scene_data)
         std::shared_ptr<vkrt::Buffer> uvs_buf = nullptr;
         if (!mesh.uvs.empty()) {
             upload_uvs = vkrt::Buffer::host(
-                device, mesh.uvs.size() * sizeof(glm::vec2), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+                device, mesh.uvs.size() * sizeof(glm::vec2), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
             uvs_buf = vkrt::Buffer::device(
                 device,
                 upload_uvs->size(),
@@ -283,6 +283,8 @@ void RenderVulkan::set_scene(const Scene &scene_data)
         map[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_NV |
                        VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
         map[i].acceleration_structure_handle = meshes[i]->handle;
+        
+		material_ids.push_back(scene_data.meshes[i].material_id);
     }
     upload_instances->unmap();
 
@@ -338,6 +340,155 @@ void RenderVulkan::set_scene(const Scene &scene_data)
     }
     scene->finalize();
 
+    auto upload_mat_params =
+        vkrt::Buffer::host(device,
+                           scene_data.materials.size() * sizeof(DisneyMaterial),
+                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    {
+        void *map = upload_mat_params->map();
+        std::memcpy(map, scene_data.materials.data(), upload_mat_params->size());
+        upload_mat_params->unmap();
+    }
+
+    mat_params =
+        vkrt::Buffer::device(device,
+                             upload_mat_params->size(),
+                             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+    {
+        VkCommandBufferBeginInfo begin_info = {};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+        VkBufferCopy copy_cmd = {};
+        copy_cmd.size = upload_mat_params->size();
+        vkCmdCopyBuffer(
+            command_buffer, upload_mat_params->handle(), mat_params->handle(), 1, &copy_cmd);
+
+        CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+
+        VkSubmitInfo submit_info = {};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer;
+        CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+        vkQueueWaitIdle(device.graphics_queue());
+
+        vkResetCommandPool(
+            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+    }
+
+    // Upload the scene textures
+    for (const auto &t : scene_data.textures) {
+        auto tex =
+            vkrt::Texture2D::device(device,
+                                    glm::uvec2(t.width, t.height),
+                                    VK_FORMAT_R8G8B8A8_UNORM,
+                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+
+        auto upload_buf = vkrt::Buffer::host(
+            device, tex->pixel_size() * t.width * t.height, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+        void *map = upload_buf->map();
+        std::memcpy(map, t.img.data(), upload_buf->size());
+        upload_buf->unmap();
+
+        VkCommandBufferBeginInfo begin_info = {};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+        // Transition image to the general layout
+        VkImageMemoryBarrier img_mem_barrier = {};
+        img_mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        img_mem_barrier.image = tex->image_handle();
+        img_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        img_mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        img_mem_barrier.subresourceRange.baseMipLevel = 0;
+        img_mem_barrier.subresourceRange.levelCount = 1;
+        img_mem_barrier.subresourceRange.baseArrayLayer = 0;
+        img_mem_barrier.subresourceRange.layerCount = 1;
+
+        vkCmdPipelineBarrier(command_buffer,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             0,
+                             0,
+                             nullptr,
+                             0,
+                             nullptr,
+                             1,
+                             &img_mem_barrier);
+
+        VkImageSubresourceLayers copy_subresource = {};
+        copy_subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copy_subresource.mipLevel = 0;
+        copy_subresource.baseArrayLayer = 0;
+        copy_subresource.layerCount = 1;
+
+        VkBufferImageCopy img_copy = {};
+        img_copy.bufferOffset = 0;
+        img_copy.bufferRowLength = 0;
+        img_copy.bufferImageHeight = 0;
+        img_copy.imageSubresource = copy_subresource;
+        img_copy.imageOffset.x = 0;
+        img_copy.imageOffset.y = 0;
+        img_copy.imageOffset.z = 0;
+        img_copy.imageExtent.width = t.width;
+        img_copy.imageExtent.height = t.height;
+        img_copy.imageExtent.depth = 1;
+
+        vkCmdCopyBufferToImage(command_buffer,
+                               upload_buf->handle(),
+                               tex->image_handle(),
+                               VK_IMAGE_LAYOUT_GENERAL,
+                               1,
+                               &img_copy);
+
+        // Transition image to shader read optimal layout
+        img_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        vkCmdPipelineBarrier(command_buffer,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             0,
+                             0,
+                             nullptr,
+                             0,
+                             nullptr,
+                             1,
+                             &img_mem_barrier);
+
+        CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+
+        VkSubmitInfo submit_info = {};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer;
+        CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+        vkQueueWaitIdle(device.graphics_queue());
+
+        vkResetCommandPool(
+            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+
+        textures.push_back(tex);
+    }
+
+    {
+        VkSamplerCreateInfo sampler_info = {};
+        sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sampler_info.magFilter = VK_FILTER_LINEAR;
+        sampler_info.minFilter = VK_FILTER_LINEAR;
+        sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler_info.minLod = 0;
+        sampler_info.maxLod = 0;
+        CHECK_VULKAN(vkCreateSampler(device.logical_device(), &sampler_info, nullptr, &sampler));
+    }
+
     build_raytracing_pipeline();
     build_shader_descriptor_table();
     build_shader_binding_table();
@@ -367,7 +518,7 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos,
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, rt_pipeline.handle());
 
     const std::vector<VkDescriptorSet> descriptor_sets = {
-        desc_set, index_desc_set, vert_desc_set, normals_desc_set, uv_desc_set};
+        desc_set, index_desc_set, vert_desc_set, normals_desc_set, uv_desc_set, textures_desc_set};
 
     vkCmdBindDescriptorSets(command_buffer,
                             VK_PIPELINE_BIND_POINT_RAY_TRACING_NV,
@@ -469,13 +620,11 @@ void RenderVulkan::build_raytracing_pipeline()
                 0, 1, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .add_binding(1, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .add_binding(2, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+            .add_binding(3, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .build(device);
 
     // Make the variable sized descriptor layout for all our varying sized buffer arrays which
     // we use to send the mesh data
-    // TODO: Should I be setting a flag through for
-    // VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT ? the final number of entries in the
-    // buffer is fixed ahead of time, so do I actually need to set that flag here?
     buffer_desc_layout = vkrt::DescriptorSetLayoutBuilder()
                              .add_binding(0,
                                           meshes.size(),
@@ -484,11 +633,20 @@ void RenderVulkan::build_raytracing_pipeline()
                                           VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)
                              .build(device);
 
+    textures_desc_layout = vkrt::DescriptorSetLayoutBuilder()
+                               .add_binding(0,
+                                            std::max(textures.size(), size_t(1)),
+                                            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                            VK_SHADER_STAGE_RAYGEN_BIT_NV,
+                                            VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)
+                               .build(device);
+
     std::vector<VkDescriptorSetLayout> descriptor_layouts = {desc_layout,
                                                              buffer_desc_layout,
                                                              buffer_desc_layout,
                                                              buffer_desc_layout,
-                                                             buffer_desc_layout};
+                                                             buffer_desc_layout,
+                                                             textures_desc_layout};
 
     VkPipelineLayoutCreateInfo pipeline_create_info = {};
     pipeline_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -520,11 +678,13 @@ void RenderVulkan::build_shader_descriptor_table()
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, uint32_t(4 * meshes.size())}};
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 + uint32_t(4 * meshes.size())},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                             std::max(uint32_t(textures.size()), uint32_t(1))}};
 
     VkDescriptorPoolCreateInfo pool_create_info = {};
     pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_create_info.maxSets = 5;
+    pool_create_info.maxSets = 6;
     pool_create_info.poolSizeCount = pool_sizes.size();
     pool_create_info.pPoolSizes = pool_sizes.data();
     CHECK_VULKAN(
@@ -537,17 +697,18 @@ void RenderVulkan::build_shader_descriptor_table()
     alloc_info.pSetLayouts = &desc_layout;
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &desc_set));
 
-    alloc_info.descriptorPool = desc_pool;
-    alloc_info.descriptorSetCount = 1;
     alloc_info.pSetLayouts = &buffer_desc_layout;
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &index_desc_set));
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &vert_desc_set));
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &normals_desc_set));
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &uv_desc_set));
 
+    alloc_info.pSetLayouts = &textures_desc_layout;
+    CHECK_VULKAN(
+        vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &textures_desc_set));
+
     std::vector<std::shared_ptr<vkrt::Buffer>> index_buffers, vertex_buffers, normal_buffers,
         uv_buffers;
-
     for (size_t i = 0; i < meshes.size(); ++i) {
         const auto &m = meshes[i];
 
@@ -563,10 +724,16 @@ void RenderVulkan::build_shader_descriptor_table()
         }
     }
 
+    std::vector<vkrt::CombinedImageSampler> combined_samplers;
+    for (const auto &t : textures) {
+        combined_samplers.emplace_back(t, sampler);
+    }
+
     auto updater = vkrt::DescriptorSetUpdater()
                        .write_acceleration_structure(desc_set, 0, scene)
                        .write_storage_image(desc_set, 1, render_target)
                        .write_ubo(desc_set, 2, view_param_buf)
+                       .write_ssbo(desc_set, 3, mat_params)
                        .write_ssbo_array(index_desc_set, 0, index_buffers)
                        .write_ssbo_array(vert_desc_set, 0, vertex_buffers);
 
@@ -575,6 +742,9 @@ void RenderVulkan::build_shader_descriptor_table()
     }
     if (!uv_buffers.empty()) {
         updater.write_ssbo_array(uv_desc_set, 0, uv_buffers);
+    }
+    if (!combined_samplers.empty()) {
+        updater.write_combined_sampler_array(textures_desc_set, 0, combined_samplers);
     }
     updater.update(device);
 }
@@ -587,7 +757,7 @@ void RenderVulkan::build_shader_binding_table()
 
     for (size_t i = 0; i < meshes.size(); ++i) {
         sbt_builder.add_hitgroup(vkrt::ShaderRecord(
-            "closest_hit_inst" + std::to_string(i), "closest_hit", 4 * sizeof(uint32_t)));
+            "closest_hit_inst" + std::to_string(i), "closest_hit", 3 * sizeof(uint32_t)));
     }
 
     shader_table = sbt_builder.build(device);
@@ -601,19 +771,17 @@ void RenderVulkan::build_shader_binding_table()
 
         if (meshes[i]->normal_buf) {
             params[0] = normal_buf_idx++;
-            params[1] = meshes[i]->normal_buf->size() / sizeof(glm::vec3);
         } else {
             params[0] = -1;
-            params[1] = 0;
         }
 
         if (meshes[i]->uv_buf) {
-            params[2] = uv_buf_idx++;
-            params[3] = meshes[i]->uv_buf->size() / sizeof(glm::vec2);
+            params[1] = uv_buf_idx++;
         } else {
-            params[2] = -1;
-            params[3] = 0;
+            params[1] = -1;
         }
+
+		params[2] = material_ids[i];
     }
 
     {

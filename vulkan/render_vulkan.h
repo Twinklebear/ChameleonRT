@@ -10,12 +10,16 @@
 struct RenderVulkan : RenderBackend {
     vkrt::Device device;
 
-    std::shared_ptr<vkrt::Buffer> view_param_buf, img_readback_buf;
+    std::shared_ptr<vkrt::Buffer> view_param_buf, img_readback_buf, mat_params;
 
     std::shared_ptr<vkrt::Texture2D> render_target;
 
     std::vector<std::unique_ptr<vkrt::TriangleMesh>> meshes;
     std::unique_ptr<vkrt::TopLevelBVH> scene;
+
+    std::vector<uint32_t> material_ids;
+    std::vector<std::shared_ptr<vkrt::Texture2D>> textures;
+    VkSampler sampler = VK_NULL_HANDLE;
 
     VkCommandPool command_pool = VK_NULL_HANDLE;
     VkCommandBuffer command_buffer = VK_NULL_HANDLE;
@@ -24,6 +28,7 @@ struct RenderVulkan : RenderBackend {
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout desc_layout = VK_NULL_HANDLE;
     VkDescriptorSetLayout buffer_desc_layout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout textures_desc_layout = VK_NULL_HANDLE;
 
     VkDescriptorPool desc_pool = VK_NULL_HANDLE;
     // We need a set per varying size array of things we're sending
@@ -32,6 +37,7 @@ struct RenderVulkan : RenderBackend {
     VkDescriptorSet vert_desc_set = VK_NULL_HANDLE;
     VkDescriptorSet normals_desc_set = VK_NULL_HANDLE;
     VkDescriptorSet uv_desc_set = VK_NULL_HANDLE;
+    VkDescriptorSet textures_desc_set = VK_NULL_HANDLE;
 
     vkrt::ShaderBindingTable shader_table;
 

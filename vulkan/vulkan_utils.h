@@ -192,6 +192,13 @@ struct WriteDescriptorInfo {
     size_t buf_index = -1;
 };
 
+struct CombinedImageSampler {
+    const std::shared_ptr<Texture2D> texture;
+    VkSampler sampler;
+
+	CombinedImageSampler(const std::shared_ptr<Texture2D> &t, VkSampler sampler);
+};
+
 class DescriptorSetUpdater {
     std::vector<WriteDescriptorInfo> writes;
     std::vector<VkWriteDescriptorSetAccelerationStructureNV> accel_structs;
@@ -218,6 +225,11 @@ public:
     DescriptorSetUpdater &write_ssbo_array(VkDescriptorSet set,
                                            uint32_t binding,
                                            const std::vector<std::shared_ptr<Buffer>> &bufs);
+
+    DescriptorSetUpdater &write_combined_sampler_array(
+        VkDescriptorSet set,
+        uint32_t binding,
+        const std::vector<CombinedImageSampler> &combined_samplers);
 
     // Commit the writes to the descriptor sets
     void update(Device &device);
