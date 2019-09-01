@@ -262,30 +262,9 @@ void RenderOptiX::build_raytracing_pipeline()
 
     pipeline = optix::compile_pipeline(device, pipeline_opts, link_opts, pipeline_progs);
 
-    // TODO: Compute a tight bound on the stack size we need.
-    // Since the path tracer is iterative, we should only need a very small stack,
-    // likely smaller than the default estimate.
-    // In the renderer, the raygen will call the closest hit or miss shader, which
-    // make no further calls.
-    {
-#if 0
-		OptixStackSizes stack_sizes;
-		optixProgramGroupGetStackSize(raygen_prog, &stack_sizes);
-		std::cout << "RayGen: " << stack_sizes << "\n";
-
-		for (size_t i = 0; i < miss_progs.size(); ++i) {
-			optixProgramGroupGetStackSize(miss_progs[i], &stack_sizes);
-			std::cout << "Miss[" << i << "]: " << stack_sizes << "\n";
-		}
-		for (size_t i = 0; i < hitgroup_progs.size(); ++i) {
-			optixProgramGroupGetStackSize(hitgroup_progs[i], &stack_sizes);
-			std::cout << "HitGroup[" << i << "]: " << stack_sizes << "\n";
-		}
-#endif
-        // TODO: It seems like even setting these values to something clearly too small
-        // doesn't crash the renderer like I'd expect it too?
-        CHECK_OPTIX(optixPipelineSetStackSize(pipeline, 2 * 1024, 2 * 1024, 2 * 1024, 2));
-    }
+    // We don't make any recursive any hit calls or use the callable shaders,
+    // so we don't need extra stack space. TODO: Though 0 seems very small?
+    CHECK_OPTIX(optixPipelineSetStackSize(pipeline, 0, 0, 0, 1));
 
     auto shader_table_builder =
         optix::ShaderTableBuilder()

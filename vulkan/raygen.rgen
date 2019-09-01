@@ -89,6 +89,10 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
     light.v_x.w = 5.f;
     light.v_y.w = 5.f;
 
+    const uint32_t occlusion_flags = gl_RayFlagsOpaqueNV
+        | gl_RayFlagsTerminateOnFirstHitNV
+        | gl_RayFlagsSkipClosestHitShaderNV;
+
 	// Sample the light to compute an incident light ray to this point
 	{
 		vec3 light_pos = sample_quad_light_position(light,
@@ -100,7 +104,8 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 		float light_pdf = quad_light_pdf(light, light_pos, hit_p, light_dir);
 		float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, v_x, v_y);
 
-        traceNV(scene, gl_RayFlagsTerminateOnFirstHitNV | gl_RayFlagsOpaqueNV, 0xff,
+        occlusion_hit = true;
+        traceNV(scene, occlusion_flags, 0xff,
                 OCCLUSION_RAY, 0, OCCLUSION_RAY, hit_p, EPSILON, light_dir, light_dist, OCCLUSION_RAY);
 #ifdef REPORT_RAY_STATS
 		++ray_count;
@@ -126,7 +131,8 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 			float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
 			if (light_pdf >= EPSILON) {
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
-                traceNV(scene, gl_RayFlagsTerminateOnFirstHitNV | gl_RayFlagsOpaqueNV, 0xff,
+                occlusion_hit = true;
+                traceNV(scene, occlusion_flags, 0xff,
                         OCCLUSION_RAY, 0, OCCLUSION_RAY, hit_p, EPSILON, w_i, light_dist, OCCLUSION_RAY);
 #ifdef REPORT_RAY_STATS
 				++ray_count;
