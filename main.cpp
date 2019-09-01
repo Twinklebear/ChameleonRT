@@ -12,6 +12,7 @@
 #include "imgui_impl_sdl.h"
 #include "scene.h"
 #include "shader.h"
+#include "stb_image_write.h"
 #include "tiny_obj_loader.h"
 #include "util.h"
 
@@ -266,6 +267,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
     const std::string rt_backend = renderer->name();
     const std::string cpu_brand = get_cpu_brand();
     const std::string gpu_brand = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
+    const std::string image_output = "chameleonrt.png";
+    stbi_flip_vertically_on_write(true);
 
     size_t frame_id = 0;
     float render_time = 0.f;
@@ -290,6 +293,14 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
                     std::cout << "-eye " << eye.x << " " << eye.y << " " << eye.z << " -center "
                               << center.x << " " << center.y << " " << center.z << " -up " << up.x
                               << " " << up.y << " " << up.z << "\n";
+                } else if (event.key.keysym.sym == SDLK_s) {
+                    std::cout << "Image saved to " << image_output << "\n";
+                    stbi_write_png(image_output.c_str(),
+                                   win_width,
+                                   win_height,
+                                   4,
+                                   renderer->img.data(),
+                                   4 * win_width);
                 }
             }
             if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE &&
@@ -374,6 +385,16 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
         ImGui::Text("CPU: %s", cpu_brand.c_str());
         ImGui::Text("GPU: %s", gpu_brand.c_str());
         ImGui::Text("Accumulated Frames: %llu", frame_id);
+
+        if (ImGui::Button("Save Image")) {
+            std::cout << "Image saved to " << image_output << "\n";
+            stbi_write_png(image_output.c_str(),
+                           win_width,
+                           win_height,
+                           4,
+                           renderer->img.data(),
+                           4 * win_width);
+        }
 
         ImGui::End();
 
