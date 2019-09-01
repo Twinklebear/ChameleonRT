@@ -151,10 +151,10 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 
 [shader("raygeneration")] 
 void RayGen() {
-	uint2 pixel = DispatchRaysIndex().xy;
-	float2 dims = float2(DispatchRaysDimensions().xy);
+	const uint2 pixel = DispatchRaysIndex().xy;
+	const float2 dims = float2(DispatchRaysDimensions().xy);
 	PCGRand rng = get_rng(frame_id);
-	float2 d = (pixel + float2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
+	const float2 d = (pixel + float2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
 
 	RayDesc ray;
 	ray.Origin = cam_pos.xyz;
