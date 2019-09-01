@@ -1,7 +1,10 @@
 # ChameleonRT
 
 An example path tracer which runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan).
-Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files.
+Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files. The San Miguel,
+Sponza and Rungholt models shown below are from Morgan McGuire's [Computer Graphics Data Archive](https://casual-effects.com/data/).
+
+[![San Miguel, Sponza and Rungholt](https://i.imgur.com/tKZYjzn.jpg)](https://i.imgur.com/pVhQK3j.jpg)
 
 ## Ray Tracing Backends  
 
@@ -116,12 +119,3 @@ If you find ChameleonRT useful in your work, please cite it as:
 	title = {{ChameleonRT}}
 } 
 ```
-
-## Images
-
-These versions of Sponza and San Miguel are from Morgan McGuire's [Computer Graphics Data Archive](https://casual-effects.com/data/).
-
-![San Miguel](https://i.imgur.com/rhzcwaC.png)
-
-![Sponza](https://i.imgur.com/RxNP15S.png)
-
