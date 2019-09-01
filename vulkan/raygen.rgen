@@ -2,8 +2,10 @@
 
 #include "util.glsl"
 #include "pcg_rng.glsl"
+#include "lights.glsl"
+#include "disney_bsdf.glsl"
 
-struct DisneyMaterial {
+struct MaterialParams {
     pack_float3 base_color;
     float metallic;
 
@@ -21,14 +23,15 @@ struct DisneyMaterial {
     float specular_transmission;
     vec2 pad;
 
-    uint color_tex_id;
+    int color_tex_id;
     pack_uint3 tex_pad;
 };
 
 layout(binding = 0, set = 0) uniform accelerationStructureNV scene;
 layout(binding = 1, set = 0, rgba8) uniform writeonly image2D framebuffer;
+layout(binding = 2, set = 0, rgba32f) uniform image2D accum_buffer;
 
-layout(binding = 2, set = 0, std140) uniform ViewParams {
+layout(binding = 3, set = 0, std140) uniform ViewParams {
     vec4 cam_pos;
     vec4 cam_du;
     vec4 cam_dv;
@@ -36,15 +39,105 @@ layout(binding = 2, set = 0, std140) uniform ViewParams {
     int frame_id;
 };
 
-layout(binding = 3, set = 0, std430) buffer MaterialParams {
-    DisneyMaterial materials[];
+layout(binding = 4, set = 0, std430) buffer MaterialParamsBuffer {
+    MaterialParams material_params[];
 };
 
 layout(binding = 0, set = 5) uniform sampler2D textures[];
 
 layout(location = PRIMARY_RAY) rayPayloadNV RayPayload payload;
-
 layout(location = OCCLUSION_RAY) rayPayloadNV bool occlusion_hit;
+
+void unpack_material(inout DisneyMaterial mat, uint id, vec2 uv_coords) {
+	MaterialParams p = material_params[nonuniformEXT(id)];
+	if (p.color_tex_id < 0) {
+		mat.base_color = unpack_float3(p.base_color);
+	} else {
+		mat.base_color = texture(textures[nonuniformEXT(p.color_tex_id)], uv_coords).xyz;
+	}
+	mat.metallic = p.metallic;
+	mat.specular = p.specular;
+	mat.roughness = p.roughness;
+	mat.specular_tint = p.specular_tint;
+	mat.anisotropy = p.anisotropy;
+	mat.sheen = p.sheen;
+	mat.sheen_tint = p.sheen_tint;
+	mat.clearcoat = p.clearcoat;
+	mat.clearcoat_gloss = p.clearcoat_gloss;
+	mat.ior = p.ior;
+	mat.specular_transmission = p.specular_transmission;
+}
+
+vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in const vec3 n,
+	in const vec3 v_x, in const vec3 v_y, in const vec3 w_o, inout uint ray_count, inout PCGRand rng)
+{
+	vec3 illum = vec3(0.f);
+
+    // still advance RNG to match other backends until I put in the light sampling
+    pcg32_randomf(rng);
+    /*
+	uint32_t light_id = pcg32_randomf(rng) * num_lights;
+	light_id = min(light_id, num_lights - 1);
+	QuadLight light = lights[NonUniformResourceIndex(light_id)];
+    */
+    QuadLight light;
+    light.emission.xyz = vec3(5.f);
+    light.normal.xyz = normalize(vec3(0.5f, -0.8f, -0.5f));
+    light.position.xyz = -10.f * light.normal.xyz;
+    ortho_basis(light.v_x.xyz, light.v_y.xyz, light.normal.xyz);
+    light.v_x.w = 5.f;
+    light.v_y.w = 5.f;
+
+	// Sample the light to compute an incident light ray to this point
+	{
+		vec3 light_pos = sample_quad_light_position(light,
+                vec2(pcg32_randomf(rng), pcg32_randomf(rng)));
+		vec3 light_dir = light_pos - hit_p;
+		float light_dist = length(light_dir);
+		light_dir = normalize(light_dir);
+
+		float light_pdf = quad_light_pdf(light, light_pos, hit_p, light_dir);
+		float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, v_x, v_y);
+
+        traceNV(scene, gl_RayFlagsTerminateOnFirstHitNV | gl_RayFlagsOpaqueNV, 0xff,
+                OCCLUSION_RAY, 0, OCCLUSION_RAY, hit_p, EPSILON, light_dir, light_dist, OCCLUSION_RAY);
+#ifdef REPORT_RAY_STATS
+		++ray_count;
+#endif
+		if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && !occlusion_hit) {
+			vec3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
+			float w = power_heuristic(1.f, light_pdf, 1.f, bsdf_pdf);
+			illum = bsdf * light.emission.rgb * abs(dot(light_dir, n)) * w / light_pdf;
+		}
+	}
+
+	// Sample the BRDF to compute a light sample as well
+	{
+		vec3 w_i;
+		float bsdf_pdf;
+		vec3 bsdf = sample_disney_brdf(mat, n, w_o, v_x, v_y, rng, w_i, bsdf_pdf);
+		
+		float light_dist;
+		vec3 light_pos;
+		if (any(greaterThan(bsdf, vec3(0.f))) && bsdf_pdf >= EPSILON
+			&& quad_intersect(light, hit_p, w_i, light_dist, light_pos))
+		{
+			float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
+			if (light_pdf >= EPSILON) {
+				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
+                traceNV(scene, gl_RayFlagsTerminateOnFirstHitNV | gl_RayFlagsOpaqueNV, 0xff,
+                        OCCLUSION_RAY, 0, OCCLUSION_RAY, hit_p, EPSILON, w_i, light_dist, OCCLUSION_RAY);
+#ifdef REPORT_RAY_STATS
+				++ray_count;
+#endif
+				if (!occlusion_hit) {
+					illum += bsdf * light.emission.rgb * abs(dot(w_i, n)) * w / bsdf_pdf;
+				}
+			}
+		}
+	}
+	return illum;
+}
 
 void main() {
     const ivec2 pixel = ivec2(gl_LaunchIDNV.xy);
@@ -52,39 +145,69 @@ void main() {
     PCGRand rng = get_rng(frame_id);
     vec2 d = (pixel + vec2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
 
-    vec3 origin = cam_pos.xyz;
-    vec3 dir = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
+    vec3 ray_origin = cam_pos.xyz;
+    vec3 ray_dir = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
     float t_min = 0;
     float t_max = 1e20f;
 
-    // TODO Opaque = disable any hit?
-    traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, PRIMARY_RAY, 0, PRIMARY_RAY,
-            origin, t_min, dir, t_max, PRIMARY_RAY);
+    DisneyMaterial mat;
 
-    vec3 shade_color = vec3(0);
-    if (payload.dist > 0.f) {
-        DisneyMaterial mat = materials[nonuniformEXT(payload.material_id)];
-        shade_color.x = mat.base_color.x;
-        shade_color.y = mat.base_color.y;
-        shade_color.z = mat.base_color.z;
-
-        if (mat.color_tex_id != uint(-1)) {
-            shade_color = texture(textures[nonuniformEXT(mat.color_tex_id)], payload.uv).xyz;
+	uint ray_count = 0;
+	int bounce = 0;
+	vec3 illum = vec3(0.f);
+	vec3 path_throughput = vec3(1.f);
+    do {
+        traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, PRIMARY_RAY, 0, PRIMARY_RAY,
+                ray_origin, t_min, ray_dir, t_max, PRIMARY_RAY);
+#ifdef REPORT_RAY_STATS
+		++ray_count;
+#endif
+        // If we hit nothing, include the scene background color from the miss shader
+        if (payload.dist < 0.f) {
+            illum += path_throughput * payload.normal.rgb;
+            break;
         }
-        shade_color *= abs(dot(payload.normal, dir));
 
-        occlusion_hit = false;
-        // Now trace a shadow ray to a "light"
-        vec3 light_dir = normalize(vec3(0.2f, 1.f, 0.5f));
-        vec3 hit_p = origin + dir * payload.dist;
-        // TODO: In all backends could use the skip closest hit flag here
-        traceNV(scene, gl_RayFlagsTerminateOnFirstHitNV | gl_RayFlagsOpaqueNV, 0xff,
-                OCCLUSION_RAY, 0, OCCLUSION_RAY, hit_p, EPSILON, light_dir, t_max, OCCLUSION_RAY);
-        if (occlusion_hit) {
-            shade_color *= 0.5;
-        }
-    }
+		const vec3 w_o = -ray_dir;
+		const vec3 hit_p = ray_origin + payload.dist * ray_dir;
+		unpack_material(mat, payload.material_id, payload.uv);
 
-    imageStore(framebuffer, pixel, vec4(shade_color, 1.f));
+		vec3 v_x, v_y;
+		vec3 v_z = payload.normal;
+		// For opaque objects (or in the future, thin ones) make the normal face forward
+		if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
+			v_z = -v_z;
+		}
+		ortho_basis(v_x, v_y, v_z);
+
+		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, ray_count, rng);
+
+		vec3 w_i;
+		float pdf;
+		vec3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
+		if (pdf < EPSILON || all(equal(bsdf, vec3(0.f)))) {
+			break;
+		}
+		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
+
+		if (all(lessThan(path_throughput, vec3(EPSILON)))) {
+			break;
+		}
+
+		ray_origin = hit_p;
+		ray_dir = w_i;
+		t_min = EPSILON;
+		t_max = 1e20f;
+
+		++bounce;
+	} while (bounce < MAX_PATH_DEPTH);
+
+    vec4 accum_color = imageLoad(accum_buffer, pixel);
+	accum_color = (vec4(illum, 1.0) + frame_id * accum_color) / (frame_id + 1);
+    imageStore(accum_buffer, pixel, accum_color);
+
+    accum_color.xyz = vec3(linear_to_srgb(accum_color.x), linear_to_srgb(accum_color.y),
+            linear_to_srgb(accum_color.z));
+    imageStore(framebuffer, pixel, vec4(accum_color.xyz, 1.f));
 }
 

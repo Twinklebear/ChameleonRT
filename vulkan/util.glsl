@@ -15,20 +15,29 @@
 #define OCCLUSION_RAY 1
 #define MAX_PATH_DEPTH 5
 
-/*
-struct HitInfo {
-	float4 color_dist;
-	float4 normal;
+// Packed types for working around std430 array padding rules
+struct pack_uint3 {
+	uint x, y, z; 
 };
 
-struct OcclusionHitInfo {
-	int hit;
+uvec3 unpack_uint3(in const pack_uint3 v) {
+    return uvec3(v.x, v.y, v.z);
+}
+
+struct pack_float3 {
+	float x, y, z;
 };
 
-// Attributes output by the raytracing when hitting a surface,
-// here the barycentric coordinates
-struct Attributes {
-	float2 bary;
+vec3 unpack_float3(in const pack_float3 v) {
+    return vec3(v.x, v.y, v.z);
+}
+
+struct RayPayload {
+    vec3 normal;
+    float dist;
+    vec2 uv;
+    uint material_id;
+    float pad;
 };
 
 float linear_to_srgb(float x) {
@@ -38,8 +47,8 @@ float linear_to_srgb(float x) {
 	return 1.055f * pow(x, 1.f / 2.4f) - 0.055f;
 }
 
-void ortho_basis(out float3 v_x, out float3 v_y, const float3 n) {
-	v_y = float3(0, 0, 0);
+void ortho_basis(out vec3 v_x, out vec3 v_y, const vec3 n) {
+	v_y = vec3(0, 0, 0);
 
 	if (n.x < 0.6f && n.x > -0.6f) {
 		v_y.x = 1.f;
@@ -54,39 +63,13 @@ void ortho_basis(out float3 v_x, out float3 v_y, const float3 n) {
 	v_y = normalize(cross(n, v_x));
 }
 
-float luminance(in const float3 c) {
+float luminance(in const vec3 c) {
 	return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
 }
 
 float pow2(float x) {
 	return x * x;
 }
-*/
-
-// Packed types for working around std430 array padding rules
-struct pack_uint3 {
-	uint x, y, z; 
-};
-
-uvec3 unpack_uint3(const in pack_uint3 v) {
-    return uvec3(v.x, v.y, v.z);
-}
-
-struct pack_float3 {
-	float x, y, z;
-};
-
-vec3 unpack_float3(const in pack_float3 v) {
-    return vec3(v.x, v.y, v.z);
-}
-
-struct RayPayload {
-    vec3 normal;
-    float dist;
-    vec2 uv;
-    uint material_id;
-    float pad;
-};
 
 #endif
 

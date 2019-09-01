@@ -12,7 +12,7 @@ struct RenderVulkan : RenderBackend {
 
     std::shared_ptr<vkrt::Buffer> view_param_buf, img_readback_buf, mat_params;
 
-    std::shared_ptr<vkrt::Texture2D> render_target;
+    std::shared_ptr<vkrt::Texture2D> render_target, accum_buffer;
 
     std::vector<std::unique_ptr<vkrt::TriangleMesh>> meshes;
     std::unique_ptr<vkrt::TopLevelBVH> scene;

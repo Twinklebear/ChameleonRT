@@ -57,26 +57,35 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
                                 VK_FORMAT_R8G8B8A8_UNORM,
                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
 
+    accum_buffer = vkrt::Texture2D::device(device,
+                                           glm::uvec2(fb_width, fb_height),
+                                           VK_FORMAT_R32G32B32A32_SFLOAT,
+                                           VK_IMAGE_USAGE_STORAGE_BIT);
+
     img_readback_buf = vkrt::Buffer::host(
         device, img.size() * render_target->pixel_size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
-    // Change image to the general layout
+    // Change image and accum buffer to the general layout
     {
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
 
-        VkImageMemoryBarrier img_mem_barrier = {};
-        img_mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        img_mem_barrier.image = render_target->image_handle();
-        img_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        img_mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        img_mem_barrier.subresourceRange.baseMipLevel = 0;
-        img_mem_barrier.subresourceRange.levelCount = 1;
-        img_mem_barrier.subresourceRange.baseArrayLayer = 0;
-        img_mem_barrier.subresourceRange.layerCount = 1;
+        std::array<VkImageMemoryBarrier, 2> barriers = {};
+        for (auto &b : barriers) {
+            b = VkImageMemoryBarrier{};
+            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            b.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            b.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            b.subresourceRange.baseMipLevel = 0;
+            b.subresourceRange.levelCount = 1;
+            b.subresourceRange.baseArrayLayer = 0;
+            b.subresourceRange.layerCount = 1;
+        }
+        barriers[0].image = render_target->image_handle();
+        barriers[1].image = accum_buffer->image_handle();
 
         vkCmdPipelineBarrier(command_buffer,
                              VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
@@ -86,8 +95,8 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
                              nullptr,
                              0,
                              nullptr,
-                             1,
-                             &img_mem_barrier);
+                             barriers.size(),
+                             barriers.data());
 
         CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
 
@@ -106,7 +115,10 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
     }
 
     if (desc_set != VK_NULL_HANDLE) {
-        vkrt::DescriptorSetUpdater().write_storage_image(desc_set, 1, render_target).update(device);
+        vkrt::DescriptorSetUpdater()
+            .write_storage_image(desc_set, 1, render_target)
+            .write_storage_image(desc_set, 2, accum_buffer)
+            .update(device);
     }
 }
 
@@ -621,8 +633,9 @@ void RenderVulkan::build_raytracing_pipeline()
             .add_binding(
                 0, 1, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .add_binding(1, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
-            .add_binding(2, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
-            .add_binding(3, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+            .add_binding(2, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+            .add_binding(3, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+            .add_binding(4, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .build(device);
 
     // Make the variable sized descriptor layout for all our varying sized buffer arrays which
@@ -686,7 +699,7 @@ void RenderVulkan::build_shader_descriptor_table()
 {
     const std::vector<VkDescriptorPoolSize> pool_sizes = {
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 + uint32_t(4 * meshes.size())},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -742,8 +755,9 @@ void RenderVulkan::build_shader_descriptor_table()
     auto updater = vkrt::DescriptorSetUpdater()
                        .write_acceleration_structure(desc_set, 0, scene)
                        .write_storage_image(desc_set, 1, render_target)
-                       .write_ubo(desc_set, 2, view_param_buf)
-                       .write_ssbo(desc_set, 3, mat_params)
+                       .write_storage_image(desc_set, 2, accum_buffer)
+                       .write_ubo(desc_set, 3, view_param_buf)
+                       .write_ssbo(desc_set, 4, mat_params)
                        .write_ssbo_array(index_desc_set, 0, index_buffers)
                        .write_ssbo_array(vert_desc_set, 0, vertex_buffers);
 
