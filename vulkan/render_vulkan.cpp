@@ -1,7 +1,9 @@
 #include "render_vulkan.h"
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <iostream>
+#include <numeric>
 #include <string>
 #include "spv_shaders_embedded_spv.h"
 #include "util.h"
@@ -11,7 +13,7 @@
 
 RenderVulkan::RenderVulkan()
 {
-    command_pool = device.make_command_pool();
+    command_pool = device.make_command_pool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
     {
         VkCommandBufferAllocateInfo info = {};
         info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -19,6 +21,17 @@ RenderVulkan::RenderVulkan()
         info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         info.commandBufferCount = 1;
         CHECK_VULKAN(vkAllocateCommandBuffers(device.logical_device(), &info, &command_buffer));
+    }
+
+    render_cmd_pool = device.make_command_pool();
+    {
+        VkCommandBufferAllocateInfo info = {};
+        info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        info.commandPool = render_cmd_pool;
+        info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        info.commandBufferCount = 1;
+        CHECK_VULKAN(vkAllocateCommandBuffers(device.logical_device(), &info, &render_cmd_buf));
+        CHECK_VULKAN(vkAllocateCommandBuffers(device.logical_device(), &info, &readback_cmd_buf));
     }
 
     {
@@ -65,6 +78,16 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
     img_readback_buf = vkrt::Buffer::host(
         device, img.size() * render_target->pixel_size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
+#ifdef REPORT_RAY_STATS
+    ray_stats =
+        vkrt::Texture2D::device(device,
+                                glm::uvec2(fb_width, fb_height),
+                                VK_FORMAT_R16_UINT,
+                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
+    ray_stats_readback_buf = vkrt::Buffer::host(
+        device, img.size() * ray_stats->pixel_size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+#endif
+
     // Change image and accum buffer to the general layout
     {
         VkCommandBufferBeginInfo begin_info = {};
@@ -72,7 +95,11 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
         begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
 
+#ifndef REPORT_RAY_STATS
         std::array<VkImageMemoryBarrier, 2> barriers = {};
+#else
+        std::array<VkImageMemoryBarrier, 3> barriers = {};
+#endif
         for (auto &b : barriers) {
             b = VkImageMemoryBarrier{};
             b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -86,6 +113,9 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
         }
         barriers[0].image = render_target->image_handle();
         barriers[1].image = accum_buffer->image_handle();
+#ifdef REPORT_RAY_STATS
+        barriers[2].image = ray_stats->image_handle();
+#endif
 
         vkCmdPipelineBarrier(command_buffer,
                              VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
@@ -114,11 +144,18 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
             device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
     }
 
+    // If we've loaded the scene and are rendering (i.e., the window was just resized while running)
+    // update the descriptor sets and re-record the rendering commands
     if (desc_set != VK_NULL_HANDLE) {
         vkrt::DescriptorSetUpdater()
             .write_storage_image(desc_set, 1, render_target)
             .write_storage_image(desc_set, 2, accum_buffer)
+#ifdef REPORT_RAY_STATS
+            .write_storage_image(desc_set, 6, ray_stats)
+#endif
             .update(device);
+
+        record_command_buffers();
     }
 }
 
@@ -506,6 +543,7 @@ void RenderVulkan::set_scene(const Scene &scene_data)
     build_raytracing_pipeline();
     build_shader_descriptor_table();
     build_shader_binding_table();
+    record_command_buffers();
 }
 
 RenderStats RenderVulkan::render(const glm::vec3 &pos,
@@ -523,102 +561,40 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos,
 
     update_view_parameters(pos, dir, up, fovy);
 
-    // TODO: Save the commands (and do this in the DXR backend too)
-    // instead of re-recording each frame
-    VkCommandBufferBeginInfo begin_info = {};
-    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
-
-    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, rt_pipeline.handle());
-
-    const std::vector<VkDescriptorSet> descriptor_sets = {
-        desc_set, index_desc_set, vert_desc_set, normals_desc_set, uv_desc_set, textures_desc_set};
-
-    vkCmdBindDescriptorSets(command_buffer,
-                            VK_PIPELINE_BIND_POINT_RAY_TRACING_NV,
-                            pipeline_layout,
-                            0,
-                            descriptor_sets.size(),
-                            descriptor_sets.data(),
-                            0,
-                            nullptr);
-
-    vkCmdTraceRays(command_buffer,
-                   shader_table.sbt->handle(),
-                   0,
-                   shader_table.sbt->handle(),
-                   shader_table.miss_start,
-                   shader_table.miss_stride,
-                   shader_table.sbt->handle(),
-                   shader_table.hitgroup_start,
-                   shader_table.hitgroup_stride,
-                   VK_NULL_HANDLE,
-                   0,
-                   0,
-                   render_target->dims().x,
-                   render_target->dims().y,
-                   1);
-
-    // Barrier for rendering to finish
-    // TODO: Later when I want to time the rendering separately from the image readback
-    // we'll want for the render commands to finish, then do the read so this barrier
-    // won't be needed
-    vkCmdPipelineBarrier(command_buffer,
-                         VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
-                         VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
-                         0,
-                         0,
-                         nullptr,
-                         0,
-                         nullptr,
-                         0,
-                         nullptr);
-
-    VkImageSubresourceLayers copy_subresource = {};
-    copy_subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copy_subresource.mipLevel = 0;
-    copy_subresource.baseArrayLayer = 0;
-    copy_subresource.layerCount = 1;
-
-    VkBufferImageCopy img_copy = {};
-    img_copy.bufferOffset = 0;
-    // Buffer is tightly packed
-    img_copy.bufferRowLength = 0;
-    img_copy.bufferImageHeight = 0;
-    img_copy.imageSubresource = copy_subresource;
-    img_copy.imageOffset.x = 0;
-    img_copy.imageOffset.y = 0;
-    img_copy.imageOffset.z = 0;
-    img_copy.imageExtent.width = render_target->dims().x;
-    img_copy.imageExtent.height = render_target->dims().y;
-    img_copy.imageExtent.depth = 1;
-
-    vkCmdCopyImageToBuffer(command_buffer,
-                           render_target->image_handle(),
-                           VK_IMAGE_LAYOUT_GENERAL,
-                           img_readback_buf->handle(),
-                           1,
-                           &img_copy);
-
-    CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
-
-    // Now submit the commands
     CHECK_VULKAN(vkResetFences(device.logical_device(), 1, &fence));
 
+    auto start = high_resolution_clock::now();
     VkSubmitInfo submit_info = {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &command_buffer;
+    submit_info.pCommandBuffers = &render_cmd_buf;
     CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, fence));
 
+    // Queue the readback copy to start once rendering is done
+    submit_info.pCommandBuffers = &readback_cmd_buf;
+    CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+
+    // Wait for just the rendering commands to complete to only time the ray tracing time
     CHECK_VULKAN(vkWaitForFences(
         device.logical_device(), 1, &fence, true, std::numeric_limits<uint64_t>::max()));
+    auto end = high_resolution_clock::now();
+    stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
-    vkResetCommandPool(
-        device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
-
+    // Now wait for the device to finish the readback copy as well
+    CHECK_VULKAN(vkQueueWaitIdle(device.graphics_queue()));
     std::memcpy(img.data(), img_readback_buf->map(), img_readback_buf->size());
     img_readback_buf->unmap();
+
+#ifdef REPORT_RAY_STATS
+    uint16_t *ray_counts = reinterpret_cast<uint16_t *>(ray_stats_readback_buf->map());
+    const uint64_t total_rays =
+        std::accumulate(ray_counts,
+                        ray_counts + img.size(),
+                        uint64_t(0),
+                        [](const uint64_t &total, const uint16_t &c) { return total + c; });
+    stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
+    ray_stats_readback_buf->unmap();
+#endif
 
     ++frame_id;
     return stats;
@@ -636,6 +612,9 @@ void RenderVulkan::build_raytracing_pipeline()
             .add_binding(2, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .add_binding(3, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .add_binding(4, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+#ifdef REPORT_RAY_STATS
+            .add_binding(6, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+#endif
             .build(device);
 
     // Make the variable sized descriptor layout for all our varying sized buffer arrays which
@@ -699,7 +678,7 @@ void RenderVulkan::build_shader_descriptor_table()
 {
     const std::vector<VkDescriptorPoolSize> pool_sizes = {
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 + uint32_t(4 * meshes.size())},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -758,6 +737,9 @@ void RenderVulkan::build_shader_descriptor_table()
                        .write_storage_image(desc_set, 2, accum_buffer)
                        .write_ubo(desc_set, 3, view_param_buf)
                        .write_ssbo(desc_set, 4, mat_params)
+#ifdef REPORT_RAY_STATS
+                       .write_storage_image(desc_set, 6, ray_stats)
+#endif
                        .write_ssbo_array(index_desc_set, 0, index_buffers)
                        .write_ssbo_array(vert_desc_set, 0, vertex_buffers);
 
@@ -866,4 +848,107 @@ void RenderVulkan::update_view_parameters(const glm::vec3 &pos,
         *fid = frame_id;
     }
     view_param_buf->unmap();
+}
+
+void RenderVulkan::record_command_buffers()
+{
+    vkResetCommandPool(
+        device.logical_device(), render_cmd_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+
+    VkCommandBufferBeginInfo begin_info = {};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    CHECK_VULKAN(vkBeginCommandBuffer(render_cmd_buf, &begin_info));
+
+    vkCmdBindPipeline(render_cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, rt_pipeline.handle());
+
+    const std::vector<VkDescriptorSet> descriptor_sets = {
+        desc_set, index_desc_set, vert_desc_set, normals_desc_set, uv_desc_set, textures_desc_set};
+
+    vkCmdBindDescriptorSets(render_cmd_buf,
+                            VK_PIPELINE_BIND_POINT_RAY_TRACING_NV,
+                            pipeline_layout,
+                            0,
+                            descriptor_sets.size(),
+                            descriptor_sets.data(),
+                            0,
+                            nullptr);
+
+    vkCmdTraceRays(render_cmd_buf,
+                   shader_table.sbt->handle(),
+                   0,
+                   shader_table.sbt->handle(),
+                   shader_table.miss_start,
+                   shader_table.miss_stride,
+                   shader_table.sbt->handle(),
+                   shader_table.hitgroup_start,
+                   shader_table.hitgroup_stride,
+                   VK_NULL_HANDLE,
+                   0,
+                   0,
+                   render_target->dims().x,
+                   render_target->dims().y,
+                   1);
+
+    // Queue a barrier for rendering to finish
+    vkCmdPipelineBarrier(render_cmd_buf,
+                         VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV,
+                         VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV,
+                         0,
+                         0,
+                         nullptr,
+                         0,
+                         nullptr,
+                         0,
+                         nullptr);
+
+    CHECK_VULKAN(vkEndCommandBuffer(render_cmd_buf));
+
+    CHECK_VULKAN(vkBeginCommandBuffer(readback_cmd_buf, &begin_info));
+
+    VkImageSubresourceLayers copy_subresource = {};
+    copy_subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copy_subresource.mipLevel = 0;
+    copy_subresource.baseArrayLayer = 0;
+    copy_subresource.layerCount = 1;
+
+    VkBufferImageCopy img_copy = {};
+    img_copy.bufferOffset = 0;
+    img_copy.bufferRowLength = 0;
+    img_copy.bufferImageHeight = 0;
+    img_copy.imageSubresource = copy_subresource;
+    img_copy.imageOffset.x = 0;
+    img_copy.imageOffset.y = 0;
+    img_copy.imageOffset.z = 0;
+    img_copy.imageExtent.width = render_target->dims().x;
+    img_copy.imageExtent.height = render_target->dims().y;
+    img_copy.imageExtent.depth = 1;
+
+    vkCmdCopyImageToBuffer(readback_cmd_buf,
+                           render_target->image_handle(),
+                           VK_IMAGE_LAYOUT_GENERAL,
+                           img_readback_buf->handle(),
+                           1,
+                           &img_copy);
+
+#ifdef REPORT_RAY_STATS
+    img_copy.bufferOffset = 0;
+    img_copy.bufferRowLength = 0;
+    img_copy.bufferImageHeight = 0;
+    img_copy.imageSubresource = copy_subresource;
+    img_copy.imageOffset.x = 0;
+    img_copy.imageOffset.y = 0;
+    img_copy.imageOffset.z = 0;
+    img_copy.imageExtent.width = render_target->dims().x;
+    img_copy.imageExtent.height = render_target->dims().y;
+    img_copy.imageExtent.depth = 1;
+
+    vkCmdCopyImageToBuffer(readback_cmd_buf,
+                           ray_stats->image_handle(),
+                           VK_IMAGE_LAYOUT_GENERAL,
+                           ray_stats_readback_buf->handle(),
+                           1,
+                           &img_copy);
+#endif
+
+    CHECK_VULKAN(vkEndCommandBuffer(readback_cmd_buf));
 }

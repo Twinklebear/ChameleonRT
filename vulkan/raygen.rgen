@@ -43,6 +43,10 @@ layout(binding = 4, set = 0, std430) buffer MaterialParamsBuffer {
     MaterialParams material_params[];
 };
 
+#ifdef REPORT_RAY_STATS
+layout(binding = 6, set = 0, r16ui) uniform writeonly uimage2D ray_stats;
+#endif
+
 layout(binding = 0, set = 5) uniform sampler2D textures[];
 
 layout(location = PRIMARY_RAY) rayPayloadNV RayPayload payload;
@@ -216,5 +220,9 @@ void main() {
     accum_color.xyz = vec3(linear_to_srgb(accum_color.x), linear_to_srgb(accum_color.y),
             linear_to_srgb(accum_color.z));
     imageStore(framebuffer, pixel, vec4(accum_color.xyz, 1.f));
+
+#ifdef REPORT_RAY_STATS
+    imageStore(ray_stats, pixel, uvec4(ray_count));
+#endif
 }
 

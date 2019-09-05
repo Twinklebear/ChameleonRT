@@ -2,9 +2,15 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 find_package(Vulkan REQUIRED)
 
+set(GLSL_COMPILE_DEFNS "")
+if (REPORT_RAY_STATS)
+	set(GLSL_COMPILE_DEFNS "REPORT_RAY_STATS=1")
+endif()
+
 add_spirv_embed_library(spv_shaders raygen.rgen miss.rmiss hit.rchit
     occlusion_hit.rchit occlusion_miss.rmiss
-	COMPILE_OPTIONS -O)
+	COMPILE_OPTIONS -O
+    COMPILE_DEFINITIONS ${GLSL_COMPILE_DEFNS})
 
 add_library(render_vulkan render_vulkan.cpp vulkan_utils.cpp vulkanrt_utils.cpp)
 

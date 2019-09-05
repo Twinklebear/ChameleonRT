@@ -14,6 +14,11 @@ struct RenderVulkan : RenderBackend {
 
     std::shared_ptr<vkrt::Texture2D> render_target, accum_buffer;
 
+#ifdef REPORT_RAY_STATS
+    std::shared_ptr<vkrt::Texture2D> ray_stats;
+	std::shared_ptr<vkrt::Buffer> ray_stats_readback_buf;
+#endif
+
     std::vector<std::unique_ptr<vkrt::TriangleMesh>> meshes;
     std::unique_ptr<vkrt::TopLevelBVH> scene;
 
@@ -23,6 +28,10 @@ struct RenderVulkan : RenderBackend {
 
     VkCommandPool command_pool = VK_NULL_HANDLE;
     VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+
+    VkCommandPool render_cmd_pool = VK_NULL_HANDLE;
+    VkCommandBuffer render_cmd_buf = VK_NULL_HANDLE;
+    VkCommandBuffer readback_cmd_buf = VK_NULL_HANDLE;
 
     vkrt::RTPipeline rt_pipeline;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
@@ -46,11 +55,15 @@ struct RenderVulkan : RenderBackend {
     size_t frame_id = 0;
 
     RenderVulkan();
+
     virtual ~RenderVulkan();
 
     std::string name() override;
+
     void initialize(const int fb_width, const int fb_height) override;
+
     void set_scene(const Scene &scene) override;
+
     RenderStats render(const glm::vec3 &pos,
                        const glm::vec3 &dir,
                        const glm::vec3 &up,
@@ -58,12 +71,16 @@ struct RenderVulkan : RenderBackend {
                        const bool camera_changed) override;
 
 private:
-    // TODO WILL: it's very similar to DXR
     void build_raytracing_pipeline();
+
     void build_shader_descriptor_table();
+
     void build_shader_binding_table();
+
     void update_view_parameters(const glm::vec3 &pos,
                                 const glm::vec3 &dir,
                                 const glm::vec3 &up,
                                 const float fovy);
+
+    void record_command_buffers();
 };
