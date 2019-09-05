@@ -51,10 +51,27 @@ RenderDXR::RenderDXR()
     CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
                                              IID_PPV_ARGS(&cmd_allocator)));
 
-    // Make the command list
+    CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                             IID_PPV_ARGS(&render_cmd_allocator)));
+
+    // Make the command lists
     CHECK_ERR(device->CreateCommandList(
         0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmd_allocator.Get(), nullptr, IID_PPV_ARGS(&cmd_list)));
     CHECK_ERR(cmd_list->Close());
+
+    CHECK_ERR(device->CreateCommandList(0,
+                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                        cmd_allocator.Get(),
+                                        nullptr,
+                                        IID_PPV_ARGS(&render_cmd_list)));
+    CHECK_ERR(render_cmd_list->Close());
+
+    CHECK_ERR(device->CreateCommandList(0,
+                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                        cmd_allocator.Get(),
+                                        nullptr,
+                                        IID_PPV_ARGS(&readback_cmd_list)));
+    CHECK_ERR(readback_cmd_list->Close());
 
     // Allocate a constants buffer for the view parameters.
     // These are write once, read once (assumed to change each frame).
@@ -114,6 +131,7 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
 
     if (rt_pipeline.get()) {
         build_descriptor_heap();
+        record_command_lists();
     }
 }
 
@@ -355,8 +373,8 @@ void RenderDXR::set_scene(const Scene &scene)
     build_shader_resource_heap();
     build_raytracing_pipeline();
     build_shader_binding_table();
-    // Set the render target and TLAS pointers in the descriptor heap
     build_descriptor_heap();
+    record_command_lists();
 }
 
 RenderStats RenderDXR::render(const glm::vec3 &pos,
@@ -375,64 +393,26 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
 
     update_view_parameters(pos, dir, up, fovy);
 
-    // TODO WILL: Pre-build this command list and save it
-    // Now render!
-    CHECK_ERR(cmd_allocator->Reset());
-    CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
-
-    // TODO: We'll need a second desc. heap for the sampler and bind both of them here
-    std::array<ID3D12DescriptorHeap *, 2> desc_heaps = {raygen_desc_heap.get(),
-                                                        raygen_sampler_heap.get()};
-    cmd_list->SetDescriptorHeaps(desc_heaps.size(), desc_heaps.data());
-    cmd_list->SetPipelineState1(rt_pipeline.get());
-
-    D3D12_DISPATCH_RAYS_DESC dispatch_rays = rt_pipeline.dispatch_rays(render_target.dims());
-    cmd_list->DispatchRays(&dispatch_rays);
-
-    // We want to just time the raytracing work
-    CHECK_ERR(cmd_list->Close());
-    std::array<ID3D12CommandList *, 1> cmd_lists = {cmd_list.Get()};
     auto start = high_resolution_clock::now();
-    cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+    ID3D12CommandList *render_cmds = render_cmd_list.Get();
+    cmd_queue->ExecuteCommandLists(1, &render_cmds);
 
-    // Wait for rendering to finish
-    sync_gpu();
+    // Signal specifically on the completion of the ray tracing work so we can time it separately
+    // from the image readback
+    const uint64_t render_signal_val = fence_value++;
+    CHECK_ERR(cmd_queue->Signal(fence.Get(), render_signal_val));
 
+    ID3D12CommandList *readback_cmds = readback_cmd_list.Get();
+    cmd_queue->ExecuteCommandLists(1, &readback_cmds);
+
+    if (fence->GetCompletedValue() < render_signal_val) {
+        CHECK_ERR(fence->SetEventOnCompletion(render_signal_val, fence_evt));
+        WaitForSingleObject(fence_evt, INFINITE);
+    }
     auto end = high_resolution_clock::now();
     stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
-    // Now copy the rendered image into our readback heap so we can give it back
-    // to our simple window to blit the image (TODO: Maybe in the future keep this on the GPU?
-    // would we be able to share with GL or need a separate DX window backend?)
-    CHECK_ERR(cmd_allocator->Reset());
-    CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
-    {
-        // Render target from UA -> Copy Source
-        auto b = barrier_transition(render_target, D3D12_RESOURCE_STATE_COPY_SOURCE);
-        cmd_list->ResourceBarrier(1, &b);
-#ifdef REPORT_RAY_STATS
-        b = barrier_transition(ray_stats, D3D12_RESOURCE_STATE_COPY_SOURCE);
-        cmd_list->ResourceBarrier(1, &b);
-#endif
-
-        render_target.readback(cmd_list.Get(), img_readback_buf);
-#ifdef REPORT_RAY_STATS
-        ray_stats.readback(cmd_list.Get(), ray_stats_readback_buf);
-#endif
-
-        // Transition the render target back to UA so we can write to it in the next frame
-        b = barrier_transition(render_target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        cmd_list->ResourceBarrier(1, &b);
-#ifdef REPORT_RAY_STATS
-        b = barrier_transition(ray_stats, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        cmd_list->ResourceBarrier(1, &b);
-#endif
-    }
-
-    // Run the copy and wait for it to finish
-    CHECK_ERR(cmd_list->Close());
-    cmd_lists[0] = cmd_list.Get();
-    cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+    // Wait for the image readback commands to complete as well
     sync_gpu();
 
     // Map the readback buf and copy out the rendered image
@@ -448,6 +428,8 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
                         render_target.dims().x * render_target.pixel_size());
         }
     }
+    img_readback_buf.unmap();
+
 #ifdef REPORT_RAY_STATS
     std::vector<uint16_t> ray_counts(ray_stats.dims().x * ray_stats.dims().y, 0);
     if (ray_stats.linear_row_pitch() == ray_stats.dims().x * ray_stats.pixel_size()) {
@@ -468,7 +450,6 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
 #endif
 
-    img_readback_buf.unmap();
 
     ++frame_id;
     return stats;
@@ -740,9 +721,53 @@ void RenderDXR::build_descriptor_heap()
     device->CreateSampler(&sampler_desc, raygen_sampler_heap.cpu_desc_handle());
 }
 
+void RenderDXR::record_command_lists()
+{
+    CHECK_ERR(render_cmd_allocator->Reset());
+    CHECK_ERR(render_cmd_list->Reset(render_cmd_allocator.Get(), nullptr));
+
+    // TODO: We'll need a second desc. heap for the sampler and bind both of them here
+    std::array<ID3D12DescriptorHeap *, 2> desc_heaps = {raygen_desc_heap.get(),
+                                                        raygen_sampler_heap.get()};
+    render_cmd_list->SetDescriptorHeaps(desc_heaps.size(), desc_heaps.data());
+    render_cmd_list->SetPipelineState1(rt_pipeline.get());
+
+    D3D12_DISPATCH_RAYS_DESC dispatch_rays = rt_pipeline.dispatch_rays(render_target.dims());
+    render_cmd_list->DispatchRays(&dispatch_rays);
+
+    CHECK_ERR(render_cmd_list->Close());
+
+    // Now copy the rendered image into our readback heap so we can give it back
+    // to our simple window to blit the image (TODO: Maybe in the future keep this on the GPU?
+    // would we be able to share with GL or need a separate DX window backend?)
+    CHECK_ERR(readback_cmd_list->Reset(render_cmd_allocator.Get(), nullptr));
+    {
+        // Render target from UA -> Copy Source
+        auto b = barrier_transition(render_target, D3D12_RESOURCE_STATE_COPY_SOURCE);
+        readback_cmd_list->ResourceBarrier(1, &b);
+#ifdef REPORT_RAY_STATS
+        b = barrier_transition(ray_stats, D3D12_RESOURCE_STATE_COPY_SOURCE);
+        readback_cmd_list->ResourceBarrier(1, &b);
+#endif
+
+        render_target.readback(readback_cmd_list.Get(), img_readback_buf);
+#ifdef REPORT_RAY_STATS
+        ray_stats.readback(readback_cmd_list.Get(), ray_stats_readback_buf);
+#endif
+
+        // Transition the render target back to UA so we can write to it in the next frame
+        b = barrier_transition(render_target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        readback_cmd_list->ResourceBarrier(1, &b);
+#ifdef REPORT_RAY_STATS
+        b = barrier_transition(ray_stats, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        readback_cmd_list->ResourceBarrier(1, &b);
+#endif
+    }
+    CHECK_ERR(readback_cmd_list->Close());
+}
+
 void RenderDXR::sync_gpu()
 {
-    // Sync with the fence to wait for the assets to upload
     const uint64_t signal_val = fence_value++;
     CHECK_ERR(cmd_queue->Signal(fence.Get(), signal_val));
 
@@ -750,5 +775,4 @@ void RenderDXR::sync_gpu()
         CHECK_ERR(fence->SetEventOnCompletion(signal_val, fence_evt));
         WaitForSingleObject(fence_evt, INFINITE);
     }
-    ++fence_value;
 }
