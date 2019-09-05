@@ -111,7 +111,7 @@ You can then pass `-ospray` to use the OSPRay backend.
 
 If you find ChameleonRT useful in your work, please cite it as:
 
-```
+```bibtex
 @misc{chameleonrt,
 	author = {Will Usher},
 	year = {2019},
