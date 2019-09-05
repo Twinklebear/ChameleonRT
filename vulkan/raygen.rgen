@@ -43,6 +43,10 @@ layout(binding = 4, set = 0, std430) buffer MaterialParamsBuffer {
     MaterialParams material_params[];
 };
 
+layout(binding = 5, set = 0, std430) buffer LightParamsBuffer {
+    QuadLight lights[];
+};
+
 #ifdef REPORT_RAY_STATS
 layout(binding = 6, set = 0, r16ui) uniform writeonly uimage2D ray_stats;
 #endif
@@ -51,6 +55,10 @@ layout(binding = 0, set = 5) uniform sampler2D textures[];
 
 layout(location = PRIMARY_RAY) rayPayloadNV RayPayload payload;
 layout(location = OCCLUSION_RAY) rayPayloadNV bool occlusion_hit;
+
+layout(shaderRecordNV) buffer SBT {
+    uint32_t num_lights;
+};
 
 void unpack_material(inout DisneyMaterial mat, uint id, vec2 uv_coords) {
 	MaterialParams p = material_params[nonuniformEXT(id)];
@@ -77,21 +85,9 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 {
 	vec3 illum = vec3(0.f);
 
-    // still advance RNG to match other backends until I put in the light sampling
-    pcg32_randomf(rng);
-    /*
-    // TODO: Send the light params over in another buffer
-	uint32_t light_id = pcg32_randomf(rng) * num_lights;
+	uint32_t light_id = uint32_t(pcg32_randomf(rng)) * num_lights;
 	light_id = min(light_id, num_lights - 1);
-	QuadLight light = lights[NonUniformResourceIndex(light_id)];
-    */
-    QuadLight light;
-    light.emission.xyz = vec3(5.f);
-    light.normal.xyz = normalize(vec3(0.5f, -0.8f, -0.5f));
-    light.position.xyz = -10.f * light.normal.xyz;
-    ortho_basis(light.v_x.xyz, light.v_y.xyz, light.normal.xyz);
-    light.v_x.w = 5.f;
-    light.v_y.w = 5.f;
+	QuadLight light = lights[nonuniformEXT(light_id)];
 
     const uint32_t occlusion_flags = gl_RayFlagsOpaqueNV
         | gl_RayFlagsTerminateOnFirstHitNV

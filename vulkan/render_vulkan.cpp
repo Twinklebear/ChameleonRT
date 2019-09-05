@@ -391,22 +391,17 @@ void RenderVulkan::set_scene(const Scene &scene_data)
     }
     scene->finalize();
 
-    auto upload_mat_params =
-        vkrt::Buffer::host(device,
-                           scene_data.materials.size() * sizeof(DisneyMaterial),
-                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    mat_params =
+        vkrt::Buffer::device(device,
+                             scene_data.materials.size() * sizeof(DisneyMaterial),
+                             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     {
+        auto upload_mat_params =
+            vkrt::Buffer::host(device, mat_params->size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
         void *map = upload_mat_params->map();
         std::memcpy(map, scene_data.materials.data(), upload_mat_params->size());
         upload_mat_params->unmap();
-    }
 
-    mat_params =
-        vkrt::Buffer::device(device,
-                             upload_mat_params->size(),
-                             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-    {
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -540,6 +535,40 @@ void RenderVulkan::set_scene(const Scene &scene_data)
         CHECK_VULKAN(vkCreateSampler(device.logical_device(), &sampler_info, nullptr, &sampler));
     }
 
+    light_params =
+        vkrt::Buffer::device(device,
+                             sizeof(QuadLight) * scene_data.lights.size(),
+                             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    {
+        auto upload_light_params =
+            vkrt::Buffer::host(device, light_params->size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+        void *map = upload_light_params->map();
+        std::memcpy(map, scene_data.lights.data(), upload_light_params->size());
+        upload_light_params->unmap();
+
+        VkCommandBufferBeginInfo begin_info = {};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+        VkBufferCopy copy_cmd = {};
+        copy_cmd.size = upload_light_params->size();
+        vkCmdCopyBuffer(
+            command_buffer, upload_light_params->handle(), light_params->handle(), 1, &copy_cmd);
+
+        CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+
+        VkSubmitInfo submit_info = {};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer;
+        CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+        vkQueueWaitIdle(device.graphics_queue());
+
+        vkResetCommandPool(
+            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+    }
+
     build_raytracing_pipeline();
     build_shader_descriptor_table();
     build_shader_binding_table();
@@ -612,6 +641,7 @@ void RenderVulkan::build_raytracing_pipeline()
             .add_binding(2, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .add_binding(3, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .add_binding(4, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+            .add_binding(5, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
 #ifdef REPORT_RAY_STATS
             .add_binding(6, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
 #endif
@@ -680,7 +710,7 @@ void RenderVulkan::build_shader_descriptor_table()
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 + uint32_t(4 * meshes.size())},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 + uint32_t(4 * meshes.size())},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                              std::max(uint32_t(textures.size()), uint32_t(1))}};
 
@@ -737,6 +767,7 @@ void RenderVulkan::build_shader_descriptor_table()
                        .write_storage_image(desc_set, 2, accum_buffer)
                        .write_ubo(desc_set, 3, view_param_buf)
                        .write_ssbo(desc_set, 4, mat_params)
+                       .write_ssbo(desc_set, 5, light_params)
 #ifdef REPORT_RAY_STATS
                        .write_storage_image(desc_set, 6, ray_stats)
 #endif
@@ -758,7 +789,7 @@ void RenderVulkan::build_shader_descriptor_table()
 void RenderVulkan::build_shader_binding_table()
 {
     vkrt::SBTBuilder sbt_builder(&rt_pipeline);
-    sbt_builder.set_raygen(vkrt::ShaderRecord("raygen", "raygen", 0))
+    sbt_builder.set_raygen(vkrt::ShaderRecord("raygen", "raygen", sizeof(uint32_t)))
         .add_miss(vkrt::ShaderRecord("miss", "miss", 0))
         .add_miss(vkrt::ShaderRecord("occlusion_miss", "occlusion_miss", 0));
 
@@ -773,6 +804,13 @@ void RenderVulkan::build_shader_binding_table()
     shader_table = sbt_builder.build(device);
 
     shader_table.map_sbt();
+
+    // Raygen shader gets the number of lights through the SBT
+    {
+        uint32_t *params = reinterpret_cast<uint32_t *>(shader_table.sbt_params("raygen"));
+        *params = light_params->size() / sizeof(QuadLight);
+    }
+
     uint32_t normal_buf_idx = 0;
     uint32_t uv_buf_idx = 0;
     for (size_t i = 0; i < meshes.size(); ++i) {

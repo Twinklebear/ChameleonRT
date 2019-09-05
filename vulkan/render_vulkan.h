@@ -10,13 +10,13 @@
 struct RenderVulkan : RenderBackend {
     vkrt::Device device;
 
-    std::shared_ptr<vkrt::Buffer> view_param_buf, img_readback_buf, mat_params;
+    std::shared_ptr<vkrt::Buffer> view_param_buf, img_readback_buf, mat_params, light_params;
 
     std::shared_ptr<vkrt::Texture2D> render_target, accum_buffer;
 
 #ifdef REPORT_RAY_STATS
     std::shared_ptr<vkrt::Texture2D> ray_stats;
-	std::shared_ptr<vkrt::Buffer> ray_stats_readback_buf;
+    std::shared_ptr<vkrt::Buffer> ray_stats_readback_buf;
 #endif
 
     std::vector<std::unique_ptr<vkrt::TriangleMesh>> meshes;
