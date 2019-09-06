@@ -13,7 +13,13 @@ struct Scene {
     std::vector<Image> textures;
     std::vector<QuadLight> lights;
 
-    static Scene load_obj(const std::string &file);
+    Scene(const std::string &fname);
 
     size_t total_tris() const;
+
+private:
+    void load_obj(const std::string &file);
+
+    void load_gltf(const std::string &file);
 };
+

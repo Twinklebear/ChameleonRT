@@ -227,7 +227,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
     size_t total_tris = 0;
     std::string num_tris;
     {
-        Scene scene = Scene::load_obj(scene_file);
+        Scene scene(scene_file);
         std::cout << "Scene '" << scene_file << "' loaded:\n"
                   << "# Triangles: " << scene.total_tris() << "\n"
                   << "# Meshes: " << scene.meshes.size() << "\n"

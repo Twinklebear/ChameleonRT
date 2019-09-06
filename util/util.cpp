@@ -7,10 +7,16 @@
 #endif
 #include "util.h"
 #include <glm/ext.hpp>
+
+#define TINYGLTF_IMPLEMENTATION
+#include "tiny_gltf.h"
+
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
@@ -54,6 +60,15 @@ void ortho_basis(glm::vec3 &v_x, glm::vec3 &v_y, const glm::vec3 &n)
 void canonicalize_path(std::string &path)
 {
     std::replace(path.begin(), path.end(), '\\', '/');
+}
+
+std::string get_file_extension(const std::string &fname)
+{
+    const size_t fnd = fname.find_last_of('.');
+    if (fnd == std::string::npos) {
+        return "";
+    }
+    return fname.substr(fnd + 1);
 }
 
 std::string get_cpu_brand()

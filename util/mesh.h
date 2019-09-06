@@ -10,7 +10,7 @@ struct Mesh {
     // TODO Later: a concept of instancing each mesh, for OBJ it's trivially
     // a single instance of each mesh with an identity transform. For PBRT/GLTF
     // it may be more complicated
-    uint32_t material_id;
+    uint32_t material_id = -1;
 
     uint32_t num_tris() const;
 };
