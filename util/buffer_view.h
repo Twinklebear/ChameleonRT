@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tiny_gltf.h"
+#include "gltf_types.h"
 
 // GLTF Buffer view/accessor utilities
 
