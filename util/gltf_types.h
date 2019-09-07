@@ -63,9 +63,7 @@ enum DTYPE {
 
 std::string print_primitive_mode(int mode);
 
-std::string print_gltf_data_type(int ty);
-
-std::string print_gltf_component_type(int ty);
+std::string print_data_type(DTYPE type);
 
 size_t gltf_base_stride(int type, int component_type);
 

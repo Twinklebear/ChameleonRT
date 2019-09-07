@@ -207,66 +207,45 @@ void Scene::load_gltf(const std::string &fname)
         std::cout << "Scene: " << scene.name << "\n";
     }
 
-    // Load primitive 0 of mesh 0 from the scene
-    auto &prim = model.meshes[0].primitives[0];
-    if (prim.mode != TINYGLTF_MODE_TRIANGLES) {
-        std::cout << "unsupported primitive mode, file must contain only triangles\n";
-        throw std::runtime_error("unsupported primitive mode");
-    }
-
-    // TODO: For now I know it's a uint16 scalar type, but what would be convenient is a "converting
-    // accessor" which auto-converts the underlying type to the one I want
-    Accessor<uint16_t> index_accessor(model.accessors[prim.indices], model);
-
-    Accessor<glm::vec3> pos_accessor(model.accessors[prim.attributes["POSITION"]], model);
-
-    Mesh mesh;
-    for (size_t i = 0; i < pos_accessor.count; ++i) {
-        mesh.vertices.push_back(pos_accessor[i]);
-    }
-
-    for (size_t i = 0; i < index_accessor.count / 3; ++i) {
-        mesh.indices.push_back(glm::uvec3(
-            index_accessor[i * 3], index_accessor[i * 3 + 1], index_accessor[i * 3 + 2]));
-    }
-
-    meshes.push_back(mesh);
-
-    std::cout << "# of meshes: " << model.meshes.size() << "\n";
-    for (const auto &m : model.meshes) {
-        std::cout << "Mesh: " << m.name << ", # of prims: " << m.primitives.size() << "\n";
-        for (const auto &p : m.primitives) {
-            std::cout << "Primitive material " << p.material << "\n"
-                      << "indicies: " << p.indices << "\n"
-                      << "mode: " << p.mode << "\n"
-                      << "# of attribs: " << p.attributes.size() << "\n";
-
-            for (const auto &a : p.attributes) {
-                std::cout << "attrib: " << a.first << ": " << a.second << "\n";
+    // Load each prim of each mesh as its own mesh for testing
+    for (auto &m : model.meshes) {
+        for (auto &p : m.primitives) {
+            if (p.mode != TINYGLTF_MODE_TRIANGLES) {
+                std::cout << "Unsupported primitive mode! File must contain only triangles\n";
+                throw std::runtime_error(
+                    "Unsupported primitive mode! Only triangles are supported");
             }
+
+            Mesh mesh;
+            // Note: assumes there is a POSITION (is this required by the gltf spec?)
+            Accessor<glm::vec3> pos_accessor(model.accessors[p.attributes["POSITION"]], model);
+            for (size_t i = 0; i < pos_accessor.size(); ++i) {
+                mesh.vertices.push_back(pos_accessor[i]);
+            }
+
+            if (model.accessors[p.indices].componentType ==
+                TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                Accessor<uint16_t> index_accessor(model.accessors[p.indices], model);
+                for (size_t i = 0; i < index_accessor.size() / 3; ++i) {
+                    mesh.indices.push_back(glm::uvec3(index_accessor[i * 3],
+                                                      index_accessor[i * 3 + 1],
+                                                      index_accessor[i * 3 + 2]));
+                }
+            } else if (model.accessors[p.indices].componentType ==
+                       TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+                Accessor<uint32_t> index_accessor(model.accessors[p.indices], model);
+                for (size_t i = 0; i < index_accessor.size() / 3; ++i) {
+                    mesh.indices.push_back(glm::uvec3(index_accessor[i * 3],
+                                                      index_accessor[i * 3 + 1],
+                                                      index_accessor[i * 3 + 2]));
+                }
+            } else {
+                std::cout << "Unsupported index type\n";
+                throw std::runtime_error("Unsupported index component type");
+            }
+
+            meshes.push_back(mesh);
         }
-    }
-
-    for (const auto &a : model.accessors) {
-        std::cout << "Accessor '" << a.name << "'\n"
-                  << "bufferView: " << a.bufferView << "\n"
-                  << "byteOffset: " << a.byteOffset << "\n"
-                  << "comp type: " << print_gltf_component_type(a.componentType) << "\n"
-                  << "count: " << a.count << "\n"
-                  << "type: " << print_gltf_data_type(a.type) << "\n"
-                  << "sparse? " << (a.sparse.isSparse ? "true" : "false") << "\n";
-    }
-
-    for (const auto &b : model.bufferViews) {
-        std::cout << "bufferView '" << b.name << "'\n"
-                  << "byteOffset: " << b.byteOffset << "\n"
-                  << "byteLength: " << b.byteLength << "\n"
-                  << "byteStride: " << b.byteStride << "\n";
-    }
-
-    for (const auto &b : model.buffers) {
-        std::cout << "Buffer: '" << b.name << "'\n"
-                  << "byte length: " << b.data.size() << "\n";
     }
 
     // TODO: Load materials if defined in the file
@@ -278,8 +257,9 @@ void Scene::load_gltf(const std::string &fname)
         }
     }
 
-    // OBJ will not have any lights in it, so just generate one
-    std::cout << "Generating light for OBJ scene\n";
+    // Does GLTF have lights in the file? If one is missing we should generate one,
+    // otherwise we can load them
+    std::cout << "Generating light for GLTF scene\n";
     QuadLight light;
     light.emission = glm::vec4(5.f);
     light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);

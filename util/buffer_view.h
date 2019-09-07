@@ -1,7 +1,7 @@
 #pragma once
 
-#include "tiny_gltf.h"
 #include "gltf_types.h"
+#include "tiny_gltf.h"
 
 // GLTF Buffer view/accessor utilities
 
@@ -19,15 +19,18 @@ struct BufferView {
 };
 
 template <typename T>
-struct Accessor {
+class Accessor {
     BufferView view;
     size_t count = 0;
 
+public:
     Accessor(const tinygltf::Accessor &accessor, const tinygltf::Model &model);
 
     Accessor() = default;
 
     const T &operator[](const size_t i) const;
+
+    const size_t size() const;
 };
 
 template <typename T>
@@ -47,3 +50,8 @@ const T &Accessor<T>::operator[](const size_t i) const
     return *reinterpret_cast<const T *>(view[i]);
 }
 
+template <typename T>
+const size_t Accessor<T>::size() const
+{
+    return count;
+}
