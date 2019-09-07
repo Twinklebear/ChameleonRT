@@ -252,7 +252,7 @@ void Miss(inout HitInfo payload : SV_RayPayload) {
 }
 
 [shader("miss")]
-void AOMiss(inout OcclusionHitInfo occlusion : SV_RayPayload) {
+void ShadowMiss(inout OcclusionHitInfo occlusion : SV_RayPayload) {
     occlusion.hit = 0;
 }
 

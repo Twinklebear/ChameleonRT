@@ -458,8 +458,9 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
 
 void RenderDXR::build_raytracing_pipeline()
 {
-    dxr::ShaderLibrary shader_library(
-        render_dxr_dxil, sizeof(render_dxr_dxil), {L"RayGen", L"Miss", L"ClosestHit", L"AOMiss"});
+    dxr::ShaderLibrary shader_library(render_dxr_dxil,
+                                      sizeof(render_dxr_dxil),
+                                      {L"RayGen", L"Miss", L"ClosestHit", L"ShadowMiss"});
 
     // Create the root signature for our ray gen shader
     dxr::RootSignature raygen_root_sig = dxr::RootSignatureBuilder::local()
@@ -481,7 +482,7 @@ void RenderDXR::build_raytracing_pipeline()
         dxr::RTPipelineBuilder()
             .add_shader_library(shader_library)
             .set_ray_gen(L"RayGen")
-            .add_miss_shaders({L"Miss", L"AOMiss"})
+            .add_miss_shaders({L"Miss", L"ShadowMiss"})
             .set_shader_root_sig({L"RayGen"}, raygen_root_sig)
             .configure_shader_payload(
                 shader_library.export_names(), 8 * sizeof(float), 2 * sizeof(float))
