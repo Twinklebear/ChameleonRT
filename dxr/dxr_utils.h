@@ -255,7 +255,7 @@ class RTPipeline {
     std::vector<std::wstring> hit_groups;
     std::vector<RootSignatureAssociation> signature_associations;
 
-    size_t shader_record_size = 0, miss_table_offset = 0, hit_group_table_offset = 0;
+    D3D12_DISPATCH_RAYS_DESC dispatch_desc = {0};
     Buffer cpu_shader_table, shader_table;
     std::unordered_map<std::wstring, size_t> record_offsets;
     uint8_t *sbt_mapping = nullptr;
@@ -295,7 +295,7 @@ public:
     ID3D12StateObject *get();
 
 private:
-    size_t compute_shader_record_size() const;
+    size_t compute_shader_record_size(const std::wstring &shader) const;
 };
 
 class TriangleMesh {

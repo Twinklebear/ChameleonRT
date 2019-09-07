@@ -693,48 +693,76 @@ RTPipeline::RTPipeline(D3D12_STATE_OBJECT_DESC &desc,
       ray_gen(ray_gen),
       miss_shaders(miss_shaders),
       hit_groups(hit_groups),
-      signature_associations(signature_associations),
-      shader_record_size(compute_shader_record_size())
+      signature_associations(signature_associations)
 {
     CHECK_ERR(device->CreateStateObject(&desc, IID_PPV_ARGS(&state)));
     CHECK_ERR(state->QueryInterface(&pipeline_props));
 
-    // TODO: Make sure miss/hit groups are aligned properly, allow separate strides for them
-    const size_t sbt_size = shader_record_size * (1 + miss_shaders.size() + hit_groups.size());
+    // Compute the offsets/strides for each set of shaders in the SBT
+    const size_t raygen_record_offset = 0;
+    dispatch_desc.RayGenerationShaderRecord.SizeInBytes = compute_shader_record_size(ray_gen);
+
+    const size_t miss_record_offset = align_to(dispatch_desc.RayGenerationShaderRecord.SizeInBytes,
+                                               D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT);
+    dispatch_desc.MissShaderTable.StrideInBytes = 0;
+    for (const auto &m : miss_shaders) {
+        dispatch_desc.MissShaderTable.StrideInBytes =
+            std::max(dispatch_desc.MissShaderTable.StrideInBytes, compute_shader_record_size(m));
+    }
+    dispatch_desc.MissShaderTable.SizeInBytes =
+        dispatch_desc.MissShaderTable.StrideInBytes * miss_shaders.size();
+
+    const size_t hitgroup_record_offset =
+        align_to(miss_record_offset + dispatch_desc.MissShaderTable.SizeInBytes,
+                 D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT);
+    dispatch_desc.HitGroupTable.StrideInBytes = 0;
+    for (const auto &hg : hit_groups) {
+        dispatch_desc.HitGroupTable.StrideInBytes =
+            std::max(dispatch_desc.HitGroupTable.StrideInBytes, compute_shader_record_size(hg));
+    }
+    dispatch_desc.HitGroupTable.SizeInBytes =
+        dispatch_desc.HitGroupTable.StrideInBytes * hit_groups.size();
+
+    const size_t sbt_size = hitgroup_record_offset + dispatch_desc.HitGroupTable.SizeInBytes;
 
     cpu_shader_table = Buffer::upload(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
     shader_table = Buffer::default(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
 
     // Build the list of offsets into the shader table for each shader record
     // and write the identifiers into the table. The actual arguments are left to the user
-
     map_shader_table();
-    size_t offset = 0;
-    record_offsets[ray_gen] = offset;
+
+    // Write the ray gen shader
+    dispatch_desc.RayGenerationShaderRecord.StartAddress = shader_table->GetGPUVirtualAddress();
+    record_offsets[ray_gen] = 0;
     std::memcpy(sbt_mapping,
                 pipeline_props->GetShaderIdentifier(ray_gen.c_str()),
                 D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 
-    offset += shader_record_size;
-    miss_table_offset = offset;
-
+    // Write the miss shaders
+    dispatch_desc.MissShaderTable.StartAddress =
+        shader_table->GetGPUVirtualAddress() + miss_record_offset;
+    size_t offset = miss_record_offset;
     for (const auto &m : miss_shaders) {
         record_offsets[m] = offset;
         std::memcpy(sbt_mapping + offset,
                     pipeline_props->GetShaderIdentifier(m.c_str()),
                     D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 
-        offset += shader_record_size;
+        offset += dispatch_desc.MissShaderTable.StrideInBytes;
     }
 
-    hit_group_table_offset = offset;
+    // Write the hit group shaders
+    dispatch_desc.HitGroupTable.StartAddress =
+        shader_table->GetGPUVirtualAddress() + hitgroup_record_offset;
+    offset = hitgroup_record_offset;
     for (const auto &hg : hit_groups) {
         record_offsets[hg] = offset;
         std::memcpy(sbt_mapping + offset,
                     pipeline_props->GetShaderIdentifier(hg.c_str()),
                     D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
 
-        offset += shader_record_size;
+        offset += dispatch_desc.HitGroupTable.StrideInBytes;
     }
     unmap_shader_table();
 }
@@ -797,20 +825,7 @@ const RootSignature *RTPipeline::shader_signature(const std::wstring &shader) co
 
 D3D12_DISPATCH_RAYS_DESC RTPipeline::dispatch_rays(const glm::uvec2 &img_dims)
 {
-    // Tell the dispatch rays command how we built our shader binding table
-    D3D12_DISPATCH_RAYS_DESC dispatch_rays = {0};
-    dispatch_rays.RayGenerationShaderRecord.StartAddress = shader_table->GetGPUVirtualAddress();
-    dispatch_rays.RayGenerationShaderRecord.SizeInBytes = shader_record_size;
-
-    dispatch_rays.MissShaderTable.StartAddress =
-        shader_table->GetGPUVirtualAddress() + miss_table_offset;
-    dispatch_rays.MissShaderTable.SizeInBytes = shader_record_size;
-    dispatch_rays.MissShaderTable.StrideInBytes = shader_record_size;
-
-    dispatch_rays.HitGroupTable.StartAddress =
-        shader_table->GetGPUVirtualAddress() + hit_group_table_offset;
-    dispatch_rays.HitGroupTable.SizeInBytes = shader_record_size;
-    dispatch_rays.HitGroupTable.StrideInBytes = shader_record_size;
+    D3D12_DISPATCH_RAYS_DESC dispatch_rays = dispatch_desc;
 
     dispatch_rays.Width = img_dims.x;
     dispatch_rays.Height = img_dims.y;
@@ -838,39 +853,15 @@ ID3D12StateObject *RTPipeline::get()
     return state.Get();
 }
 
-size_t RTPipeline::compute_shader_record_size() const
+size_t RTPipeline::compute_shader_record_size(const std::wstring &shader) const
 {
-    size_t record_size = 0;
-
-    // TODO: In the future it might be good to determine if it's best
-    // to split up the raygen and miss shader records into other buffers,
-    // if the hit group ones are large and would force a lot of padding.
-    // I doubt this would really be the case though.
-
-    // A shader record is the identifier followed by the params for its local root signature
-    // Since we store all shader records in one table the record size should be as big
-    // as the largest shader record
-    auto add_shader_record = [&](const std::wstring &shader) {
-        size_t shader_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-        // Size of the shader's local root sig, if any
-        auto *sig = shader_signature(shader);
-        if (sig) {
-            shader_size += sig->total_size();
-        }
-        shader_size = align_to(shader_size, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
-        record_size = std::max(shader_size, record_size);
-    };
-
-    add_shader_record(ray_gen);
-
-    for (const auto &m : miss_shaders) {
-        add_shader_record(m);
+    size_t shader_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+    // Size of the shader's local root sig, if any
+    auto *sig = shader_signature(shader);
+    if (sig) {
+        shader_size += sig->total_size();
     }
-
-    for (const auto &hg : hit_groups) {
-        add_shader_record(hg);
-    }
-    return record_size;
+    return align_to(shader_size, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 }
 
 TriangleMesh::TriangleMesh(Buffer vertex_buf,
