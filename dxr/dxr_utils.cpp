@@ -429,29 +429,15 @@ RTPipelineBuilder &RTPipelineBuilder::set_ray_gen(const std::wstring &rg)
     return *this;
 }
 
-RTPipelineBuilder &RTPipelineBuilder::set_miss_shader(const std::wstring &miss_fn)
+RTPipelineBuilder &RTPipelineBuilder::add_miss_shader(const std::wstring &miss_fn)
 {
-    assert(miss_shaders.empty());
     miss_shaders.push_back(miss_fn);
-    return *this;
-}
-
-RTPipelineBuilder &RTPipelineBuilder::add_miss_shaders(const std::vector<std::wstring> &miss_fn)
-{
-    assert(miss_shaders.empty());
-    miss_shaders = miss_fn;
     return *this;
 }
 
 RTPipelineBuilder &RTPipelineBuilder::add_hit_group(const HitGroup &hg)
 {
     hit_groups.push_back({hg});
-    return *this;
-}
-
-RTPipelineBuilder &RTPipelineBuilder::add_hit_groups(const std::vector<HitGroup> &hg)
-{
-    hit_groups.push_back(hg);
     return *this;
 }
 
@@ -517,31 +503,24 @@ RTPipeline RTPipelineBuilder::create(ID3D12Device5 *device)
     // Names for the RTPipeline to setup the shader table with
     std::vector<std::wstring> hit_group_names;
     if (!hit_groups.empty()) {
-        // TODO: Rework hitgroup setup to not take a 2d array of hit groups
-        size_t total_hit_groups = std::accumulate(
-            hit_groups.begin(),
-            hit_groups.end(),
-            0,
-            [](const size_t &c, const std::vector<HitGroup> &hg) { return c + hg.size(); });
-        hg_descs.resize(total_hit_groups);
-        size_t current_hg = 0;
-        for (const auto &hg : hit_groups) {
-            for (const auto &g : hg) {
-                hit_group_names.push_back(g.name);
+        hg_descs.resize(hit_groups.size());
+        for (size_t i = 0; i < hit_groups.size(); ++i) {
+            const auto &hg = hit_groups[i];
 
-                D3D12_HIT_GROUP_DESC &desc = hg_descs[current_hg++];
-                desc.HitGroupExport = g.name.c_str();
-                desc.Type = g.type;
-                desc.ClosestHitShaderImport = g.closest_hit.c_str();
-                desc.IntersectionShaderImport =
-                    g.has_intersection() ? g.intersection.c_str() : nullptr;
-                desc.AnyHitShaderImport = g.has_any_hit() ? g.any_hit.c_str() : nullptr;
+            hit_group_names.push_back(hg.name);
 
-                D3D12_STATE_SUBOBJECT o = {0};
-                o.Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
-                o.pDesc = &desc;
-                subobjects[current_obj++] = o;
-            }
+            D3D12_HIT_GROUP_DESC &desc = hg_descs[i];
+            desc.HitGroupExport = hg.name.c_str();
+            desc.Type = hg.type;
+            desc.ClosestHitShaderImport = hg.closest_hit.c_str();
+            desc.IntersectionShaderImport =
+                hg.has_intersection() ? hg.intersection.c_str() : nullptr;
+            desc.AnyHitShaderImport = hg.has_any_hit() ? hg.any_hit.c_str() : nullptr;
+
+            D3D12_STATE_SUBOBJECT o = {0};
+            o.Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
+            o.pDesc = &desc;
+            subobjects[current_obj++] = o;
         }
     }
 
@@ -651,9 +630,7 @@ size_t RTPipelineBuilder::compute_num_subobjects(size_t &num_export_associations
     size_t num_subobjs = shader_libs.size();
 
     // Each hit group takes one subobject
-    for (const auto &hg : hit_groups) {
-        num_subobjs += hg.size();
-    }
+    num_subobjs += hit_groups.size();
 
     // Each shader payload config takes two subobjects:
     // One to declare the config, and another to associate it with the functions

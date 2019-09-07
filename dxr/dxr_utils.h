@@ -205,7 +205,7 @@ class RTPipelineBuilder {
     std::vector<ShaderLibrary> shader_libs;
     std::wstring ray_gen;
     std::vector<std::wstring> miss_shaders;
-    std::vector<std::vector<HitGroup>> hit_groups;
+    std::vector<HitGroup> hit_groups;
     std::vector<ShaderPayloadConfig> payload_configs;
     std::vector<RootSignatureAssociation> signature_associations;
     RootSignature global_sig;
@@ -216,15 +216,11 @@ public:
 
     RTPipelineBuilder &set_ray_gen(const std::wstring &ray_gen);
 
-    // Set the miss shader if you only have one ray type
-    RTPipelineBuilder &set_miss_shader(const std::wstring &miss_fn);
-    // Set the miss shaders for each ray type
-    RTPipelineBuilder &add_miss_shaders(const std::vector<std::wstring> &miss_fn);
+	// Add a miss shader to the pipeline
+    RTPipelineBuilder &add_miss_shader(const std::wstring &miss_fn);
 
-    // Set a single hit-group if there's only one ray type
+    // Add a hitgroup to the pipeline
     RTPipelineBuilder &add_hit_group(const HitGroup &hg);
-    // Specify the hit-group for each ray type, and/or each instance
-    RTPipelineBuilder &add_hit_groups(const std::vector<HitGroup> &hg);
 
     RTPipelineBuilder &configure_shader_payload(const std::vector<std::wstring> &functions,
                                                 uint32_t max_payload_size,

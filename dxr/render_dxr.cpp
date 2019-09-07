@@ -482,7 +482,8 @@ void RenderDXR::build_raytracing_pipeline()
         dxr::RTPipelineBuilder()
             .add_shader_library(shader_library)
             .set_ray_gen(L"RayGen")
-            .add_miss_shaders({L"Miss", L"ShadowMiss"})
+            .add_miss_shader(L"Miss")
+            .add_miss_shader(L"ShadowMiss")
             .set_shader_root_sig({L"RayGen"}, raygen_root_sig)
             .configure_shader_payload(
                 shader_library.export_names(), 8 * sizeof(float), 2 * sizeof(float))
@@ -496,7 +497,7 @@ void RenderDXR::build_raytracing_pipeline()
         const std::wstring hg_name = L"HitGroup_inst" + std::to_wstring(i);
         hg_names.push_back(hg_name);
 
-        rt_pipeline_builder.add_hit_groups(
+        rt_pipeline_builder.add_hit_group(
             {dxr::HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit")});
     }
     rt_pipeline_builder.set_shader_root_sig(hg_names, hitgroup_root_sig);
