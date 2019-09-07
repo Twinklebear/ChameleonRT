@@ -263,7 +263,7 @@ void RenderDXR::set_scene(const Scene &scene)
             buf[i].InstanceID = scene.meshes[i].material_id;
             // Note: we set the num ray type stride for the hit groups here, I think the
             // other multiplier is for doing some sort of per-geometry shaders
-            buf[i].InstanceContributionToHitGroupIndex = i * NUM_RAY_TYPES;
+            buf[i].InstanceContributionToHitGroupIndex = i;
             buf[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
             buf[i].AccelerationStructure = meshes[i]->GetGPUVirtualAddress();
             buf[i].InstanceMask = 0xff;
@@ -442,6 +442,8 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
                         ray_stats.dims().x * ray_stats.pixel_size());
         }
     }
+    ray_stats_readback_buf.unmap();
+
     const uint64_t total_rays =
         std::accumulate(ray_counts.begin(),
                         ray_counts.end(),
@@ -450,7 +452,6 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
 #endif
 
-
     ++frame_id;
     return stats;
 }
@@ -458,9 +459,7 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
 void RenderDXR::build_raytracing_pipeline()
 {
     dxr::ShaderLibrary shader_library(
-        render_dxr_dxil,
-        sizeof(render_dxr_dxil),
-        {L"RayGen", L"Miss", L"ClosestHit", L"OcclusionHit", L"AOMiss"});
+        render_dxr_dxil, sizeof(render_dxr_dxil), {L"RayGen", L"Miss", L"ClosestHit", L"AOMiss"});
 
     // Create the root signature for our ray gen shader
     dxr::RootSignature raygen_root_sig = dxr::RootSignatureBuilder::local()
@@ -495,11 +494,9 @@ void RenderDXR::build_raytracing_pipeline()
     for (size_t i = 0; i < meshes.size(); ++i) {
         const std::wstring hg_name = L"HitGroup_inst" + std::to_wstring(i);
         hg_names.push_back(hg_name);
-        const std::wstring og_name = L"OcclusionGroup_inst" + std::to_wstring(i);
 
         rt_pipeline_builder.add_hit_groups(
-            {dxr::HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit"),
-             dxr::HitGroup(og_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"OcclusionHit")});
+            {dxr::HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit")});
     }
     rt_pipeline_builder.set_shader_root_sig(hg_names, hitgroup_root_sig);
 

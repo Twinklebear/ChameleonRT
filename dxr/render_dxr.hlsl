@@ -113,7 +113,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
         shadow_hit.hit = 1;
         shadow_ray.Direction = light_dir;
         shadow_ray.TMax = light_dist;
-        TraceRay(scene, occlusion_flags, 0xff, OCCLUSION_RAY, 0, OCCLUSION_RAY, shadow_ray, shadow_hit);
+        TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 0, OCCLUSION_RAY, shadow_ray, shadow_hit);
 #ifdef REPORT_RAY_STATS
         ++ray_count;
 #endif
@@ -141,7 +141,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
                 shadow_hit.hit = 1;
                 shadow_ray.Direction = w_i;
                 shadow_ray.TMax = light_dist;
-                TraceRay(scene, occlusion_flags, 0xff, OCCLUSION_RAY, 0, OCCLUSION_RAY, shadow_ray, shadow_hit);
+                TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 0, OCCLUSION_RAY, shadow_ray, shadow_hit);
 #ifdef REPORT_RAY_STATS
                 ++ray_count;
 #endif
@@ -303,7 +303,3 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
     payload.normal = float4(normalize(mul(inv_transp, n)), InstanceID());
 }
 
-[shader("closesthit")]
-void OcclusionHit(inout OcclusionHitInfo occlusion, Attributes attrib) {
-    occlusion.hit = 1;
-}

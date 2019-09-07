@@ -487,24 +487,6 @@ RTPipeline RTPipelineBuilder::create(ID3D12Device5 *device)
         throw std::runtime_error("No ray generation shader set!");
     }
 
-    size_t num_ray_types = 0;
-    if (!hit_groups.empty()) {
-        num_ray_types = hit_groups[0].size();
-        for (const auto &hg : hit_groups) {
-            if (num_ray_types != hg.size()) {
-                throw std::runtime_error("HitGroup does not have shaders for all ray types");
-            }
-        }
-    }
-
-    if (!miss_shaders.empty() && miss_shaders.size() != num_ray_types) {
-        throw std::runtime_error("Miss Shaders are not specified for each ray type");
-    }
-
-    if (num_ray_types >= 256) {
-        throw std::runtime_error("Too many ray types: Max is 255");
-    }
-
     size_t num_association_subobjs = 0;
     size_t num_associated_fcns = 0;
     const size_t total_subobjs =
@@ -535,7 +517,13 @@ RTPipeline RTPipelineBuilder::create(ID3D12Device5 *device)
     // Names for the RTPipeline to setup the shader table with
     std::vector<std::wstring> hit_group_names;
     if (!hit_groups.empty()) {
-        hg_descs.resize(hit_groups.size() * num_ray_types);
+        // TODO: Rework hitgroup setup to not take a 2d array of hit groups
+        size_t total_hit_groups = std::accumulate(
+            hit_groups.begin(),
+            hit_groups.end(),
+            0,
+            [](const size_t &c, const std::vector<HitGroup> &hg) { return c + hg.size(); });
+        hg_descs.resize(total_hit_groups);
         size_t current_hg = 0;
         for (const auto &hg : hit_groups) {
             for (const auto &g : hg) {
@@ -711,6 +699,7 @@ RTPipeline::RTPipeline(D3D12_STATE_OBJECT_DESC &desc,
     CHECK_ERR(device->CreateStateObject(&desc, IID_PPV_ARGS(&state)));
     CHECK_ERR(state->QueryInterface(&pipeline_props));
 
+    // TODO: Make sure miss/hit groups are aligned properly, allow separate strides for them
     const size_t sbt_size = shader_record_size * (1 + miss_shaders.size() + hit_groups.size());
 
     cpu_shader_table = Buffer::upload(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
