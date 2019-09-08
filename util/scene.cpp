@@ -154,7 +154,7 @@ void Scene::load_obj(const std::string &file)
             canonicalize_path(path);
             if (texture_ids.find(m.diffuse_texname) == texture_ids.end()) {
                 texture_ids[m.diffuse_texname] = textures.size();
-                textures.emplace_back(obj_base_dir + "/" + path, m.diffuse_texname);
+                textures.emplace_back(obj_base_dir + "/" + path, m.diffuse_texname, SRGB);
             }
             d.color_tex_id = texture_ids[m.diffuse_texname];
         }
@@ -223,11 +223,12 @@ void Scene::load_gltf(const std::string &fname)
         std::cout << "Scene: " << scene.name << "\n";
     }
 
-    // Load each prim of each mesh as its own mesh for testing
+    // Load the meshes
     for (auto &m : model.meshes) {
         Mesh mesh;
         for (auto &p : m.primitives) {
             Geometry geom;
+            geom.material_id = p.material;
 
             if (p.mode != TINYGLTF_MODE_TRIANGLES) {
                 std::cout << "Unsupported primitive mode! File must contain only triangles\n";
@@ -239,6 +240,16 @@ void Scene::load_gltf(const std::string &fname)
             Accessor<glm::vec3> pos_accessor(model.accessors[p.attributes["POSITION"]], model);
             for (size_t i = 0; i < pos_accessor.size(); ++i) {
                 geom.vertices.push_back(pos_accessor[i]);
+            }
+
+            // Note: GLTF can have multiple texture coordinates used by different textures (owch)
+            // I don't plan to support this
+            auto fnd = p.attributes.find("TEXCOORD_0");
+            if (fnd != p.attributes.end()) {
+                Accessor<glm::vec2> uv_accessor(model.accessors[fnd->second], model);
+                for (size_t i = 0; i < uv_accessor.size(); ++i) {
+                    geom.uvs.push_back(uv_accessor[i]);
+                }
             }
 
             if (model.accessors[p.indices].componentType ==
@@ -261,10 +272,60 @@ void Scene::load_gltf(const std::string &fname)
                 std::cout << "Unsupported index type\n";
                 throw std::runtime_error("Unsupported index component type");
             }
-
             mesh.geometries.push_back(geom);
         }
         meshes.push_back(mesh);
+    }
+
+    // Load images
+    for (const auto &img : model.images) {
+        std::cout << "Image: " << img.name << " (" << img.width << "x" << img.height << "):\n"
+                  << "components: " << img.component << ", bits: " << img.bits << ", pixel type: "
+                  << print_data_type(gltf_type_to_dtype(TINYGLTF_TYPE_SCALAR, img.pixel_type))
+                  << " img vec size: " << img.image.size() << "\n";
+        if (img.component != 4) {
+            std::cout << "WILL: Check non-4 component image support\n";
+        }
+        if (img.pixel_type != TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+            std::cout << "Non-uchar images are not supported\n";
+            throw std::runtime_error("Unsupported image pixel type");
+        }
+
+        Image texture;
+        texture.name = img.name;
+        texture.width = img.width;
+        texture.height = img.height;
+        texture.channels = img.component;
+        texture.img = img.image;
+        // Assume linear unless we find it used as a color texture
+        texture.color_space = LINEAR;
+        textures.push_back(texture);
+    }
+
+    // Load materials
+    for (const auto &m : model.materials) {
+        DisneyMaterial mat;
+        mat.base_color.x = m.pbrMetallicRoughness.baseColorFactor[0];
+        mat.base_color.y = m.pbrMetallicRoughness.baseColorFactor[1];
+        mat.base_color.z = m.pbrMetallicRoughness.baseColorFactor[2];
+
+        mat.metallic = m.pbrMetallicRoughness.metallicFactor;
+
+        mat.roughness = m.pbrMetallicRoughness.roughnessFactor;
+
+        if (m.pbrMetallicRoughness.baseColorTexture.index != -1) {
+            mat.color_tex_id = model.textures[m.pbrMetallicRoughness.baseColorTexture.index].source;
+            // If the texture is used as a color texture we know it must be srgb space
+            textures[mat.color_tex_id].color_space = SRGB;
+        }
+
+        std::cout << "mat: " << m.name << "\n"
+                  << "base color: " << glm::to_string(mat.base_color) << "\n"
+                  << "metallic: " << mat.metallic << "\n"
+                  << "roughness: " << mat.roughness << "\n"
+                  << "color texture: " << mat.color_tex_id << "\n";
+
+        materials.push_back(mat);
     }
 
     // TODO: Load materials if defined in the file
@@ -285,31 +346,31 @@ void Scene::load_gltf(const std::string &fname)
     for (const auto &n : model.nodes) {
         std::cout << "node: " << n.name << "\n";
         std::cout << "mesh: " << n.mesh << "\n";
-        if (n.mesh != -1) {
-            glm::mat4 transform(1.f);
-            if (!n.matrix.empty()) {
-                transform = glm::make_mat4(n.matrix.data());
-            } else {
-                if (!n.scale.empty()) {
-                    transform = glm::scale(glm::vec3(n.scale[0], n.scale[1], n.scale[2]));
-                }
-                if (!n.rotation.empty()) {
-                    // GLTF quat order is XYZW?
-                    const glm::quat rot =
-                        glm::quat(n.rotation[3], n.rotation[0], n.rotation[1], n.rotation[2]);
-                    transform = glm::mat4_cast(rot) * transform;
-                }
-                if (!n.translation.empty()) {
-                    const glm::mat4 translate = glm::translate(
-                        glm::vec3(n.translation[0], n.translation[1], n.translation[2]));
-                    transform = translate * transform;
-                }
-            }
-            std::cout << "Transform: " << glm::to_string(transform) << "\n";
-
-            instances.emplace_back(transform, n.mesh);
+        glm::mat4 transform(1.f);
+        if (!n.matrix.empty()) {
+            transform = glm::make_mat4(n.matrix.data());
         } else {
-            std::cout << "Warning/todo: possible multi-level instancing encountered\n";
+            if (!n.scale.empty()) {
+                transform = glm::scale(glm::vec3(n.scale[0], n.scale[1], n.scale[2]));
+            }
+            if (!n.rotation.empty()) {
+                // GLTF quat order is XYZW?
+                const glm::quat rot =
+                    glm::quat(n.rotation[3], n.rotation[0], n.rotation[1], n.rotation[2]);
+                transform = glm::mat4_cast(rot) * transform;
+            }
+            if (!n.translation.empty()) {
+                const glm::mat4 translate =
+                    glm::translate(glm::vec3(n.translation[0], n.translation[1], n.translation[2]));
+                transform = translate * transform;
+            }
+        }
+
+        if (n.mesh != -1) {
+            std::cout << "Transform: " << glm::to_string(transform) << "\n";
+            instances.emplace_back(transform, n.mesh);
+        } else if (!n.children.empty() && transform != glm::mat4(1.f)) {
+            std::cout << "WARNING	/todo: possible multi-level instancing encountered\n";
         }
     }
 

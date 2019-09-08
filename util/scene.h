@@ -18,11 +18,10 @@ struct Scene {
 
     size_t total_tris() const;
 
-	// TODO: compute total tris after instancing
+    // TODO: compute total tris after instancing
 
 private:
     void load_obj(const std::string &file);
 
     void load_gltf(const std::string &file);
 };
-
