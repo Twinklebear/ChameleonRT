@@ -144,117 +144,122 @@ void RenderDXR::set_scene(const Scene &scene)
     // much build + scratch that we run out of GPU memory.
     // Some helpers for managing the temp upload heap buf allocation and queuing of
     // the commands would help to make it easier to write the parallel load version
-    std::vector<dxr::Geometry> geometries;
     for (const auto &mesh : scene.meshes) {
-        // Upload the mesh to the vertex buffer, build accel structures
-        // Place the data in an upload heap first, then do a GPU-side copy
-        // into a default heap (resident in VRAM)
-        dxr::Buffer upload_verts = dxr::Buffer::upload(device.Get(),
-                                                       mesh.vertices.size() * sizeof(glm::vec3),
-                                                       D3D12_RESOURCE_STATE_GENERIC_READ);
-        dxr::Buffer upload_indices = dxr::Buffer::upload(device.Get(),
-                                                         mesh.indices.size() * sizeof(glm::uvec3),
-                                                         D3D12_RESOURCE_STATE_GENERIC_READ);
+        std::vector<dxr::Geometry> geometries;
 
-        // Copy vertex and index data into the upload buffers
-        std::memcpy(upload_verts.map(), mesh.vertices.data(), upload_verts.size());
-        std::memcpy(upload_indices.map(), mesh.indices.data(), upload_indices.size());
-        upload_verts.unmap();
-        upload_indices.unmap();
+        for (const auto &geom : mesh.geometries) {
+            // Upload the mesh to the vertex buffer, build accel structures
+            // Place the data in an upload heap first, then do a GPU-side copy
+            // into a default heap (resident in VRAM)
+            dxr::Buffer upload_verts = dxr::Buffer::upload(device.Get(),
+                                                           geom.vertices.size() * sizeof(glm::vec3),
+                                                           D3D12_RESOURCE_STATE_GENERIC_READ);
+            dxr::Buffer upload_indices =
+                dxr::Buffer::upload(device.Get(),
+                                    geom.indices.size() * sizeof(glm::uvec3),
+                                    D3D12_RESOURCE_STATE_GENERIC_READ);
 
-        dxr::Buffer upload_uvs;
-        if (!mesh.uvs.empty()) {
-            upload_uvs = dxr::Buffer::upload(device.Get(),
-                                             mesh.uvs.size() * sizeof(glm::vec2),
-                                             D3D12_RESOURCE_STATE_GENERIC_READ);
-            std::memcpy(upload_uvs.map(), mesh.uvs.data(), upload_uvs.size());
-            upload_uvs.unmap();
-        }
+            // Copy vertex and index data into the upload buffers
+            std::memcpy(upload_verts.map(), geom.vertices.data(), upload_verts.size());
+            std::memcpy(upload_indices.map(), geom.indices.data(), upload_indices.size());
+            upload_verts.unmap();
+            upload_indices.unmap();
 
-        dxr::Buffer upload_normals;
-        if (!mesh.normals.empty()) {
-            upload_normals = dxr::Buffer::upload(device.Get(),
-                                                 mesh.normals.size() * sizeof(glm::vec3),
+            dxr::Buffer upload_uvs;
+            if (!geom.uvs.empty()) {
+                upload_uvs = dxr::Buffer::upload(device.Get(),
+                                                 geom.uvs.size() * sizeof(glm::vec2),
                                                  D3D12_RESOURCE_STATE_GENERIC_READ);
-            std::memcpy(upload_normals.map(), mesh.normals.data(), upload_normals.size());
-            upload_normals.unmap();
+                std::memcpy(upload_uvs.map(), geom.uvs.data(), upload_uvs.size());
+                upload_uvs.unmap();
+            }
+
+            dxr::Buffer upload_normals;
+            if (!geom.normals.empty()) {
+                upload_normals = dxr::Buffer::upload(device.Get(),
+                                                     geom.normals.size() * sizeof(glm::vec3),
+                                                     D3D12_RESOURCE_STATE_GENERIC_READ);
+                std::memcpy(upload_normals.map(), geom.normals.data(), upload_normals.size());
+                upload_normals.unmap();
+            }
+
+            // Allocate GPU side buffers for the data so we can have it resident in VRAM
+            dxr::Buffer vertex_buf = dxr::Buffer::default(
+                device.Get(), upload_verts.size(), D3D12_RESOURCE_STATE_COPY_DEST);
+            dxr::Buffer index_buf = dxr::Buffer::default(
+                device.Get(), upload_indices.size(), D3D12_RESOURCE_STATE_COPY_DEST);
+
+            CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+
+            // Enqueue the copy into GPU memory
+            cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
+            cmd_list->CopyResource(index_buf.get(), upload_indices.get());
+
+            dxr::Buffer uv_buf;
+            if (!geom.uvs.empty()) {
+                uv_buf = dxr::Buffer::default(
+                    device.Get(), upload_uvs.size(), D3D12_RESOURCE_STATE_COPY_DEST);
+                cmd_list->CopyResource(uv_buf.get(), upload_uvs.get());
+            }
+
+            dxr::Buffer normal_buf;
+            if (!geom.normals.empty()) {
+                normal_buf = dxr::Buffer::default(
+                    device.Get(), upload_normals.size(), D3D12_RESOURCE_STATE_COPY_DEST);
+                cmd_list->CopyResource(normal_buf.get(), upload_normals.get());
+            }
+
+            // Barriers to wait for the copies to finish before building the accel. structs
+            {
+                std::vector<D3D12_RESOURCE_BARRIER> b;
+                b.push_back(
+                    barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+                b.push_back(
+                    barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+                if (!geom.uvs.empty()) {
+                    b.push_back(
+                        barrier_transition(uv_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+                };
+                if (!geom.normals.empty()) {
+                    b.push_back(barrier_transition(normal_buf,
+                                                   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+                };
+                cmd_list->ResourceBarrier(b.size(), b.data());
+            }
+
+            geometries.emplace_back(vertex_buf, index_buf, normal_buf, uv_buf, geom.material_id);
+
+            // TODO: Some possible perf improvements: We can run all the upload of
+            // index data in parallel, and the BVH building in parallel for all the
+            // geometries. This should help for some large scenes, though with the assumption
+            // that the entire build space for all the bottom level stuff can fit on the GPU.
+            // For large scenes it would be best to monitor the available space needed for
+            // the queued builds vs. the available GPU memory and then run stuff and compact
+            // when we start getting full.
+            CHECK_ERR(cmd_list->Close());
+            ID3D12CommandList *cmd_lists = cmd_list.Get();
+            cmd_queue->ExecuteCommandLists(1, &cmd_lists);
+            sync_gpu();
         }
 
-        // Allocate GPU side buffers for the data so we can have it resident in VRAM
-        dxr::Buffer vertex_buf =
-            dxr::Buffer::default(device.Get(), upload_verts.size(), D3D12_RESOURCE_STATE_COPY_DEST);
-        dxr::Buffer index_buf = dxr::Buffer::default(
-            device.Get(), upload_indices.size(), D3D12_RESOURCE_STATE_COPY_DEST);
+        meshes.emplace_back(geometries);
 
         CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
-
-        // Enqueue the copy into GPU memory
-        cmd_list->CopyResource(vertex_buf.get(), upload_verts.get());
-        cmd_list->CopyResource(index_buf.get(), upload_indices.get());
-
-        dxr::Buffer uv_buf;
-        if (!mesh.uvs.empty()) {
-            uv_buf = dxr::Buffer::default(
-                device.Get(), upload_uvs.size(), D3D12_RESOURCE_STATE_COPY_DEST);
-            cmd_list->CopyResource(uv_buf.get(), upload_uvs.get());
-        }
-
-        dxr::Buffer normal_buf;
-        if (!mesh.normals.empty()) {
-            normal_buf = dxr::Buffer::default(
-                device.Get(), upload_normals.size(), D3D12_RESOURCE_STATE_COPY_DEST);
-            cmd_list->CopyResource(normal_buf.get(), upload_normals.get());
-        }
-
-        // Barriers to wait for the copies to finish before building the accel. structs
-        {
-            std::vector<D3D12_RESOURCE_BARRIER> b;
-            b.push_back(
-                barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-            b.push_back(
-                barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-            if (!mesh.uvs.empty()) {
-                b.push_back(
-                    barrier_transition(uv_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-            };
-            if (!mesh.normals.empty()) {
-                b.push_back(
-                    barrier_transition(normal_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-            };
-            cmd_list->ResourceBarrier(b.size(), b.data());
-        }
-
-        geometries.emplace_back(vertex_buf, index_buf, normal_buf, uv_buf, mesh.material_id);
-
-        // TODO: Some possible perf improvements: We can run all the upload of
-        // index data in parallel, and the BVH building in parallel for all the
-        // geometries. This should help for some large scenes, though with the assumption
-        // that the entire build space for all the bottom level stuff can fit on the GPU.
-        // For large scenes it would be best to monitor the available space needed for
-        // the queued builds vs. the available GPU memory and then run stuff and compact
-        // when we start getting full.
+        meshes.back().enqeue_build(device.Get(), cmd_list.Get());
         CHECK_ERR(cmd_list->Close());
         ID3D12CommandList *cmd_lists = cmd_list.Get();
         cmd_queue->ExecuteCommandLists(1, &cmd_lists);
         sync_gpu();
+
+        CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+
+        meshes.back().enqueue_compaction(device.Get(), cmd_list.Get());
+        CHECK_ERR(cmd_list->Close());
+        cmd_queue->ExecuteCommandLists(1, &cmd_lists);
+        sync_gpu();
+
+        meshes.back().finalize();
     }
-    meshes.emplace_back(geometries);
-
-    CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
-    meshes.back().enqeue_build(device.Get(), cmd_list.Get());
-    CHECK_ERR(cmd_list->Close());
-    ID3D12CommandList *cmd_lists = cmd_list.Get();
-    cmd_queue->ExecuteCommandLists(1, &cmd_lists);
-    sync_gpu();
-
-    CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
-
-    meshes.back().enqueue_compaction(device.Get(), cmd_list.Get());
-    CHECK_ERR(cmd_list->Close());
-    cmd_queue->ExecuteCommandLists(1, &cmd_lists);
-    sync_gpu();
-
-    meshes.back().finalize();
 
     instance_buf =
         dxr::Buffer::upload(device.Get(),
@@ -266,13 +271,14 @@ void RenderDXR::set_scene(const Scene &scene)
         // Write the data about our instance
         D3D12_RAYTRACING_INSTANCE_DESC *buf =
             static_cast<D3D12_RAYTRACING_INSTANCE_DESC *>(instance_buf.map());
+
+        size_t instance_hitgroup_offset = 0;
         for (size_t i = 0; i < meshes.size(); ++i) {
             // TODO: Need some way to express real instancing one I move off OBJ files and
             // have scenes with actual instances.
+            // Next should be able to instance meshes in the scene
             buf[i].InstanceID = i;
-            // TODO: This will need to be offset to account for the number hit groups from instances
-            // written before us for all their constituent geometries
-            buf[i].InstanceContributionToHitGroupIndex = i;
+            buf[i].InstanceContributionToHitGroupIndex = instance_hitgroup_offset;
             buf[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
             buf[i].AccelerationStructure = meshes[i]->GetGPUVirtualAddress();
             buf[i].InstanceMask = 0xff;
@@ -282,6 +288,8 @@ void RenderDXR::set_scene(const Scene &scene)
             buf[i].Transform[0][0] = 1.0f;
             buf[i].Transform[1][1] = 1.0f;
             buf[i].Transform[2][2] = 1.0f;
+
+            instance_hitgroup_offset += scene.meshes[i].geometries.size();
         }
         instance_buf.unmap();
     }
@@ -293,6 +301,7 @@ void RenderDXR::set_scene(const Scene &scene)
     scene_bvh.enqeue_build(device.Get(), cmd_list.Get());
     CHECK_ERR(cmd_list->Close());
 
+    ID3D12CommandList *cmd_lists = cmd_list.Get();
     cmd_queue->ExecuteCommandLists(1, &cmd_lists);
     sync_gpu();
 

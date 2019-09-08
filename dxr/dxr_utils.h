@@ -299,6 +299,8 @@ struct Geometry {
     D3D12_RAYTRACING_GEOMETRY_DESC desc = {0};
     uint32_t material_id = 0;
 
+    // TODO: Allow other vertex and index formats? Right now this
+    // assumes vec3f verts and uint3 indices
     Geometry(Buffer vertex_buf,
              Buffer index_buf,
              Buffer normal_buf,
@@ -320,8 +322,6 @@ public:
 
     BottomLevelBVH() = default;
 
-    // TODO: Allow other vertex and index formats? Right now this
-    // assumes vec3f verts and uint3 indices
     BottomLevelBVH(std::vector<Geometry> &geometries,
                    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags =
                        D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE |

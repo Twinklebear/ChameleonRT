@@ -235,11 +235,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
                   << "# Textures: " << scene.textures.size() << "\n"
                   << "# Lights: " << scene.lights.size() << "\n";
 
-        total_tris =
-            std::accumulate(scene.meshes.begin(),
-                            scene.meshes.end(),
-                            size_t(0),
-                            [](const size_t &s, const Mesh &m) { return s + m.indices.size(); });
+        total_tris = scene.total_tris();
         num_tris = pretty_print_count(total_tris);
         renderer->set_scene(scene);
     }

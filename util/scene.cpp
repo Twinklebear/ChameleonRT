@@ -43,7 +43,11 @@ size_t Scene::total_tris() const
 {
     return std::accumulate(
         meshes.begin(), meshes.end(), size_t(0), [](const size_t &n, const Mesh &m) {
-            return n + m.num_tris();
+            return n + std::accumulate(
+                           m.geometries.begin(),
+                           m.geometries.end(),
+                           size_t(0),
+                           [](const size_t &n, const Geometry &g) { return n + g.num_tris(); });
         });
 }
 
@@ -68,6 +72,7 @@ void Scene::load_obj(const std::string &file)
         throw std::runtime_error("TinyOBJ Error loading " + file + " error: " + err);
     }
 
+    Mesh mesh;
     for (size_t s = 0; s < shapes.size(); ++s) {
         // We load with triangulate on so we know the mesh will be all triangle faces
         const tinyobj::mesh_t &obj_mesh = shapes[s].mesh;
@@ -76,9 +81,9 @@ void Scene::load_obj(const std::string &file)
         // tinyobjloader over to single index per-vert (single for pos, normal & uv tuple) used by
         // renderers
         std::map<glm::uvec3, uint32_t, VertIdxLess> index_mapping;
-        Mesh mesh;
+        Geometry geom;
         // Note: not supporting per-primitive materials
-        mesh.material_id = obj_mesh.material_ids[0];
+        geom.material_id = obj_mesh.material_ids[0];
 
         auto minmax_matid =
             std::minmax_element(obj_mesh.material_ids.begin(), obj_mesh.material_ids.end());
@@ -104,10 +109,10 @@ void Scene::load_obj(const std::string &file)
                 if (fnd != index_mapping.end()) {
                     vert_idx = fnd->second;
                 } else {
-                    vert_idx = mesh.vertices.size();
+                    vert_idx = geom.vertices.size();
                     index_mapping[idx] = vert_idx;
 
-                    mesh.vertices.emplace_back(attrib.vertices[3 * idx.x],
+                    geom.vertices.emplace_back(attrib.vertices[3 * idx.x],
                                                attrib.vertices[3 * idx.x + 1],
                                                attrib.vertices[3 * idx.x + 2]);
 
@@ -115,20 +120,21 @@ void Scene::load_obj(const std::string &file)
                         glm::vec3 n(attrib.normals[3 * idx.y],
                                     attrib.normals[3 * idx.y + 1],
                                     attrib.normals[3 * idx.y + 2]);
-                        mesh.normals.push_back(glm::normalize(n));
+                        geom.normals.push_back(glm::normalize(n));
                     }
 
                     if (idx.z != -1) {
-                        mesh.uvs.emplace_back(attrib.texcoords[2 * idx.z],
+                        geom.uvs.emplace_back(attrib.texcoords[2 * idx.z],
                                               attrib.texcoords[2 * idx.z + 1]);
                     }
                 }
                 tri_indices[i] = vert_idx;
             }
-            mesh.indices.push_back(tri_indices);
+            geom.indices.push_back(tri_indices);
         }
-        meshes.push_back(std::move(mesh));
+        mesh.geometries.push_back(geom);
     }
+    meshes.push_back(mesh);
 
     std::unordered_map<std::string, int32_t> texture_ids;
     // Parse the materials over to a similar DisneyMaterial representation
@@ -151,17 +157,23 @@ void Scene::load_obj(const std::string &file)
         materials.push_back(d);
     }
 
-    const bool need_default_mat = std::find_if(meshes.begin(), meshes.end(), [](const Mesh &m) {
-                                      return m.material_id == uint32_t(-1);
-                                  }) != meshes.end();
+    const bool need_default_mat =
+        std::find_if(meshes.begin(), meshes.end(), [](const Mesh &m) {
+            return std::find_if(m.geometries.begin(), m.geometries.end(), [](const Geometry &g) {
+                       return g.material_id == uint32_t(-1);
+                   }) != m.geometries.end();
+        }) != meshes.end();
+
     if (need_default_mat) {
         std::cout
             << "No materials assigned for some or all objects, generating a default material\n";
         const uint32_t default_mat_id = materials.size();
         materials.push_back(DisneyMaterial());
-        for (auto &m : meshes) {
-            if (m.material_id == uint32_t(-1)) {
-                m.material_id = default_mat_id;
+
+        // OBJ will have just one mesh, containg all geometries
+        for (auto &g : meshes[0].geometries) {
+            if (g.material_id == uint32_t(-1)) {
+                g.material_id = default_mat_id;
             }
         }
     }
@@ -209,25 +221,27 @@ void Scene::load_gltf(const std::string &fname)
 
     // Load each prim of each mesh as its own mesh for testing
     for (auto &m : model.meshes) {
+        Mesh mesh;
         for (auto &p : m.primitives) {
+            Geometry geom;
+
             if (p.mode != TINYGLTF_MODE_TRIANGLES) {
                 std::cout << "Unsupported primitive mode! File must contain only triangles\n";
                 throw std::runtime_error(
                     "Unsupported primitive mode! Only triangles are supported");
             }
 
-            Mesh mesh;
             // Note: assumes there is a POSITION (is this required by the gltf spec?)
             Accessor<glm::vec3> pos_accessor(model.accessors[p.attributes["POSITION"]], model);
             for (size_t i = 0; i < pos_accessor.size(); ++i) {
-                mesh.vertices.push_back(pos_accessor[i]);
+                geom.vertices.push_back(pos_accessor[i]);
             }
 
             if (model.accessors[p.indices].componentType ==
                 TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
                 Accessor<uint16_t> index_accessor(model.accessors[p.indices], model);
                 for (size_t i = 0; i < index_accessor.size() / 3; ++i) {
-                    mesh.indices.push_back(glm::uvec3(index_accessor[i * 3],
+                    geom.indices.push_back(glm::uvec3(index_accessor[i * 3],
                                                       index_accessor[i * 3 + 1],
                                                       index_accessor[i * 3 + 2]));
                 }
@@ -235,7 +249,7 @@ void Scene::load_gltf(const std::string &fname)
                        TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
                 Accessor<uint32_t> index_accessor(model.accessors[p.indices], model);
                 for (size_t i = 0; i < index_accessor.size() / 3; ++i) {
-                    mesh.indices.push_back(glm::uvec3(index_accessor[i * 3],
+                    geom.indices.push_back(glm::uvec3(index_accessor[i * 3],
                                                       index_accessor[i * 3 + 1],
                                                       index_accessor[i * 3 + 2]));
                 }
@@ -244,16 +258,19 @@ void Scene::load_gltf(const std::string &fname)
                 throw std::runtime_error("Unsupported index component type");
             }
 
-            meshes.push_back(mesh);
+            mesh.geometries.push_back(geom);
         }
+        meshes.push_back(mesh);
     }
 
     // TODO: Load materials if defined in the file
     const uint32_t default_mat_id = materials.size();
     materials.push_back(DisneyMaterial());
     for (auto &m : meshes) {
-        if (m.material_id == uint32_t(-1)) {
-            m.material_id = default_mat_id;
+        for (auto &g : m.geometries) {
+            if (g.material_id == uint32_t(-1)) {
+                g.material_id = default_mat_id;
+            }
         }
     }
 

@@ -3,7 +3,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 
-struct Mesh {
+struct Geometry {
     std::vector<glm::vec3> vertices, normals;
     std::vector<glm::vec2> uvs;
     std::vector<glm::uvec3> indices;
@@ -13,4 +13,8 @@ struct Mesh {
     uint32_t material_id = -1;
 
     uint32_t num_tris() const;
+};
+
+struct Mesh {
+    std::vector<Geometry> geometries;
 };
