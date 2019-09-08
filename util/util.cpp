@@ -94,3 +94,19 @@ std::string get_cpu_brand()
     }
     return brand;
 }
+
+float srgb_to_linear(float x)
+{
+    if (x <= 0.04045f) {
+        return x / 12.92f;
+    }
+    return std::pow((x + 0.055f) / 1.055f, 2.4);
+}
+
+float linear_to_srgb(float x)
+{
+    if (x <= 0.0031308f) {
+        return 12.92f * x;
+    }
+    return 1.055f * pow(x, 1.f / 2.4f) - 0.055f;
+}

@@ -15,3 +15,7 @@ void canonicalize_path(std::string &path);
 std::string get_file_extension(const std::string &fname);
 
 std::string get_cpu_brand();
+
+float srgb_to_linear(const float x);
+
+float linear_to_srgb(const float x);

@@ -5,14 +5,17 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+enum ColorSpace { LINEAR, SRGB };
+
 struct Image {
     std::string name;
     int width = -1;
     int height = -1;
     int channels = -1;
     std::vector<uint8_t> img;
+    ColorSpace color_space = LINEAR;
 
-    Image(const std::string &file, const std::string &name);
+    Image(const std::string &file, const std::string &name, ColorSpace color_space = LINEAR);
     Image() = default;
 };
 

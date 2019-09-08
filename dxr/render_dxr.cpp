@@ -312,10 +312,12 @@ void RenderDXR::set_scene(const Scene &scene)
 
     // Upload the textures
     for (const auto &t : scene.textures) {
-        dxr::Texture2D tex = dxr::Texture2D::default(device.Get(),
-                                                     glm::uvec2(t.width, t.height),
-                                                     D3D12_RESOURCE_STATE_COPY_DEST,
-                                                     DXGI_FORMAT_R8G8B8A8_UNORM);
+        const DXGI_FORMAT format =
+            t.color_space == SRGB ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;
+
+        dxr::Texture2D tex = dxr::Texture2D::default(
+            device.Get(), glm::uvec2(t.width, t.height), D3D12_RESOURCE_STATE_COPY_DEST, format);
+
         dxr::Buffer tex_upload = dxr::Buffer::upload(
             device.Get(), tex.linear_row_pitch() * t.height, D3D12_RESOURCE_STATE_GENERIC_READ);
 

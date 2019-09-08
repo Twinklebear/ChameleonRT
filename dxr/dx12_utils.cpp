@@ -283,6 +283,7 @@ size_t Texture2D::pixel_size() const
     // Just the common formats I plan to use
     switch (format) {
     case DXGI_FORMAT_R8G8B8A8_UNORM:
+    case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
         return 4;
     case DXGI_FORMAT_R32G32B32A32_FLOAT:
         return 16;
