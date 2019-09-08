@@ -841,33 +841,38 @@ size_t RTPipeline::compute_shader_record_size(const std::wstring &shader) const
     return align_to(shader_size, D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
 }
 
-TriangleMesh::TriangleMesh(Buffer vertex_buf,
-                           Buffer index_buf,
-                           Buffer normal_buf,
-                           Buffer uv_buf,
-                           D3D12_RAYTRACING_GEOMETRY_FLAGS geom_flags,
-                           D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags)
-    : vertex_buf(vertex_buf),
-      index_buf(index_buf),
-      normal_buf(normal_buf),
-      uv_buf(uv_buf),
-      build_flags(build_flags)
+Geometry::Geometry(Buffer verts,
+                   Buffer indices,
+                   Buffer normals,
+                   Buffer uvs,
+                   uint32_t mat_id,
+                   D3D12_RAYTRACING_GEOMETRY_FLAGS geom_flags)
+    : vertex_buf(verts), index_buf(indices), normal_buf(normals), uv_buf(uvs), material_id(mat_id)
 {
-    geom_desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-    geom_desc.Triangles.VertexBuffer.StartAddress = vertex_buf->GetGPUVirtualAddress();
-    geom_desc.Triangles.VertexBuffer.StrideInBytes = sizeof(float) * 3;
-    geom_desc.Triangles.VertexCount =
-        vertex_buf.size() / geom_desc.Triangles.VertexBuffer.StrideInBytes;
-    geom_desc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+    desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+    desc.Triangles.VertexBuffer.StartAddress = vertex_buf->GetGPUVirtualAddress();
+    desc.Triangles.VertexBuffer.StrideInBytes = sizeof(float) * 3;
+    desc.Triangles.VertexCount = vertex_buf.size() / desc.Triangles.VertexBuffer.StrideInBytes;
+    desc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
 
-    geom_desc.Triangles.IndexBuffer = index_buf->GetGPUVirtualAddress();
-    geom_desc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
-    geom_desc.Triangles.IndexCount = index_buf.size() / sizeof(uint32_t);
-    geom_desc.Triangles.Transform3x4 = 0;
-    geom_desc.Flags = geom_flags;
+    desc.Triangles.IndexBuffer = index_buf->GetGPUVirtualAddress();
+    desc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
+    desc.Triangles.IndexCount = index_buf.size() / sizeof(uint32_t);
+    desc.Triangles.Transform3x4 = 0;
+    desc.Flags = geom_flags;
 }
 
-void TriangleMesh::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list)
+BottomLevelBVH::BottomLevelBVH(std::vector<Geometry> &geoms,
+                               D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags)
+    : build_flags(build_flags), geometries(geoms)
+{
+    std::transform(geometries.begin(),
+                   geometries.end(),
+                   std::back_inserter(geom_descs),
+                   [](const Geometry &g) { return g.desc; });
+}
+
+void BottomLevelBVH::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list)
 {
     post_build_info = Buffer::default(device,
                                       sizeof(uint64_t),
@@ -884,9 +889,8 @@ void TriangleMesh::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS bvh_inputs = {0};
     bvh_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
     bvh_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-    // TODO: Support for multiple geom in a single bottom level BVH
-    bvh_inputs.NumDescs = 1;
-    bvh_inputs.pGeometryDescs = &geom_desc;
+    bvh_inputs.NumDescs = geom_descs.size();
+    bvh_inputs.pGeometryDescs = geom_descs.data();
     bvh_inputs.Flags = build_flags;
 
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuild_info = {0};
@@ -931,7 +935,7 @@ void TriangleMesh::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList
     cmd_list->CopyResource(post_build_info_readback.get(), post_build_info.get());
 }
 
-void TriangleMesh::enqueue_compaction(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list)
+void BottomLevelBVH::enqueue_compaction(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list)
 {
     uint64_t *map = static_cast<uint64_t *>(post_build_info_readback.map());
     const uint64_t compacted_size =
@@ -958,7 +962,7 @@ void TriangleMesh::enqueue_compaction(ID3D12Device5 *device, ID3D12GraphicsComma
     }
 }
 
-void TriangleMesh::finalize()
+void BottomLevelBVH::finalize()
 {
     if (build_flags & D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION) {
         bvh = scratch;
@@ -969,16 +973,11 @@ void TriangleMesh::finalize()
     post_build_info_readback = Buffer();
 }
 
-size_t TriangleMesh::num_tris() const
-{
-    return index_buf.size() / (3 * sizeof(uint32_t));
-}
-
-ID3D12Resource *TriangleMesh::operator->()
+ID3D12Resource *BottomLevelBVH::operator->()
 {
     return get();
 }
-ID3D12Resource *TriangleMesh::get()
+ID3D12Resource *BottomLevelBVH::get()
 {
     return bvh.get();
 }

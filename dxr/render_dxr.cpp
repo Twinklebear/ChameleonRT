@@ -144,6 +144,7 @@ void RenderDXR::set_scene(const Scene &scene)
     // much build + scratch that we run out of GPU memory.
     // Some helpers for managing the temp upload heap buf allocation and queuing of
     // the commands would help to make it easier to write the parallel load version
+    std::vector<dxr::Geometry> geometries;
     for (const auto &mesh : scene.meshes) {
         // Upload the mesh to the vertex buffer, build accel structures
         // Place the data in an upload heap first, then do a GPU-side copy
@@ -223,8 +224,7 @@ void RenderDXR::set_scene(const Scene &scene)
             cmd_list->ResourceBarrier(b.size(), b.data());
         }
 
-        meshes.emplace_back(vertex_buf, index_buf, normal_buf, uv_buf);
-        meshes.back().enqeue_build(device.Get(), cmd_list.Get());
+        geometries.emplace_back(vertex_buf, index_buf, normal_buf, uv_buf, mesh.material_id);
 
         // TODO: Some possible perf improvements: We can run all the upload of
         // index data in parallel, and the BVH building in parallel for all the
@@ -234,18 +234,27 @@ void RenderDXR::set_scene(const Scene &scene)
         // the queued builds vs. the available GPU memory and then run stuff and compact
         // when we start getting full.
         CHECK_ERR(cmd_list->Close());
-        std::array<ID3D12CommandList *, 1> cmd_lists = {cmd_list.Get()};
-        cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+        ID3D12CommandList *cmd_lists = cmd_list.Get();
+        cmd_queue->ExecuteCommandLists(1, &cmd_lists);
         sync_gpu();
-
-        CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
-        meshes.back().enqueue_compaction(device.Get(), cmd_list.Get());
-        CHECK_ERR(cmd_list->Close());
-        cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
-        sync_gpu();
-
-        meshes.back().finalize();
     }
+    meshes.emplace_back(geometries);
+
+    CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+    meshes.back().enqeue_build(device.Get(), cmd_list.Get());
+    CHECK_ERR(cmd_list->Close());
+    ID3D12CommandList *cmd_lists = cmd_list.Get();
+    cmd_queue->ExecuteCommandLists(1, &cmd_lists);
+    sync_gpu();
+
+    CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+
+    meshes.back().enqueue_compaction(device.Get(), cmd_list.Get());
+    CHECK_ERR(cmd_list->Close());
+    cmd_queue->ExecuteCommandLists(1, &cmd_lists);
+    sync_gpu();
+
+    meshes.back().finalize();
 
     instance_buf =
         dxr::Buffer::upload(device.Get(),
@@ -257,12 +266,12 @@ void RenderDXR::set_scene(const Scene &scene)
         // Write the data about our instance
         D3D12_RAYTRACING_INSTANCE_DESC *buf =
             static_cast<D3D12_RAYTRACING_INSTANCE_DESC *>(instance_buf.map());
-        for (size_t i = 0; i < scene.meshes.size(); ++i) {
+        for (size_t i = 0; i < meshes.size(); ++i) {
             // TODO: Need some way to express real instancing one I move off OBJ files and
             // have scenes with actual instances.
-            buf[i].InstanceID = scene.meshes[i].material_id;
-            // Note: we set the num ray type stride for the hit groups here, I think the
-            // other multiplier is for doing some sort of per-geometry shaders
+            buf[i].InstanceID = i;
+            // TODO: This will need to be offset to account for the number hit groups from instances
+            // written before us for all their constituent geometries
             buf[i].InstanceContributionToHitGroupIndex = i;
             buf[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
             buf[i].AccelerationStructure = meshes[i]->GetGPUVirtualAddress();
@@ -284,8 +293,7 @@ void RenderDXR::set_scene(const Scene &scene)
     scene_bvh.enqeue_build(device.Get(), cmd_list.Get());
     CHECK_ERR(cmd_list->Close());
 
-    std::array<ID3D12CommandList *, 1> cmd_lists = {cmd_list.Get()};
-    cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+    cmd_queue->ExecuteCommandLists(1, &cmd_lists);
     sync_gpu();
 
     scene_bvh.finalize();
@@ -321,7 +329,7 @@ void RenderDXR::set_scene(const Scene &scene)
         cmd_list->ResourceBarrier(1, &b);
 
         CHECK_ERR(cmd_list->Close());
-        cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+        cmd_queue->ExecuteCommandLists(1, &cmd_lists);
         sync_gpu();
 
         textures.push_back(tex);
@@ -345,7 +353,7 @@ void RenderDXR::set_scene(const Scene &scene)
         cmd_list->ResourceBarrier(1, &b);
 
         CHECK_ERR(cmd_list->Close());
-        cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+        cmd_queue->ExecuteCommandLists(1, &cmd_lists);
         sync_gpu();
     }
 
@@ -366,7 +374,7 @@ void RenderDXR::set_scene(const Scene &scene)
         cmd_list->ResourceBarrier(1, &b);
 
         CHECK_ERR(cmd_list->Close());
-        cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+        cmd_queue->ExecuteCommandLists(1, &cmd_lists);
         sync_gpu();
     }
 
@@ -475,7 +483,7 @@ void RenderDXR::build_raytracing_pipeline()
                                                .add_srv("index_buf", 1, 1)
                                                .add_srv("normal_buf", 2, 1)
                                                .add_srv("uv_buf", 3, 1)
-                                               .add_constants("MeshData", 0, 2, 1)
+                                               .add_constants("MeshData", 0, 3, 1)
                                                .create(device.Get());
 
     dxr::RTPipelineBuilder rt_pipeline_builder =
@@ -494,11 +502,16 @@ void RenderDXR::build_raytracing_pipeline()
     // but we just need different hitgroups to set the different params for the meshes
     std::vector<std::wstring> hg_names;
     for (size_t i = 0; i < meshes.size(); ++i) {
-        const std::wstring hg_name = L"HitGroup_inst" + std::to_wstring(i);
-        hg_names.push_back(hg_name);
+        for (size_t j = 0; j < meshes[i].geometries.size(); ++j) {
+            // TODO: Later on each mesh is not necessarily an instance but can be instanced multiple
+            // times with different params (thus needing different hitgroups
+            const std::wstring hg_name =
+                L"HitGroup_inst" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
+            hg_names.push_back(hg_name);
 
-        rt_pipeline_builder.add_hit_group(
-            {dxr::HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit")});
+            rt_pipeline_builder.add_hit_group(
+                {dxr::HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit")});
+        }
     }
     rt_pipeline_builder.set_shader_root_sig(hg_names, hitgroup_root_sig);
 
@@ -543,43 +556,49 @@ void RenderDXR::build_shader_binding_table()
         // std::memcpy(map + sig->descriptor_table_offset(), &desc_heap_handle,
         //	sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
     }
+
     for (size_t i = 0; i < meshes.size(); ++i) {
-        const std::wstring hg_name = L"HitGroup_inst" + std::to_wstring(i);
-        uint8_t *map = rt_pipeline.shader_record(hg_name);
-        const dxr::RootSignature *sig = rt_pipeline.shader_signature(hg_name);
+        for (size_t j = 0; j < meshes[i].geometries.size(); ++j) {
+            auto &geom = meshes[i].geometries[j];
+            // TODO: Later on each mesh is not necessarily an instance but can be instanced multiple
+            // times with different params (thus needing different hitgroups
+            const std::wstring hg_name =
+                L"HitGroup_inst" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
 
-        D3D12_GPU_VIRTUAL_ADDRESS gpu_handle = meshes[i].vertex_buf->GetGPUVirtualAddress();
-        std::memcpy(
-            map + sig->offset("vertex_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+            uint8_t *map = rt_pipeline.shader_record(hg_name);
+            const dxr::RootSignature *sig = rt_pipeline.shader_signature(hg_name);
 
-        gpu_handle = meshes[i].index_buf->GetGPUVirtualAddress();
-        std::memcpy(
-            map + sig->offset("index_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+            D3D12_GPU_VIRTUAL_ADDRESS gpu_handle = geom.vertex_buf->GetGPUVirtualAddress();
+            std::memcpy(
+                map + sig->offset("vertex_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 
-        if (meshes[i].normal_buf.size() != 0) {
-            gpu_handle = meshes[i].normal_buf->GetGPUVirtualAddress();
+            gpu_handle = geom.index_buf->GetGPUVirtualAddress();
+            std::memcpy(
+                map + sig->offset("index_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+
+            if (geom.normal_buf.size() != 0) {
+                gpu_handle = geom.normal_buf->GetGPUVirtualAddress();
+            } else {
+                gpu_handle = 0;
+            }
             std::memcpy(
                 map + sig->offset("normal_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
-        } else {
-            gpu_handle = 0;
-            std::memcpy(
-                map + sig->offset("normal_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
-        }
 
-        if (meshes[i].uv_buf.size() != 0) {
-            gpu_handle = meshes[i].uv_buf->GetGPUVirtualAddress();
+            if (geom.uv_buf.size() != 0) {
+                gpu_handle = geom.uv_buf->GetGPUVirtualAddress();
+            } else {
+                gpu_handle = 0;
+            }
             std::memcpy(
                 map + sig->offset("uv_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
-        } else {
-            gpu_handle = 0;
-            std::memcpy(
-                map + sig->offset("uv_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
-        }
 
-        const std::array<uint32_t, 2> mesh_data = {meshes[i].normal_buf.size() / sizeof(glm::vec3),
-                                                   meshes[i].uv_buf.size() / sizeof(glm::vec2)};
-        std::memcpy(
-            map + sig->offset("MeshData"), mesh_data.data(), mesh_data.size() * sizeof(uint32_t));
+            const std::array<uint32_t, 3> mesh_data = {geom.normal_buf.size() / sizeof(glm::vec3),
+                                                       geom.uv_buf.size() / sizeof(glm::vec2),
+                                                       geom.material_id};
+            std::memcpy(map + sig->offset("MeshData"),
+                        mesh_data.data(),
+                        mesh_data.size() * sizeof(uint32_t));
+        }
     }
     rt_pipeline.unmap_shader_table();
 

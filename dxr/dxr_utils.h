@@ -216,7 +216,7 @@ public:
 
     RTPipelineBuilder &set_ray_gen(const std::wstring &ray_gen);
 
-	// Add a miss shader to the pipeline
+    // Add a miss shader to the pipeline
     RTPipelineBuilder &add_miss_shader(const std::wstring &miss_fn);
 
     // Add a hitgroup to the pipeline
@@ -294,27 +294,38 @@ private:
     size_t compute_shader_record_size(const std::wstring &shader) const;
 };
 
-class TriangleMesh {
-    D3D12_RAYTRACING_GEOMETRY_DESC geom_desc = {0};
+struct Geometry {
+    Buffer vertex_buf, index_buf, normal_buf, uv_buf;
+    D3D12_RAYTRACING_GEOMETRY_DESC desc = {0};
+    uint32_t material_id = 0;
+
+    Geometry(Buffer vertex_buf,
+             Buffer index_buf,
+             Buffer normal_buf,
+             Buffer uv_buf,
+             uint32_t material_id,
+             D3D12_RAYTRACING_GEOMETRY_FLAGS geom_flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE);
+};
+
+class BottomLevelBVH {
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags;
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_DESC post_build_info_desc = {0};
     Buffer scratch, post_build_info, post_build_info_readback;
 
-public:
-    Buffer vertex_buf, index_buf, normal_buf, uv_buf, bvh;
+    std::vector<D3D12_RAYTRACING_GEOMETRY_DESC> geom_descs;
 
-    TriangleMesh() = default;
+public:
+    std::vector<Geometry> geometries;
+    Buffer bvh;
+
+    BottomLevelBVH() = default;
 
     // TODO: Allow other vertex and index formats? Right now this
     // assumes vec3f verts and uint3 indices
-    TriangleMesh(Buffer vertex_buf,
-                 Buffer index_buf,
-                 Buffer normal_buf,
-                 Buffer uv_buf,
-                 D3D12_RAYTRACING_GEOMETRY_FLAGS geom_flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE,
-                 D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags =
-                     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE |
-                     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION);
+    BottomLevelBVH(std::vector<Geometry> &geometries,
+                   D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags =
+                       D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE |
+                       D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION);
 
     /* After calling build the commands are placed in the command list, with a
      * UAV barrier to wait on the completion of the build before other commands are
@@ -332,8 +343,6 @@ public:
      * this can be called after the work from enqueue build has been finished
      */
     void finalize();
-
-    size_t num_tris() const;
 
     ID3D12Resource *operator->();
     ID3D12Resource *get();

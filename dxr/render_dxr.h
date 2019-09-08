@@ -22,7 +22,7 @@ struct RenderDXR : RenderBackend {
     dxr::Texture2D render_target, accum_buffer, ray_stats;
     std::vector<dxr::Texture2D> textures;
 
-    std::vector<dxr::TriangleMesh> meshes;
+    std::vector<dxr::BottomLevelBVH> meshes;
     dxr::TopLevelBVH scene_bvh;
 
     dxr::RTPipeline rt_pipeline;

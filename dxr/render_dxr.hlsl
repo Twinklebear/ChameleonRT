@@ -51,7 +51,6 @@ cbuffer SceneParams : register(b1) {
 // Raytracing acceleration structure, accessed as a SRV
 RaytracingAccelerationStructure scene : register(t0);
 
-// Instance ID = Material ID
 StructuredBuffer<MaterialParams> material_params : register(t1);
 
 StructuredBuffer<QuadLight> lights : register(t2);
@@ -113,7 +112,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
         shadow_hit.hit = 1;
         shadow_ray.Direction = light_dir;
         shadow_ray.TMax = light_dist;
-        TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 0, OCCLUSION_RAY, shadow_ray, shadow_hit);
+        TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, shadow_ray, shadow_hit);
 #ifdef REPORT_RAY_STATS
         ++ray_count;
 #endif
@@ -141,7 +140,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
                 shadow_hit.hit = 1;
                 shadow_ray.Direction = w_i;
                 shadow_ray.TMax = light_dist;
-                TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 0, OCCLUSION_RAY, shadow_ray, shadow_hit);
+                TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, shadow_ray, shadow_hit);
 #ifdef REPORT_RAY_STATS
                 ++ray_count;
 #endif
@@ -176,7 +175,7 @@ void RayGen() {
     do {
         HitInfo payload;
         payload.color_dist = float4(0, 0, 0, -1);
-        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 0, PRIMARY_RAY, ray, payload);
+        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
 #ifdef REPORT_RAY_STATS
         ++ray_count;
 #endif
@@ -265,6 +264,7 @@ StructuredBuffer<float2> uvs : register(t3, space1);
 cbuffer MeshData : register(b0, space1) {
     uint32_t num_normals;
     uint32_t num_uvs;
+    uint32_t material_id;
 }
 
 [shader("closesthit")] 
@@ -300,6 +300,6 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
 
     payload.color_dist = float4(uv, 0, RayTCurrent());
     float3x3 inv_transp = float3x3(WorldToObject4x3()[0], WorldToObject4x3()[1], WorldToObject4x3()[2]);
-    payload.normal = float4(normalize(mul(inv_transp, n)), InstanceID());
+    payload.normal = float4(normalize(mul(inv_transp, n)), material_id);
 }
 
