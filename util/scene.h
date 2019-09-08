@@ -9,6 +9,7 @@
 
 struct Scene {
     std::vector<Mesh> meshes;
+    std::vector<Instance> instances;
     std::vector<DisneyMaterial> materials;
     std::vector<Image> textures;
     std::vector<QuadLight> lights;
@@ -16,6 +17,8 @@ struct Scene {
     Scene(const std::string &fname);
 
     size_t total_tris() const;
+
+	// TODO: compute total tris after instancing
 
 private:
     void load_obj(const std::string &file);

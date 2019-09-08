@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <vector>
 #include "dx12_utils.h"
+#include "mesh.h"
 
 namespace dxr {
 
@@ -349,17 +350,18 @@ public:
 };
 
 class TopLevelBVH {
-    size_t n_instances;
-    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags;
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags =
+        D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
     Buffer scratch;
 
 public:
+    std::vector<Instance> instances;
     Buffer instance_buf, bvh;
 
     TopLevelBVH() = default;
 
     TopLevelBVH(Buffer instance_buf,
-                size_t num_instances,
+                const std::vector<Instance> &instances,
                 D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags =
                     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE);
 

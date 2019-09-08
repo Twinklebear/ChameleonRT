@@ -17,4 +17,17 @@ struct Geometry {
 
 struct Mesh {
     std::vector<Geometry> geometries;
+
+	Mesh(const std::vector<Geometry> &geometries);
+
+	Mesh() = default;
+};
+
+struct Instance {
+    glm::mat4 transform;
+    size_t mesh_id;
+
+	Instance(const glm::mat4 &transform, size_t mesh_id);
+
+	Instance() = default;
 };

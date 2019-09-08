@@ -13,6 +13,7 @@
 #include "util.h"
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 struct VertIdxLess {
     bool operator()(const glm::uvec3 &a, const glm::uvec3 &b) const
@@ -135,6 +136,9 @@ void Scene::load_obj(const std::string &file)
         mesh.geometries.push_back(geom);
     }
     meshes.push_back(mesh);
+
+    // OBJ has a single "instance"
+    instances.emplace_back(glm::mat4(1.f), 0);
 
     std::unordered_map<std::string, int32_t> texture_ids;
     // Parse the materials over to a similar DisneyMaterial representation
@@ -271,6 +275,41 @@ void Scene::load_gltf(const std::string &fname)
             if (g.material_id == uint32_t(-1)) {
                 g.material_id = default_mat_id;
             }
+        }
+    }
+
+    // Read the GLTF node list to load the instances in the scene
+    // TODO: Can GLTF do multi-level instancing? It seems like yes, by having
+    // a node containing a mesh be references by another node. For RTX I'll want
+    // to flatten this to be single level
+    for (const auto &n : model.nodes) {
+        std::cout << "node: " << n.name << "\n";
+        std::cout << "mesh: " << n.mesh << "\n";
+        if (n.mesh != -1) {
+            glm::mat4 transform(1.f);
+            if (!n.matrix.empty()) {
+                transform = glm::make_mat4(n.matrix.data());
+            } else {
+                if (!n.scale.empty()) {
+                    transform = glm::scale(glm::vec3(n.scale[0], n.scale[1], n.scale[2]));
+                }
+                if (!n.rotation.empty()) {
+                    // GLTF quat order is XYZW?
+                    const glm::quat rot =
+                        glm::quat(n.rotation[3], n.rotation[0], n.rotation[1], n.rotation[2]);
+                    transform = glm::mat4_cast(rot) * transform;
+                }
+                if (!n.translation.empty()) {
+                    const glm::mat4 translate = glm::translate(
+                        glm::vec3(n.translation[0], n.translation[1], n.translation[2]));
+                    transform = translate * transform;
+                }
+            }
+            std::cout << "Transform: " << glm::to_string(transform) << "\n";
+
+            instances.emplace_back(transform, n.mesh);
+        } else {
+            std::cout << "Warning/todo: possible multi-level instancing encountered\n";
         }
     }
 

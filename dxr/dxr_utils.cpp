@@ -3,6 +3,7 @@
 #include <array>
 #include <limits>
 #include <numeric>
+#include "mesh.h"
 #include "util.h"
 
 namespace dxr {
@@ -983,9 +984,9 @@ ID3D12Resource *BottomLevelBVH::get()
 }
 
 TopLevelBVH::TopLevelBVH(Buffer instance_buf,
-                         size_t num_instances,
+                         const std::vector<Instance> &instances,
                          D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS build_flags)
-    : n_instances(num_instances), instance_buf(instance_buf), build_flags(build_flags)
+    : instances(instances), instance_buf(instance_buf), build_flags(build_flags)
 {
 }
 
@@ -995,7 +996,7 @@ void TopLevelBVH::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList4
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS bvh_inputs = {0};
     bvh_inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
     bvh_inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-    bvh_inputs.NumDescs = n_instances;
+    bvh_inputs.NumDescs = instances.size();
     bvh_inputs.InstanceDescs = instance_buf->GetGPUVirtualAddress();
     bvh_inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
 
@@ -1043,7 +1044,7 @@ void TopLevelBVH::finalize()
 
 size_t TopLevelBVH::num_instances() const
 {
-    return n_instances;
+    return instances.size();
 }
 ID3D12Resource *TopLevelBVH::operator->()
 {

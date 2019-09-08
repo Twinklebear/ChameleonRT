@@ -146,7 +146,6 @@ void RenderDXR::set_scene(const Scene &scene)
     // the commands would help to make it easier to write the parallel load version
     for (const auto &mesh : scene.meshes) {
         std::vector<dxr::Geometry> geometries;
-
         for (const auto &geom : mesh.geometries) {
             // Upload the mesh to the vertex buffer, build accel structures
             // Place the data in an upload heap first, then do a GPU-side copy
@@ -261,41 +260,45 @@ void RenderDXR::set_scene(const Scene &scene)
         meshes.back().finalize();
     }
 
-    instance_buf =
-        dxr::Buffer::upload(device.Get(),
-                            align_to(meshes.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
-                                     D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT),
-                            D3D12_RESOURCE_STATE_GENERIC_READ);
+    instance_buf = dxr::Buffer::upload(
+        device.Get(),
+        align_to(scene.instances.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
+                 D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT),
+        D3D12_RESOURCE_STATE_GENERIC_READ);
 
     {
+        // TODO: We want to keep some of the instance to BLAS mapping info for setting up the
+        // hitgroups/sbt so the toplevel bvh can become something a bit higher-level to manage
+        // this and filling out the instance buffers
         // Write the data about our instance
         D3D12_RAYTRACING_INSTANCE_DESC *buf =
             static_cast<D3D12_RAYTRACING_INSTANCE_DESC *>(instance_buf.map());
 
         size_t instance_hitgroup_offset = 0;
-        for (size_t i = 0; i < meshes.size(); ++i) {
-            // TODO: Need some way to express real instancing one I move off OBJ files and
-            // have scenes with actual instances.
-            // Next should be able to instance meshes in the scene
+        for (size_t i = 0; i < scene.instances.size(); ++i) {
+            const auto &inst = scene.instances[i];
             buf[i].InstanceID = i;
             buf[i].InstanceContributionToHitGroupIndex = instance_hitgroup_offset;
             buf[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-            buf[i].AccelerationStructure = meshes[i]->GetGPUVirtualAddress();
+            buf[i].AccelerationStructure = meshes[inst.mesh_id]->GetGPUVirtualAddress();
             buf[i].InstanceMask = 0xff;
 
             // Note: D3D matrices are row-major
             std::memset(buf[i].Transform, 0, sizeof(buf[i].Transform));
-            buf[i].Transform[0][0] = 1.0f;
-            buf[i].Transform[1][1] = 1.0f;
-            buf[i].Transform[2][2] = 1.0f;
+            const glm::mat4 m = glm::transpose(inst.transform);
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 4; ++c) {
+                    buf[i].Transform[r][c] = m[r][c];
+                }
+            }
 
-            instance_hitgroup_offset += scene.meshes[i].geometries.size();
+            instance_hitgroup_offset += meshes[inst.mesh_id].geometries.size();
         }
         instance_buf.unmap();
     }
 
     // Now build the top level acceleration structure on our instance
-    scene_bvh = dxr::TopLevelBVH(instance_buf, meshes.size());
+    scene_bvh = dxr::TopLevelBVH(instance_buf, scene.instances);
 
     CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
     scene_bvh.enqeue_build(device.Get(), cmd_list.Get());
@@ -510,10 +513,9 @@ void RenderDXR::build_raytracing_pipeline()
     // For now this is also easy since they all share the same programs and root signatures,
     // but we just need different hitgroups to set the different params for the meshes
     std::vector<std::wstring> hg_names;
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        for (size_t j = 0; j < meshes[i].geometries.size(); ++j) {
-            // TODO: Later on each mesh is not necessarily an instance but can be instanced multiple
-            // times with different params (thus needing different hitgroups
+    for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {
+        const auto &inst = scene_bvh.instances[i];
+        for (size_t j = 0; j < meshes[inst.mesh_id].geometries.size(); ++j) {
             const std::wstring hg_name =
                 L"HitGroup_inst" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
             hg_names.push_back(hg_name);
@@ -565,10 +567,10 @@ void RenderDXR::build_shader_binding_table()
         // std::memcpy(map + sig->descriptor_table_offset(), &desc_heap_handle,
         //	sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
     }
-
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        for (size_t j = 0; j < meshes[i].geometries.size(); ++j) {
-            auto &geom = meshes[i].geometries[j];
+    for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {
+        const auto &inst = scene_bvh.instances[i];
+        for (size_t j = 0; j < meshes[inst.mesh_id].geometries.size(); ++j) {
+            auto &geom = meshes[inst.mesh_id].geometries[j];
             // TODO: Later on each mesh is not necessarily an instance but can be instanced multiple
             // times with different params (thus needing different hitgroups
             const std::wstring hg_name =
