@@ -42,7 +42,6 @@ function(add_ptx_embed_library)
                 list(APPEND PTX_DEPENDENCIES ${dep})
             endif()
         endforeach()
-        message("${PTX_DEPENDENCIES}")
 
         set(PTX_FILE "${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.ptx")
         add_custom_command(OUTPUT ${PTX_FILE}
