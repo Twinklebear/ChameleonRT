@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <vector>
 #include "buffer_view.h"
+#include "flatten_gltf.h"
 #include "gltf_types.h"
 #include "stb_image.h"
 #include "tiny_gltf.h"
@@ -216,6 +217,8 @@ void Scene::load_gltf(const std::string &fname)
         throw std::runtime_error("TinyGLTF Error loading " + fname + " error: " + err);
     }
 
+    flatten_gltf(model);
+
     std::cout << "Default scene: " << model.defaultScene << "\n";
 
     std::cout << "# of scenes " << model.scenes.size() << "\n";
@@ -339,38 +342,14 @@ void Scene::load_gltf(const std::string &fname)
         }
     }
 
-    // Read the GLTF node list to load the instances in the scene
-    // TODO: Can GLTF do multi-level instancing? It seems like yes, by having
-    // a node containing a mesh be references by another node. For RTX I'll want
-    // to flatten this to be single level
-    for (const auto &n : model.nodes) {
+    for (const auto &nid : model.scenes[model.defaultScene].nodes) {
+        const tinygltf::Node &n = model.nodes[nid];
         std::cout << "node: " << n.name << "\n";
         std::cout << "mesh: " << n.mesh << "\n";
-        glm::mat4 transform(1.f);
-        if (!n.matrix.empty()) {
-            transform = glm::make_mat4(n.matrix.data());
-        } else {
-            if (!n.scale.empty()) {
-                transform = glm::scale(glm::vec3(n.scale[0], n.scale[1], n.scale[2]));
-            }
-            if (!n.rotation.empty()) {
-                // GLTF quat order is XYZW?
-                const glm::quat rot =
-                    glm::quat(n.rotation[3], n.rotation[0], n.rotation[1], n.rotation[2]);
-                transform = glm::mat4_cast(rot) * transform;
-            }
-            if (!n.translation.empty()) {
-                const glm::mat4 translate =
-                    glm::translate(glm::vec3(n.translation[0], n.translation[1], n.translation[2]));
-                transform = translate * transform;
-            }
-        }
-
         if (n.mesh != -1) {
+            const glm::mat4 transform = read_node_transform(n);
             std::cout << "Transform: " << glm::to_string(transform) << "\n";
             instances.emplace_back(transform, n.mesh);
-        } else if (!n.children.empty() && transform != glm::mat4(1.f)) {
-            std::cout << "WARNING	/todo: possible multi-level instancing encountered\n";
         }
     }
 
