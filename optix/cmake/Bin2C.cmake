@@ -2,9 +2,13 @@
 
 get_filename_component(CUDA_COMPILER_BIN "${CUDA_NVCC_EXECUTABLE}" DIRECTORY)
 
-find_program(bin2c NAMES bin2c PATHS ${CUDA_SDK_ROOT_DIR})
+find_program(bin2c NAMES bin2c
+    PATHS
+    ${CUDA_SDK_ROOT_DIR}
+    ${CUDA_COMPILER_BIN})
+
 if (NOT bin2c)
-	message(FATAL_ERROR "Failed to find bin2c, searched ${CUDA_COMPILER_BIN}")
+    message(FATAL_ERROR "Failed to find bin2c, searched ${CUDA_SDK_ROOT_DIR} and ${CUDA_COMPILER_BIN}")
 endif()
 
 function(add_ptx_embed_library)
