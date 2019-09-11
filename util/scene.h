@@ -16,12 +16,20 @@ struct Scene {
 
     Scene(const std::string &fname);
 
+    // Compute the unique number of triangles in the scene
+    size_t unique_tris() const;
+
+    // Compute the total number of triangles in the scene (after instancing)
     size_t total_tris() const;
 
-    // TODO: compute total tris after instancing
+    size_t num_geometries() const;
 
 private:
     void load_obj(const std::string &file);
 
     void load_gltf(const std::string &file);
+
+#ifdef PBRT_PARSER_ENABLED
+    void load_pbrt(const std::string &file);
+#endif
 };

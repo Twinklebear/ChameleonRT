@@ -3,6 +3,7 @@
 #include <iostream>
 #include <memory>
 #include <numeric>
+#include <sstream>
 #include <vector>
 #include <SDL.h>
 #include "arcball_camera.h"
@@ -224,19 +225,24 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
 
     renderer->initialize(win_width, win_height);
 
-    size_t total_tris = 0;
-    std::string num_tris;
+    std::string scene_info;
     {
         Scene scene(scene_file);
-        std::cout << "Scene '" << scene_file << "' loaded:\n"
-                  << "# Triangles: " << scene.total_tris() << "\n"
-                  << "# Meshes: " << scene.meshes.size() << "\n"
-                  << "# Materials: " << scene.materials.size() << "\n"
-                  << "# Textures: " << scene.textures.size() << "\n"
-                  << "# Lights: " << scene.lights.size() << "\n";
 
-        total_tris = scene.total_tris();
-        num_tris = pretty_print_count(total_tris);
+        std::stringstream ss;
+        ss << "Scene '" << scene_file << "':\n"
+           << "# Unique Triangles: " << scene.unique_tris() << "\n"
+           << "# Total Triangles: " << scene.total_tris() << "\n"
+           << "# Geometries: " << scene.num_geometries() << "\n"
+           << "# Meshes: " << scene.meshes.size() << "\n"
+           << "# Instances: " << scene.instances.size() << "\n"
+           << "# Materials: " << scene.materials.size() << "\n"
+           << "# Textures: " << scene.textures.size() << "\n"
+           << "# Lights: " << scene.lights.size();
+
+        scene_info = ss.str();
+        std::cout << scene_info << "\n";
+
         renderer->set_scene(scene);
     }
 
@@ -376,11 +382,11 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
         ImGui::Text("Total Application Time: %.3f ms/frame (%.1f FPS)",
                     1000.0f / ImGui::GetIO().Framerate,
                     ImGui::GetIO().Framerate);
-        ImGui::Text("# Triangles: %s", num_tris.c_str());
         ImGui::Text("RT Backend: %s", rt_backend.c_str());
         ImGui::Text("CPU: %s", cpu_brand.c_str());
         ImGui::Text("GPU: %s", gpu_brand.c_str());
         ImGui::Text("Accumulated Frames: %llu", frame_id);
+        ImGui::Text("%s", scene_info.c_str());
 
         if (ImGui::Button("Save Image")) {
             std::cout << "Image saved to " << image_output << "\n";

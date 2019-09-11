@@ -12,22 +12,24 @@ struct Geometry {
     // it may be more complicated
     uint32_t material_id = -1;
 
-    uint32_t num_tris() const;
+    size_t num_tris() const;
 };
 
 struct Mesh {
     std::vector<Geometry> geometries;
 
-	Mesh(const std::vector<Geometry> &geometries);
+    Mesh(const std::vector<Geometry> &geometries);
 
-	Mesh() = default;
+    Mesh() = default;
+
+    size_t num_tris() const;
 };
 
 struct Instance {
     glm::mat4 transform;
     size_t mesh_id;
 
-	Instance(const glm::mat4 &transform, size_t mesh_id);
+    Instance(const glm::mat4 &transform, size_t mesh_id);
 
-	Instance() = default;
+    Instance() = default;
 };

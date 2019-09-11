@@ -27,3 +27,9 @@ target_link_libraries(util PUBLIC
     ${SDL2_LIBRARY}
     ${OPENGL_LIBRARIES})
 
+find_package(pbrtParser)
+if (${pbrtParser_FOUND})
+    target_link_libraries(util PUBLIC pbrtParser)
+    target_compile_definitions(util PUBLIC PBRT_PARSER_ENABLED)
+endif()
+

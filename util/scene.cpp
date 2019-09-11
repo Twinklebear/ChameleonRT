@@ -16,6 +16,10 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#ifdef PBRT_PARSER_ENABLED
+#include "pbrtParser/Scene.h"
+#endif
+
 struct VertIdxLess {
     bool operator()(const glm::uvec3 &a, const glm::uvec3 &b) const
     {
@@ -35,22 +39,36 @@ Scene::Scene(const std::string &fname)
         load_obj(fname);
     } else if (ext == "gltf" || ext == "glb") {
         load_gltf(fname);
+#ifdef PBRT_PARSER_ENABLED
+    } else if (ext == "pbrt" || ext == "pbf") {
+        load_pbrt(fname);
+#endif
     } else {
         std::cout << "Unsupported file type '" << ext << "'\n";
         throw std::runtime_error("Unsupported file type " + ext);
     }
 }
 
+size_t Scene::unique_tris() const
+{
+    return std::accumulate(meshes.begin(), meshes.end(), 0, [](const size_t &n, const Mesh &m) {
+        return n + m.num_tris();
+    });
+}
+
 size_t Scene::total_tris() const
 {
     return std::accumulate(
-        meshes.begin(), meshes.end(), size_t(0), [](const size_t &n, const Mesh &m) {
-            return n + std::accumulate(
-                           m.geometries.begin(),
-                           m.geometries.end(),
-                           size_t(0),
-                           [](const size_t &n, const Geometry &g) { return n + g.num_tris(); });
+        instances.begin(), instances.end(), 0, [&](const size_t &n, const Instance &i) {
+            return n + meshes[i.mesh_id].num_tris();
         });
+}
+
+size_t Scene::num_geometries() const
+{
+    return std::accumulate(meshes.begin(), meshes.end(), 0, [](const size_t &n, const Mesh &m) {
+        return n + m.geometries.size();
+    });
 }
 
 void Scene::load_obj(const std::string &file)
@@ -203,10 +221,10 @@ void Scene::load_gltf(const std::string &fname)
     tinygltf::TinyGLTF context;
     std::string err, warn;
     bool ret = false;
-    if (get_file_extension(fname) == "glb") {
-        ret = context.LoadBinaryFromFile(&model, &err, &warn, fname.c_str());
-    } else {
+    if (get_file_extension(fname) == "gltf") {
         ret = context.LoadASCIIFromFile(&model, &err, &warn, fname.c_str());
+    } else {
+        ret = context.LoadBinaryFromFile(&model, &err, &warn, fname.c_str());
     }
 
     if (!warn.empty()) {
@@ -331,17 +349,6 @@ void Scene::load_gltf(const std::string &fname)
         materials.push_back(mat);
     }
 
-    // TODO: Load materials if defined in the file
-    const uint32_t default_mat_id = materials.size();
-    materials.push_back(DisneyMaterial());
-    for (auto &m : meshes) {
-        for (auto &g : m.geometries) {
-            if (g.material_id == uint32_t(-1)) {
-                g.material_id = default_mat_id;
-            }
-        }
-    }
-
     for (const auto &nid : model.scenes[model.defaultScene].nodes) {
         const tinygltf::Node &n = model.nodes[nid];
         std::cout << "node: " << n.name << "\n";
@@ -365,3 +372,122 @@ void Scene::load_gltf(const std::string &fname)
     light.height = 5.f;
     lights.push_back(light);
 }
+
+#ifdef PBRT_PARSER_ENABLED
+
+void Scene::load_pbrt(const std::string &file)
+{
+    std::shared_ptr<pbrt::Scene> scene = nullptr;
+    try {
+        if (get_file_extension(file) == "pbrt") {
+            scene = pbrt::importPBRT(file);
+        } else {
+            scene = pbrt::Scene::loadFrom(file);
+        }
+
+        if (!scene) {
+            throw std::runtime_error("Failed to load PBRT scene from " + file);
+        }
+
+        scene->makeSingleLevel();
+    } catch (const std::runtime_error &e) {
+        std::cout << "Error loading PBRT scene " << file << "\n";
+        throw e;
+    }
+
+    for (const auto &obj : scene->world->shapes) {
+        if (obj->material) {
+            std::cout << "Mat: " << obj->material->toString() << "\n";
+        }
+
+        if (obj->areaLight) {
+            std::cout << "Encountered area light\n";
+        }
+
+        if (pbrt::TriangleMesh::SP mesh = std::dynamic_pointer_cast<pbrt::TriangleMesh>(obj)) {
+            std::cout << "Found root level triangle mesh w/ " << mesh->index.size()
+                      << " triangles: " << mesh->toString() << "\n";
+        } else if (pbrt::QuadMesh::SP mesh = std::dynamic_pointer_cast<pbrt::QuadMesh>(obj)) {
+            std::cout << "Encountered root level quadmesh (unsupported type). Will TODO maybe "
+                         "triangulate\n";
+        } else {
+            std::cout << "un-handled root level geometry type : " << obj->toString() << std::endl;
+        }
+    }
+
+    // TODO WILL: for instancing we need to load and assign IDs to each geometry so we can map them
+    // to instances for instancing. Then Mesh structs should change to just reference their geometry
+    // primitives by ID. Then the geoms could be re-used separately from meshes, so a mesh is a
+    // collection of geometries we want to instance together as a group, so we can get better
+    // re-use. This is similar to OSPRay's approach of mesh -> group -> instance actually.
+    for (const auto &inst : scene->world->instances) {
+        std::cout << inst->toString() << "\n";
+        std::cout << "transform: " << inst->xfm << "\n";
+
+        std::vector<Geometry> geometries;
+        for (const auto &obj : inst->object->shapes) {
+            if (pbrt::TriangleMesh::SP mesh = std::dynamic_pointer_cast<pbrt::TriangleMesh>(obj)) {
+                std::cout << "Found instanced triangle mesh w/ " << mesh->index.size()
+                          << " triangles: " << mesh->toString() << "\n"
+                          << "bound: " << mesh->getBounds() << "\n";
+
+                Geometry geom;
+                geom.vertices.reserve(mesh->vertex.size());
+                std::transform(mesh->vertex.begin(),
+                               mesh->vertex.end(),
+                               std::back_inserter(geom.vertices),
+                               [](const pbrt::vec3f &v) { return glm::vec3(v.x, v.y, v.z); });
+
+                geom.indices.reserve(mesh->index.size());
+                std::transform(mesh->index.begin(),
+                               mesh->index.end(),
+                               std::back_inserter(geom.indices),
+                               [](const pbrt::vec3i &v) { return glm::ivec3(v.x, v.y, v.z); });
+
+                geom.uvs.reserve(mesh->texcoord.size());
+                std::transform(mesh->texcoord.begin(),
+                               mesh->texcoord.end(),
+                               std::back_inserter(geom.uvs),
+                               [](const pbrt::vec2f &v) { return glm::vec2(v.x, v.y); });
+
+                geometries.push_back(geom);
+            } else if (pbrt::QuadMesh::SP mesh = std::dynamic_pointer_cast<pbrt::QuadMesh>(obj)) {
+                std::cout << "Encountered instanced quadmesh (unsupported type). Will TODO maybe "
+                             "triangulate\n";
+            } else {
+                std::cout << "un-handled instanced geometry type : " << obj->toString()
+                          << std::endl;
+            }
+        }
+        if (inst->object->instances.size() > 0) {
+            std::cout
+                << "Warning: Potentially multilevel instancing is in the scene after flattening?\n";
+        }
+
+        // TODO: Actually need to lookup meshes to find re-use for proper instancing
+        instances.emplace_back(glm::mat4(1.f), meshes.size());
+        meshes.emplace_back(geometries);
+    }
+
+    const uint32_t default_mat_id = materials.size();
+    materials.push_back(DisneyMaterial());
+    for (auto &m : meshes) {
+        for (auto &g : m.geometries) {
+            if (g.material_id == uint32_t(-1)) {
+                g.material_id = default_mat_id;
+            }
+        }
+    }
+
+    std::cout << "Generating light for PBRT scene, TODO Will: Load them from the file\n";
+    QuadLight light;
+    light.emission = glm::vec4(5.f);
+    light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);
+    light.position = -10.f * light.normal;
+    ortho_basis(light.v_x, light.v_y, glm::vec3(light.normal));
+    light.width = 5.f;
+    light.height = 5.f;
+    lights.push_back(light);
+}
+
+#endif
