@@ -33,7 +33,7 @@
 if (WIN32)
 	find_path(searched_OptiX_INSTALL_DIR
 		NAME include/optix.h
-		PATHS
+        PATHS
 		"C:/ProgramData/NVIDIA Corporation/OptiX SDK 7.0.0"
 	)
 	mark_as_advanced(searched_OptiX_INSTALL_DIR)
@@ -41,6 +41,7 @@ if (WIN32)
 else()
   set(OptiX_INSTALL_DIR $ENV{OptiX_INSTALL_DIR} CACHE PATH "Path to OptiX installed location.")
 endif()
+
 # The distribution contains both 32 and 64 bit libraries.  Adjust the library
 # search path based on the bit-ness of the build.  (i.e. 64: bin64, lib64; 32:
 # bin, lib).  Note that on Mac, the OptiX library is a universal binary, so we
@@ -52,12 +53,14 @@ else()
 endif()
 
 # Include
-find_path(OptiX_INCLUDE
+find_path(OptiX_INCLUDE_DIR
   NAMES optix.h
   PATHS "${OptiX_INSTALL_DIR}/include"
   NO_DEFAULT_PATH
   )
-find_path(OptiX_INCLUDE
-  NAMES optix.h
-  )
+
+include(FindPackageHandleStandardArgs)
+
+find_package_handle_standard_args(OptiX REQUIRED_VARS OptiX_INCLUDE_DIR OptiX_INSTALL_DIR)
+
 

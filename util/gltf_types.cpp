@@ -365,7 +365,10 @@ size_t dtype_stride(DTYPE type)
     case MAT3_DOUBLE:
     case MAT4_DOUBLE:
         return dtype_components(type) * 8;
+    default:
+        break;
     }
+    throw std::runtime_error("UNKOWN DATATYPE");
 }
 
 size_t dtype_components(DTYPE type)
