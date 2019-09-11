@@ -17,7 +17,7 @@ arguments will print help information.
 ./chameleonrt <backend> <mesh.obj>
 ```
 
-All three ray tracing backends use [SDL2](https://www.libsdl.org/index.php) for window management
+All five ray tracing backends use [SDL2](https://www.libsdl.org/index.php) for window management
 and [GLM](https://glm.g-truc.net/0.9.9/index.html) for math.
 If CMake doesn't find your SDL2 install you can point it to the root
 of your SDL2 directory by passing `-DSDL2=<path>`.
