@@ -231,8 +231,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
 
         std::stringstream ss;
         ss << "Scene '" << scene_file << "':\n"
-           << "# Unique Triangles: " << scene.unique_tris() << "\n"
-           << "# Total Triangles: " << scene.total_tris() << "\n"
+           << "# Unique Triangles: " << pretty_print_count(scene.unique_tris()) << "\n"
+           << "# Total Triangles: " << pretty_print_count(scene.total_tris()) << "\n"
            << "# Geometries: " << scene.num_geometries() << "\n"
            << "# Meshes: " << scene.meshes.size() << "\n"
            << "# Instances: " << scene.instances.size() << "\n"
