@@ -279,15 +279,16 @@ void ClosestHit(inout HitInfo payload, Attributes attrib) {
     float3 n = ng;
     // TODO per-vertex normals seems to give some pretty bad silhouetting,
     // even on some models which do seem well tesselated?
+    // Implement shadow/bump terminator fix?
     /*
-       if (num_normals > 0) {
-       float3 na = normals[NonUniformResourceIndex(idx.x)];
-       float3 nb = normals[NonUniformResourceIndex(idx.y)];
-       float3 nc = normals[NonUniformResourceIndex(idx.z)];
-       n = normalize((1.f - attrib.bary.x - attrib.bary.y) * na
-       + attrib.bary.x * nb + attrib.bary.y * nc);
-       }
-     */
+    if (num_normals > 0) {
+        float3 na = normals[NonUniformResourceIndex(idx.x)];
+        float3 nb = normals[NonUniformResourceIndex(idx.y)];
+        float3 nc = normals[NonUniformResourceIndex(idx.z)];
+        n = normalize((1.f - attrib.bary.x - attrib.bary.y) * na
+                + attrib.bary.x * nb + attrib.bary.y * nc);
+    }
+    */
 
     float2 uv = float2(0, 0);
     if (num_uvs > 0) {

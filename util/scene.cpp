@@ -273,6 +273,16 @@ void Scene::load_gltf(const std::string &fname)
                 }
             }
 
+#if 0
+            fnd = p.attributes.find("NORMAL");
+            if (fnd != p.attributes.end()) {
+                Accessor<glm::vec3> normal_accessor(model.accessors[fnd->second], model);
+                for (size_t i = 0; i < normal_accessor.size(); ++i) {
+                    geom.normals.push_back(normal_accessor[i]);
+                }
+            }
+#endif
+
             if (model.accessors[p.indices].componentType ==
                 TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
                 Accessor<uint16_t> index_accessor(model.accessors[p.indices], model);
