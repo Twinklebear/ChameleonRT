@@ -405,6 +405,7 @@ void Scene::load_pbrt(const std::string &file)
         throw e;
     }
 
+    // TODO: The world can also have some top-level shapes we may need to load
     for (const auto &obj : scene->world->shapes) {
         if (obj->material) {
             std::cout << "Mat: " << obj->material->toString() << "\n";
@@ -425,58 +426,80 @@ void Scene::load_pbrt(const std::string &file)
         }
     }
 
-    // TODO WILL: for instancing we need to load and assign IDs to each geometry so we can map them
-    // to instances for instancing. Then Mesh structs should change to just reference their geometry
-    // primitives by ID. Then the geoms could be re-used separately from meshes, so a mesh is a
-    // collection of geometries we want to instance together as a group, so we can get better
-    // re-use. This is similar to OSPRay's approach of mesh -> group -> instance actually.
+    // For PBRTv3 Each Mesh corresponds to a PBRT Object, consisting of potentially multiple Shapes.
+    // This maps to a Mesh with multiple geometries, which can then be instanced
+    // TODO: Maybe use https://github.com/greg7mdp/parallel-hashmap for perf.
+    std::unordered_map<std::string, size_t> pbrt_objects;
     for (const auto &inst : scene->world->instances) {
-        std::cout << inst->toString() << "\n";
-        std::cout << "transform: " << inst->xfm << "\n";
+        // Note: Materials are per-shape, so we should parse them and the IDs when loading the
+        // shapes
 
-        std::vector<Geometry> geometries;
-        for (const auto &obj : inst->object->shapes) {
-            if (pbrt::TriangleMesh::SP mesh = std::dynamic_pointer_cast<pbrt::TriangleMesh>(obj)) {
-                std::cout << "Found instanced triangle mesh w/ " << mesh->index.size()
-                          << " triangles: " << mesh->toString() << "\n"
-                          << "bound: " << mesh->getBounds() << "\n";
+        // Check if this object has already been loaded for the instance
+        auto fnd = pbrt_objects.find(inst->object->name);
+        size_t mesh_id = -1;
+        if (fnd == pbrt_objects.end()) {
+            std::cout << "Loading newly encountered instanced object " << inst->object->name
+                      << "\n";
 
-                Geometry geom;
-                geom.vertices.reserve(mesh->vertex.size());
-                std::transform(mesh->vertex.begin(),
-                               mesh->vertex.end(),
-                               std::back_inserter(geom.vertices),
-                               [](const pbrt::vec3f &v) { return glm::vec3(v.x, v.y, v.z); });
+            std::vector<Geometry> geometries;
+            for (const auto &g : inst->object->shapes) {
+                if (pbrt::TriangleMesh::SP mesh =
+                        std::dynamic_pointer_cast<pbrt::TriangleMesh>(g)) {
+                    std::cout << "Object triangle mesh w/ " << mesh->index.size()
+                              << " triangles: " << mesh->toString() << "\n";
 
-                geom.indices.reserve(mesh->index.size());
-                std::transform(mesh->index.begin(),
-                               mesh->index.end(),
-                               std::back_inserter(geom.indices),
-                               [](const pbrt::vec3i &v) { return glm::ivec3(v.x, v.y, v.z); });
+                    Geometry geom;
+                    geom.vertices.reserve(mesh->vertex.size());
+                    std::transform(mesh->vertex.begin(),
+                                   mesh->vertex.end(),
+                                   std::back_inserter(geom.vertices),
+                                   [](const pbrt::vec3f &v) { return glm::vec3(v.x, v.y, v.z); });
 
-                geom.uvs.reserve(mesh->texcoord.size());
-                std::transform(mesh->texcoord.begin(),
-                               mesh->texcoord.end(),
-                               std::back_inserter(geom.uvs),
-                               [](const pbrt::vec2f &v) { return glm::vec2(v.x, v.y); });
+                    geom.indices.reserve(mesh->index.size());
+                    std::transform(mesh->index.begin(),
+                                   mesh->index.end(),
+                                   std::back_inserter(geom.indices),
+                                   [](const pbrt::vec3i &v) { return glm::ivec3(v.x, v.y, v.z); });
 
-                geometries.push_back(geom);
-            } else if (pbrt::QuadMesh::SP mesh = std::dynamic_pointer_cast<pbrt::QuadMesh>(obj)) {
-                std::cout << "Encountered instanced quadmesh (unsupported type). Will TODO maybe "
-                             "triangulate\n";
-            } else {
-                std::cout << "un-handled instanced geometry type : " << obj->toString()
-                          << std::endl;
+                    geom.uvs.reserve(mesh->texcoord.size());
+                    std::transform(mesh->texcoord.begin(),
+                                   mesh->texcoord.end(),
+                                   std::back_inserter(geom.uvs),
+                                   [](const pbrt::vec2f &v) { return glm::vec2(v.x, v.y); });
+
+                    geometries.push_back(geom);
+                } else if (pbrt::QuadMesh::SP mesh = std::dynamic_pointer_cast<pbrt::QuadMesh>(g)) {
+                    std::cout
+                        << "Encountered instanced quadmesh (unsupported type). Will TODO maybe "
+                           "triangulate\n";
+                } else {
+                    std::cout << "un-handled instanced geometry type : " << g->toString()
+                              << std::endl;
+                }
             }
-        }
-        if (inst->object->instances.size() > 0) {
-            std::cout
-                << "Warning: Potentially multilevel instancing is in the scene after flattening?\n";
+            if (inst->object->instances.size() > 0) {
+                std::cout << "Warning: Potentially multilevel instancing is in the scene after "
+                             "flattening?\n";
+            }
+            // Mesh only contains unsupported objects, skip it
+            if (geometries.empty()) {
+                std::cout << "WARNING: Instance contains only unsupported geometries, skipping\n";
+                continue;
+            }
+            mesh_id = meshes.size();
+            pbrt_objects[inst->object->name] = meshes.size();
+            meshes.emplace_back(geometries);
+        } else {
+            mesh_id = fnd->second;
         }
 
-        // TODO: Actually need to lookup meshes to find re-use for proper instancing
-        instances.emplace_back(glm::mat4(1.f), meshes.size());
-        meshes.emplace_back(geometries);
+        glm::mat4 transform(1.f);
+        transform[0] = glm::vec4(inst->xfm.l.vx.x, inst->xfm.l.vx.y, inst->xfm.l.vx.z, 0.f);
+        transform[1] = glm::vec4(inst->xfm.l.vy.x, inst->xfm.l.vy.y, inst->xfm.l.vy.z, 0.f);
+        transform[2] = glm::vec4(inst->xfm.l.vz.x, inst->xfm.l.vz.y, inst->xfm.l.vz.z, 0.f);
+        transform[3] = glm::vec4(inst->xfm.p.x, inst->xfm.p.y, inst->xfm.p.z, 1.f);
+
+        instances.emplace_back(transform, mesh_id);
     }
 
     const uint32_t default_mat_id = materials.size();
