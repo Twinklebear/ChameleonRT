@@ -9,8 +9,6 @@
 #include "util.h"
 #include <glm/ext.hpp>
 
-#define NUM_RAY_TYPES 2
-
 RenderVulkan::RenderVulkan()
 {
     command_pool = device.make_command_pool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
@@ -159,7 +157,7 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
     }
 }
 
-void RenderVulkan::set_scene(const Scene &scene_data)
+void RenderVulkan::set_scene(const Scene &scene)
 {
     frame_id = 0;
 
@@ -168,108 +166,119 @@ void RenderVulkan::set_scene(const Scene &scene_data)
     // much build + scratch that we run out of GPU memory.
     // Some helpers for managing the temp upload heap buf allocation and queuing of
     // the commands would help to make it easier to write the parallel load version
-    for (const auto &mesh : scene_data.meshes) {
-        // Upload triangle vertices to the device
-        auto upload_verts = vkrt::Buffer::host(
-            device, mesh.vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-        {
-            void *map = upload_verts->map();
-            std::memcpy(map, mesh.vertices.data(), upload_verts->size());
-            upload_verts->unmap();
-        }
-
-        auto upload_indices = vkrt::Buffer::host(
-            device, mesh.indices.size() * sizeof(glm::uvec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-        {
-            void *map = upload_indices->map();
-            std::memcpy(map, mesh.indices.data(), upload_indices->size());
-            upload_indices->unmap();
-        }
-
-        std::shared_ptr<vkrt::Buffer> upload_normals = nullptr;
-        std::shared_ptr<vkrt::Buffer> normals_buf = nullptr;
-        if (!mesh.normals.empty()) {
-            upload_normals = vkrt::Buffer::host(
-                device, mesh.normals.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-            normals_buf = vkrt::Buffer::device(
-                device,
-                upload_normals->size(),
-                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-            void *map = upload_normals->map();
-            std::memcpy(map, mesh.normals.data(), upload_normals->size());
-            upload_normals->unmap();
-        }
-
-        std::shared_ptr<vkrt::Buffer> upload_uvs = nullptr;
-        std::shared_ptr<vkrt::Buffer> uvs_buf = nullptr;
-        if (!mesh.uvs.empty()) {
-            upload_uvs = vkrt::Buffer::host(
-                device, mesh.uvs.size() * sizeof(glm::vec2), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-            uvs_buf = vkrt::Buffer::device(
-                device,
-                upload_uvs->size(),
-                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-            void *map = upload_uvs->map();
-            std::memcpy(map, mesh.uvs.data(), upload_uvs->size());
-            upload_uvs->unmap();
-        }
-
-        auto vertex_buf = vkrt::Buffer::device(
-            device,
-            upload_verts->size(),
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-        auto index_buf = vkrt::Buffer::device(
-            device,
-            upload_indices->size(),
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-
-        // Execute the upload to the device
-        {
-            VkCommandBufferBeginInfo begin_info = {};
-            begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-            CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
-
-            VkBufferCopy copy_cmd = {};
-            copy_cmd.size = upload_verts->size();
-            vkCmdCopyBuffer(
-                command_buffer, upload_verts->handle(), vertex_buf->handle(), 1, &copy_cmd);
-
-            copy_cmd.size = upload_indices->size();
-            vkCmdCopyBuffer(
-                command_buffer, upload_indices->handle(), index_buf->handle(), 1, &copy_cmd);
-
-            if (upload_normals) {
-                copy_cmd.size = upload_normals->size();
-                vkCmdCopyBuffer(
-                    command_buffer, upload_normals->handle(), normals_buf->handle(), 1, &copy_cmd);
+    for (const auto &mesh : scene.meshes) {
+        std::vector<vkrt::Geometry> geometries;
+        for (const auto &geom : mesh.geometries) {
+            // Upload triangle vertices to the device
+            auto upload_verts = vkrt::Buffer::host(
+                device, geom.vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+            {
+                void *map = upload_verts->map();
+                std::memcpy(map, geom.vertices.data(), upload_verts->size());
+                upload_verts->unmap();
             }
 
-            if (upload_uvs) {
-                copy_cmd.size = upload_uvs->size();
-                vkCmdCopyBuffer(
-                    command_buffer, upload_uvs->handle(), uvs_buf->handle(), 1, &copy_cmd);
+            auto upload_indices = vkrt::Buffer::host(
+                device, geom.indices.size() * sizeof(glm::uvec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+            {
+                void *map = upload_indices->map();
+                std::memcpy(map, geom.indices.data(), upload_indices->size());
+                upload_indices->unmap();
             }
 
-            CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+            std::shared_ptr<vkrt::Buffer> upload_normals = nullptr;
+            std::shared_ptr<vkrt::Buffer> normal_buf = nullptr;
+            if (!geom.normals.empty()) {
+                upload_normals = vkrt::Buffer::host(device,
+                                                    geom.normals.size() * sizeof(glm::vec3),
+                                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+                normal_buf = vkrt::Buffer::device(
+                    device,
+                    upload_normals->size(),
+                    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
-            VkSubmitInfo submit_info = {};
-            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            submit_info.commandBufferCount = 1;
-            submit_info.pCommandBuffers = &command_buffer;
-            CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
-            vkQueueWaitIdle(device.graphics_queue());
+                void *map = upload_normals->map();
+                std::memcpy(map, geom.normals.data(), upload_normals->size());
+                upload_normals->unmap();
+            }
 
-            vkResetCommandPool(
-                device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+            std::shared_ptr<vkrt::Buffer> upload_uvs = nullptr;
+            std::shared_ptr<vkrt::Buffer> uv_buf = nullptr;
+            if (!geom.uvs.empty()) {
+                upload_uvs = vkrt::Buffer::host(
+                    device, geom.uvs.size() * sizeof(glm::vec2), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+                uv_buf = vkrt::Buffer::device(
+                    device,
+                    upload_uvs->size(),
+                    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+                void *map = upload_uvs->map();
+                std::memcpy(map, geom.uvs.data(), upload_uvs->size());
+                upload_uvs->unmap();
+            }
+
+            auto vertex_buf = vkrt::Buffer::device(
+                device,
+                upload_verts->size(),
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+            auto index_buf = vkrt::Buffer::device(
+                device,
+                upload_indices->size(),
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+            // Execute the upload to the device
+            {
+                VkCommandBufferBeginInfo begin_info = {};
+                begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+                CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+                VkBufferCopy copy_cmd = {};
+                copy_cmd.size = upload_verts->size();
+                vkCmdCopyBuffer(
+                    command_buffer, upload_verts->handle(), vertex_buf->handle(), 1, &copy_cmd);
+
+                copy_cmd.size = upload_indices->size();
+                vkCmdCopyBuffer(
+                    command_buffer, upload_indices->handle(), index_buf->handle(), 1, &copy_cmd);
+
+                if (upload_normals) {
+                    copy_cmd.size = upload_normals->size();
+                    vkCmdCopyBuffer(command_buffer,
+                                    upload_normals->handle(),
+                                    normal_buf->handle(),
+                                    1,
+                                    &copy_cmd);
+                }
+
+                if (upload_uvs) {
+                    copy_cmd.size = upload_uvs->size();
+                    vkCmdCopyBuffer(
+                        command_buffer, upload_uvs->handle(), uv_buf->handle(), 1, &copy_cmd);
+                }
+
+                CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+
+                VkSubmitInfo submit_info = {};
+                submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+                submit_info.commandBufferCount = 1;
+                submit_info.pCommandBuffers = &command_buffer;
+                CHECK_VULKAN(
+                    vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+                vkQueueWaitIdle(device.graphics_queue());
+
+                vkResetCommandPool(device.logical_device(),
+                                   command_pool,
+                                   VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+            }
+
+            geometries.emplace_back(vertex_buf, index_buf, normal_buf, uv_buf, geom.material_id);
+            ++total_geom;
         }
 
         // Build the bottom level acceleration structure
-        auto bvh = std::make_unique<vkrt::TriangleMesh>(
-            device, vertex_buf, index_buf, normals_buf, uvs_buf);
+        auto bvh = std::make_unique<vkrt::TriangleMesh>(device, geometries);
 
         {
             // TODO: some convenience utils for this
@@ -318,56 +327,68 @@ void RenderVulkan::set_scene(const Scene &scene_data)
         meshes.emplace_back(std::move(bvh));
     }
 
-    // Setup the instance buffer
-    auto upload_instances = vkrt::Buffer::host(
-        device, meshes.size() * sizeof(vkrt::GeometryInstance), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    vkrt::GeometryInstance *map =
-        reinterpret_cast<vkrt::GeometryInstance *>(upload_instances->map());
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        std::memset(&map[i], 0, sizeof(vkrt::GeometryInstance));
-        map[i].transform[0] = 1.f;
-        map[i].transform[5] = 1.f;
-        map[i].transform[10] = 1.f;
-        map[i].mask = 0xff;
-        map[i].instance_custom_index = i;
-        map[i].instance_offset = NUM_RAY_TYPES * i;
-        map[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_NV |
-                       VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
-        map[i].acceleration_structure_handle = meshes[i]->handle;
-
-        material_ids.push_back(scene_data.meshes[i].material_id);
-    }
-    upload_instances->unmap();
-
-    auto instance_buf =
-        vkrt::Buffer::device(device, upload_instances->size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-    // Upload the instance data to the device
+    std::shared_ptr<vkrt::Buffer> instance_buf;
     {
-        VkCommandBufferBeginInfo begin_info = {};
-        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
+        // Setup the instance buffer
+        auto upload_instances =
+            vkrt::Buffer::host(device,
+                               scene.instances.size() * sizeof(vkrt::GeometryInstance),
+                               VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+        vkrt::GeometryInstance *map =
+            reinterpret_cast<vkrt::GeometryInstance *>(upload_instances->map());
 
-        VkBufferCopy copy_cmd = {};
-        copy_cmd.size = upload_instances->size();
-        vkCmdCopyBuffer(
-            command_buffer, upload_instances->handle(), instance_buf->handle(), 1, &copy_cmd);
+        size_t instance_hitgroup_offset = 0;
+        for (size_t i = 0; i < scene.instances.size(); ++i) {
+            const auto &inst = scene.instances[i];
+            std::memset(&map[i], 0, sizeof(vkrt::GeometryInstance));
+            map[i].instance_custom_index = i;
+            map[i].instance_offset = instance_hitgroup_offset;
+            map[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_NV;
+            map[i].acceleration_structure_handle = meshes[inst.mesh_id]->handle;
+            map[i].mask = 0xff;
 
-        CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+            // Note: 4x3 row major
+            const glm::mat4 m = glm::transpose(inst.transform);
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 4; ++c) {
+                    map[i].transform[r * 4 + c] = m[r][c];
+                }
+            }
 
-        VkSubmitInfo submit_info = {};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &command_buffer;
-        CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
-        vkQueueWaitIdle(device.graphics_queue());
+            instance_hitgroup_offset += meshes[inst.mesh_id]->geometries.size();
+        }
+        upload_instances->unmap();
 
-        vkResetCommandPool(
-            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        instance_buf = vkrt::Buffer::device(
+            device, upload_instances->size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        // Upload the instance data to the device
+        {
+            VkCommandBufferBeginInfo begin_info = {};
+            begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+            VkBufferCopy copy_cmd = {};
+            copy_cmd.size = upload_instances->size();
+            vkCmdCopyBuffer(
+                command_buffer, upload_instances->handle(), instance_buf->handle(), 1, &copy_cmd);
+
+            CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+
+            VkSubmitInfo submit_info = {};
+            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submit_info.commandBufferCount = 1;
+            submit_info.pCommandBuffers = &command_buffer;
+            CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+            vkQueueWaitIdle(device.graphics_queue());
+
+            vkResetCommandPool(
+                device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        }
     }
 
     // Build the top level BVH
-    scene = std::make_unique<vkrt::TopLevelBVH>(device, instance_buf);
+    scene_bvh = std::make_unique<vkrt::TopLevelBVH>(device, instance_buf, scene.instances);
     {
         // TODO: some convenience utils for this
         VkCommandBufferBeginInfo begin_info = {};
@@ -375,7 +396,7 @@ void RenderVulkan::set_scene(const Scene &scene_data)
         begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
 
-        scene->enqueue_build(command_buffer);
+        scene_bvh->enqueue_build(command_buffer);
 
         CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
 
@@ -389,17 +410,17 @@ void RenderVulkan::set_scene(const Scene &scene_data)
         vkResetCommandPool(
             device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
     }
-    scene->finalize();
+    scene_bvh->finalize();
 
     mat_params =
         vkrt::Buffer::device(device,
-                             scene_data.materials.size() * sizeof(DisneyMaterial),
+                             scene.materials.size() * sizeof(DisneyMaterial),
                              VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     {
         auto upload_mat_params =
             vkrt::Buffer::host(device, mat_params->size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
         void *map = upload_mat_params->map();
-        std::memcpy(map, scene_data.materials.data(), upload_mat_params->size());
+        std::memcpy(map, scene.materials.data(), upload_mat_params->size());
         upload_mat_params->unmap();
 
         VkCommandBufferBeginInfo begin_info = {};
@@ -426,11 +447,12 @@ void RenderVulkan::set_scene(const Scene &scene_data)
     }
 
     // Upload the scene textures
-    for (const auto &t : scene_data.textures) {
+    for (const auto &t : scene.textures) {
+        auto format = t.color_space == SRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
         auto tex =
             vkrt::Texture2D::device(device,
                                     glm::uvec2(t.width, t.height),
-                                    VK_FORMAT_R8G8B8A8_UNORM,
+                                    format,
                                     VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
         auto upload_buf = vkrt::Buffer::host(
@@ -537,13 +559,13 @@ void RenderVulkan::set_scene(const Scene &scene_data)
 
     light_params =
         vkrt::Buffer::device(device,
-                             sizeof(QuadLight) * scene_data.lights.size(),
+                             sizeof(QuadLight) * scene.lights.size(),
                              VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     {
         auto upload_light_params =
             vkrt::Buffer::host(device, light_params->size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
         void *map = upload_light_params->map();
-        std::memcpy(map, scene_data.lights.data(), upload_light_params->size());
+        std::memcpy(map, scene.lights.data(), upload_light_params->size());
         upload_light_params->unmap();
 
         VkCommandBufferBeginInfo begin_info = {};
@@ -647,11 +669,19 @@ void RenderVulkan::build_raytracing_pipeline()
 #endif
             .build(device);
 
+    const size_t total_geom =
+        std::accumulate(meshes.begin(),
+                        meshes.end(),
+                        0,
+                        [](size_t n, const std::unique_ptr<vkrt::TriangleMesh> &t) {
+                            return n + t->geometries.size();
+                        });
+
     // Make the variable sized descriptor layout for all our varying sized buffer arrays which
     // we use to send the mesh data
     buffer_desc_layout = vkrt::DescriptorSetLayoutBuilder()
                              .add_binding(0,
-                                          meshes.size(),
+                                          total_geom,
                                           VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                                           VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
                                           VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)
@@ -698,7 +728,6 @@ void RenderVulkan::build_raytracing_pipeline()
                       .add_miss("miss", miss_shader)
                       .add_miss("occlusion_miss", occlusion_miss_shader)
                       .add_hitgroup("closest_hit", closest_hit_shader)
-                      .add_hitgroup("occlusion_hit", occlusion_hit_shader)
                       .set_recursion_depth(1)
                       .set_layout(pipeline_layout)
                       .build(device);
@@ -710,7 +739,7 @@ void RenderVulkan::build_shader_descriptor_table()
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 + uint32_t(4 * meshes.size())},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 + uint32_t(4 * total_geom)},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                              std::max(uint32_t(textures.size()), uint32_t(1))}};
 
@@ -741,19 +770,34 @@ void RenderVulkan::build_shader_descriptor_table()
 
     std::vector<std::shared_ptr<vkrt::Buffer>> index_buffers, vertex_buffers, normal_buffers,
         uv_buffers;
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        const auto &m = meshes[i];
 
-        index_buffers.emplace_back(m->index_buf);
-        vertex_buffers.emplace_back(m->vertex_buf);
+    GeomBufIndices indices;
+    for (const auto &m : meshes) {
+        std::vector<GeomBufIndices> geom_indices;
+        for (const auto &geom : m->geometries) {
+            GeomBufIndices idx = indices;
+            indices.idx_buf++;
+            indices.vert_buf++;
 
-        if (m->normal_buf) {
-            normal_buffers.emplace_back(m->normal_buf);
+            index_buffers.emplace_back(geom.index_buf);
+            vertex_buffers.emplace_back(geom.vertex_buf);
+
+            if (geom.normal_buf) {
+                indices.normal_buf++;
+                normal_buffers.emplace_back(geom.normal_buf);
+            } else {
+                idx.normal_buf = -1;
+            }
+
+            if (geom.uv_buf) {
+                indices.uv_buf++;
+                uv_buffers.emplace_back(geom.uv_buf);
+            } else {
+                idx.uv_buf = -1;
+            }
+            geom_indices.push_back(idx);
         }
-
-        if (m->uv_buf) {
-            uv_buffers.emplace_back(m->uv_buf);
-        }
+        buf_indices.push_back(geom_indices);
     }
 
     std::vector<vkrt::CombinedImageSampler> combined_samplers;
@@ -762,7 +806,7 @@ void RenderVulkan::build_shader_descriptor_table()
     }
 
     auto updater = vkrt::DescriptorSetUpdater()
-                       .write_acceleration_structure(desc_set, 0, scene)
+                       .write_acceleration_structure(desc_set, 0, scene_bvh)
                        .write_storage_image(desc_set, 1, render_target)
                        .write_storage_image(desc_set, 2, accum_buffer)
                        .write_ubo(desc_set, 3, view_param_buf)
@@ -793,12 +837,14 @@ void RenderVulkan::build_shader_binding_table()
         .add_miss(vkrt::ShaderRecord("miss", "miss", 0))
         .add_miss(vkrt::ShaderRecord("occlusion_miss", "occlusion_miss", 0));
 
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        sbt_builder
-            .add_hitgroup(vkrt::ShaderRecord(
-                "closest_hit_inst" + std::to_string(i), "closest_hit", 3 * sizeof(uint32_t)))
-            .add_hitgroup(
-                vkrt::ShaderRecord("occlusion_hit_inst" + std::to_string(i), "occlusion_hit", 0));
+    for (size_t i = 0; i < scene_bvh->num_instances(); ++i) {
+        const auto &inst = scene_bvh->instances[i];
+        for (size_t j = 0; j < meshes[inst.mesh_id]->geometries.size(); ++j) {
+            auto &geom = meshes[inst.mesh_id]->geometries[j];
+            std::string hg_name = "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j);
+            sbt_builder.add_hitgroup(
+                vkrt::ShaderRecord(hg_name, "closest_hit", sizeof(HitGroupParams)));
+        }
     }
 
     shader_table = sbt_builder.build(device);
@@ -813,22 +859,21 @@ void RenderVulkan::build_shader_binding_table()
 
     uint32_t normal_buf_idx = 0;
     uint32_t uv_buf_idx = 0;
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        uint32_t *params = reinterpret_cast<uint32_t *>(
-            shader_table.sbt_params("closest_hit_inst" + std::to_string(i)));
+    for (size_t i = 0; i < scene_bvh->num_instances(); ++i) {
+        const auto &inst = scene_bvh->instances[i];
+        for (size_t j = 0; j < meshes[inst.mesh_id]->geometries.size(); ++j) {
+            auto &geom = meshes[inst.mesh_id]->geometries[j];
+            std::string hg_name = "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j);
 
-        if (meshes[i]->normal_buf) {
-            params[0] = normal_buf_idx++;
-        } else {
-            params[0] = -1;
-        }
+            HitGroupParams *params =
+                reinterpret_cast<HitGroupParams *>(shader_table.sbt_params(hg_name));
 
-        if (meshes[i]->uv_buf) {
-            params[1] = uv_buf_idx++;
-        } else {
-            params[1] = -1;
+            params->idx_buf = buf_indices[inst.mesh_id][j].idx_buf;
+            params->vert_buf = buf_indices[inst.mesh_id][j].vert_buf;
+            params->normal_buf = buf_indices[inst.mesh_id][j].normal_buf;
+            params->uv_buf = buf_indices[inst.mesh_id][j].uv_buf;
+            params->material_id = geom.material_id;
         }
-        params[2] = material_ids[i];
     }
 
     {

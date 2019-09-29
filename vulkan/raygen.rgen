@@ -106,7 +106,7 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 
         occlusion_hit = true;
         traceNV(scene, occlusion_flags, 0xff,
-                OCCLUSION_RAY, 0, OCCLUSION_RAY, hit_p, EPSILON, light_dir, light_dist, OCCLUSION_RAY);
+                PRIMARY_RAY, 1, OCCLUSION_RAY, hit_p, EPSILON, light_dir, light_dist, OCCLUSION_RAY);
 #ifdef REPORT_RAY_STATS
 		++ray_count;
 #endif
@@ -133,7 +133,7 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
                 occlusion_hit = true;
                 traceNV(scene, occlusion_flags, 0xff,
-                        OCCLUSION_RAY, 0, OCCLUSION_RAY, hit_p, EPSILON, w_i, light_dist, OCCLUSION_RAY);
+                        PRIMARY_RAY, 1, OCCLUSION_RAY, hit_p, EPSILON, w_i, light_dist, OCCLUSION_RAY);
 #ifdef REPORT_RAY_STATS
 				++ray_count;
 #endif
@@ -164,7 +164,7 @@ void main() {
 	vec3 illum = vec3(0.f);
 	vec3 path_throughput = vec3(1.f);
     do {
-        traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, PRIMARY_RAY, 0, PRIMARY_RAY,
+        traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY,
                 ray_origin, t_min, ray_dir, t_max, PRIMARY_RAY);
 #ifdef REPORT_RAY_STATS
 		++ray_count;

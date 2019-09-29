@@ -7,8 +7,8 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <optix.h>
-#include "mesh.h"
 #include "material.h"
+#include "mesh.h"
 #include <glm/glm.hpp>
 
 #define CHECK_OPTIX(FN)                                                                \
@@ -126,7 +126,7 @@ struct Geometry {
     uint32_t geom_flags = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
     CUdeviceptr vertex_buf_ptr;
 
-	Geometry() = default;
+    Geometry() = default;
 
     // TODO: Allow other vertex and index formats? Right now this
     // assumes vec3f verts and uint3 indices
@@ -137,11 +137,11 @@ struct Geometry {
              uint32_t material_id,
              uint32_t geom_flags = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT);
 
-	 OptixBuildInput geom_desc() const;
+    OptixBuildInput geom_desc() const;
 };
 
 class TriangleMesh {
-    uint32_t build_flags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
+    uint32_t build_flags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
     std::vector<OptixBuildInput> build_inputs;
 
     Buffer build_output, scratch, post_build_info, bvh;
@@ -153,7 +153,9 @@ public:
 
     TriangleMesh() = default;
 
-    TriangleMesh(std::vector<Geometry> &geometries, uint32_t build_flags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
+    TriangleMesh(std::vector<Geometry> &geometries,
+                 uint32_t build_flags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION |
+                                        OPTIX_BUILD_FLAG_PREFER_FAST_TRACE);
 
     // Enqueue the acceleration structure build construction into the passed stream
     void enqueue_build(OptixDeviceContext &device, CUstream &stream);

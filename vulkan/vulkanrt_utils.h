@@ -2,9 +2,11 @@
 
 #include <memory>
 #include <unordered_map>
-#include <vulkan/vulkan.hpp>
+#include "material.h"
+#include "mesh.h"
 #include "vulkan_utils.h"
 #include <glm/glm.hpp>
+#include <vulkan/vulkan.hpp>
 
 namespace vkrt {
 
@@ -19,9 +21,25 @@ struct GeometryInstance {
     uint64_t acceleration_structure_handle;
 };
 
+struct Geometry {
+    std::shared_ptr<Buffer> vertex_buf, index_buf, normal_buf, uv_buf;
+    VkGeometryNV geom_desc = {};
+    uint32_t material_id;
+
+    Geometry() = default;
+
+    Geometry(std::shared_ptr<Buffer> vertex_buf,
+             std::shared_ptr<Buffer> index_buf,
+             std::shared_ptr<Buffer> normal_buf,
+             std::shared_ptr<Buffer> uv_buf,
+             uint32_t material_id,
+             uint32_t geom_flags = VK_GEOMETRY_OPAQUE_BIT_NV);
+};
+
 class TriangleMesh {
     Device *device = nullptr;
-    VkGeometryNV geom_desc = {};
+    std::vector<VkGeometryNV> geom_descs;
+
     VkBuildAccelerationStructureFlagBitsNV build_flags = (VkBuildAccelerationStructureFlagBitsNV)0;
     VkAccelerationStructureInfoNV accel_info = {};
 
@@ -31,18 +49,14 @@ class TriangleMesh {
     VkAccelerationStructureNV compacted_bvh = VK_NULL_HANDLE;
 
 public:
-    std::shared_ptr<Buffer> vertex_buf, index_buf, normal_buf, uv_buf;
+    std::vector<Geometry> geometries;
     VkAccelerationStructureNV bvh = VK_NULL_HANDLE;
     uint64_t handle = 0;
 
     // TODO: Allow other vertex and index formats? Right now this
     // assumes vec3f verts and uint3 indices
     TriangleMesh(Device &dev,
-                 std::shared_ptr<Buffer> &vertex_buf,
-                 std::shared_ptr<Buffer> &index_buf,
-                 std::shared_ptr<Buffer> &normal_buf,
-                 std::shared_ptr<Buffer> &uv_buf,
-                 uint32_t geom_flags = VK_GEOMETRY_OPAQUE_BIT_NV,
+                 std::vector<Geometry> geometries,
                  uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV |
                                         VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_NV);
 
@@ -70,8 +84,6 @@ public:
      * this can be called after the work from enqueue build has been finished
      */
     void finalize();
-
-    size_t num_tris() const;
 };
 
 class TopLevelBVH {
@@ -84,6 +96,7 @@ class TopLevelBVH {
 
 public:
     std::shared_ptr<Buffer> instance_buf;
+    std::vector<Instance> instances;
     VkAccelerationStructureNV bvh = VK_NULL_HANDLE;
     uint64_t handle = 0;
 
@@ -91,6 +104,7 @@ public:
     // in OptiX, maybe DXR and Vulkan too?
     TopLevelBVH(Device &dev,
                 std::shared_ptr<Buffer> &instance_buf,
+                const std::vector<Instance> &instances,
                 uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
 
     TopLevelBVH() = default;

@@ -23,16 +23,18 @@ layout(binding = 0, set = 4, std430) buffer UVBuffers {
 } uv_buffers[];
 
 layout(shaderRecordNV) buffer SBT {
+    uint32_t vert_buf;
+    uint32_t idx_buf;
     uint32_t normal_buf;
     uint32_t uv_buf;
     uint32_t material_id;
 };
 
 void main() {
-    const uvec3 idx = unpack_uint3(index_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].i[gl_PrimitiveID]);
-    const vec3 va = unpack_float3(vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].v[idx.x]);
-    const vec3 vb = unpack_float3(vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].v[idx.y]);
-    const vec3 vc = unpack_float3(vertex_buffers[nonuniformEXT(gl_InstanceCustomIndexNV)].v[idx.z]);
+    const uvec3 idx = unpack_uint3(index_buffers[nonuniformEXT(idx_buf)].i[gl_PrimitiveID]);
+    const vec3 va = unpack_float3(vertex_buffers[nonuniformEXT(vert_buf)].v[idx.x]);
+    const vec3 vb = unpack_float3(vertex_buffers[nonuniformEXT(vert_buf)].v[idx.y]);
+    const vec3 vc = unpack_float3(vertex_buffers[nonuniformEXT(vert_buf)].v[idx.z]);
     const vec3 n = normalize(cross(vb - va, vc - va));
 
     vec2 uv = vec2(0);
@@ -44,9 +46,9 @@ void main() {
             + attrib.x * uvb + attrib.y * uvc;
     }
 
-    // TODO: transform normal back to world space, right now our transform is just
-    // the identity
-    payload.normal = n;
+    // TODO: Seems like the transformed normal isn't quite right?
+    mat3 inv_transp = transpose(mat3(gl_WorldToObjectNV));
+    payload.normal = normalize(inv_transp * n);
     payload.dist = gl_RayTmaxNV;
     payload.uv = uv;
     payload.material_id = material_id;

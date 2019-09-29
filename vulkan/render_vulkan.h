@@ -7,6 +7,21 @@
 #include "vulkan_utils.h"
 #include "vulkanrt_utils.h"
 
+struct HitGroupParams {
+    uint32_t vert_buf = 0;
+    uint32_t idx_buf = 0;
+    uint32_t normal_buf = 0;
+    uint32_t uv_buf = 0;
+    uint32_t material_id = 0;
+};
+
+struct GeomBufIndices {
+    uint32_t vert_buf = 0;
+    uint32_t idx_buf = 0;
+    uint32_t normal_buf = 0;
+    uint32_t uv_buf = 0;
+};
+
 struct RenderVulkan : RenderBackend {
     vkrt::Device device;
 
@@ -20,7 +35,9 @@ struct RenderVulkan : RenderBackend {
 #endif
 
     std::vector<std::unique_ptr<vkrt::TriangleMesh>> meshes;
-    std::unique_ptr<vkrt::TopLevelBVH> scene;
+    std::unique_ptr<vkrt::TopLevelBVH> scene_bvh;
+    std::vector<std::vector<GeomBufIndices>> buf_indices;
+    size_t total_geom = 0;
 
     std::vector<uint32_t> material_ids;
     std::vector<std::shared_ptr<vkrt::Texture2D>> textures;

@@ -512,6 +512,7 @@ size_t Texture2D::pixel_size() const
         return 2;
     case VK_FORMAT_R8G8B8A8_UNORM:
     case VK_FORMAT_B8G8R8A8_UNORM:
+    case VK_FORMAT_R8G8B8A8_SRGB:
         return 4;
     case VK_FORMAT_R32G32B32A32_SFLOAT:
         return 16;

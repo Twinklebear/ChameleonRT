@@ -7,19 +7,17 @@
 
 namespace vkrt {
 
-TriangleMesh::TriangleMesh(Device &dev,
-                           std::shared_ptr<Buffer> &verts,
-                           std::shared_ptr<Buffer> &indices,
-                           std::shared_ptr<Buffer> &normals,
-                           std::shared_ptr<Buffer> &uvs,
-                           uint32_t geom_flags,
-                           uint32_t build_flags)
-    : device(&dev),
-      build_flags((VkBuildAccelerationStructureFlagBitsNV)build_flags),
-      vertex_buf(verts),
+Geometry::Geometry(std::shared_ptr<Buffer> verts,
+                   std::shared_ptr<Buffer> indices,
+                   std::shared_ptr<Buffer> normal_buf,
+                   std::shared_ptr<Buffer> uv_buf,
+                   uint32_t material_id,
+                   uint32_t geom_flags)
+    : vertex_buf(verts),
       index_buf(indices),
-      normal_buf(normals),
-      uv_buf(uvs)
+      normal_buf(normal_buf),
+      uv_buf(uv_buf),
+      material_id(material_id)
 {
     geom_desc.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
     geom_desc.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_NV;
@@ -37,16 +35,29 @@ TriangleMesh::TriangleMesh(Device &dev,
     geom_desc.geometry.triangles.transformData = VK_NULL_HANDLE;
     geom_desc.geometry.triangles.transformOffset = 0;
     geom_desc.flags = geom_flags;
+
     // Must be set even if not used
     geom_desc.geometry.aabbs = {};
     geom_desc.geometry.aabbs.sType = {VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV};
+}
+
+TriangleMesh::TriangleMesh(Device &dev, std::vector<Geometry> geoms, uint32_t build_flags)
+    : device(&dev),
+      build_flags((VkBuildAccelerationStructureFlagBitsNV)build_flags),
+      geometries(geoms)
+
+{
+    std::transform(geometries.begin(),
+                   geometries.end(),
+                   std::back_inserter(geom_descs),
+                   [](const Geometry &g) { return g.geom_desc; });
 
     accel_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
     accel_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
     accel_info.flags = build_flags;
     accel_info.instanceCount = 0;
-    accel_info.geometryCount = 1;
-    accel_info.pGeometries = &geom_desc;
+    accel_info.geometryCount = geom_descs.size();
+    accel_info.pGeometries = geom_descs.data();
 
     VkAccelerationStructureCreateInfoNV create_info = {};
     create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
@@ -205,16 +216,14 @@ void TriangleMesh::finalize()
         vkGetAccelerationStructureHandle(device->logical_device(), bvh, sizeof(uint64_t), &handle));
 }
 
-size_t TriangleMesh::num_tris() const
-{
-    return geom_desc.geometry.triangles.indexCount / 3;
-}
-
-TopLevelBVH::TopLevelBVH(Device &dev, std::shared_ptr<Buffer> &inst_buf, uint32_t build_flags)
+TopLevelBVH::TopLevelBVH(Device &dev,
+                         std::shared_ptr<Buffer> &inst_buf,
+                         const std::vector<Instance> &instances,
+                         uint32_t build_flags)
     : device(&dev),
       build_flags((VkBuildAccelerationStructureFlagBitsNV)build_flags),
-      instance_buf(inst_buf)
-
+      instance_buf(inst_buf),
+      instances(instances)
 {
     accel_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
     accel_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;

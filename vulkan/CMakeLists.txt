@@ -8,7 +8,7 @@ if (REPORT_RAY_STATS)
 endif()
 
 add_spirv_embed_library(spv_shaders raygen.rgen miss.rmiss hit.rchit
-    occlusion_hit.rchit occlusion_miss.rmiss
+    occlusion_miss.rmiss
 	COMPILE_OPTIONS -O
     COMPILE_DEFINITIONS ${GLSL_COMPILE_DEFNS})
 
