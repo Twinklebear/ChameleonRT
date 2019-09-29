@@ -235,14 +235,11 @@ void Scene::load_gltf(const std::string &fname)
         throw std::runtime_error("TinyGLTF Error loading " + fname + " error: " + err);
     }
 
-    flatten_gltf(model);
-
-    std::cout << "Default scene: " << model.defaultScene << "\n";
-
-    std::cout << "# of scenes " << model.scenes.size() << "\n";
-    for (const auto &scene : model.scenes) {
-        std::cout << "Scene: " << scene.name << "\n";
+    if (model.defaultScene == -1) {
+        model.defaultScene = 0;
     }
+
+    flatten_gltf(model);
 
     // Load the meshes
     for (auto &m : model.meshes) {
@@ -263,8 +260,8 @@ void Scene::load_gltf(const std::string &fname)
                 geom.vertices.push_back(pos_accessor[i]);
             }
 
-            // Note: GLTF can have multiple texture coordinates used by different textures (owch)
-            // I don't plan to support this
+            // Note: GLTF can have multiple texture coordinates used by different textures
+            // (owch) I don't plan to support this
             auto fnd = p.attributes.find("TEXCOORD_0");
             if (fnd != p.attributes.end()) {
                 Accessor<glm::vec2> uv_accessor(model.accessors[fnd->second], model);
@@ -310,10 +307,6 @@ void Scene::load_gltf(const std::string &fname)
 
     // Load images
     for (const auto &img : model.images) {
-        std::cout << "Image: " << img.name << " (" << img.width << "x" << img.height << "):\n"
-                  << "components: " << img.component << ", bits: " << img.bits << ", pixel type: "
-                  << print_data_type(gltf_type_to_dtype(TINYGLTF_TYPE_SCALAR, img.pixel_type))
-                  << " img vec size: " << img.image.size() << "\n";
         if (img.component != 4) {
             std::cout << "WILL: Check non-4 component image support\n";
         }
@@ -350,22 +343,13 @@ void Scene::load_gltf(const std::string &fname)
             textures[mat.color_tex_id].color_space = SRGB;
         }
 
-        std::cout << "mat: " << m.name << "\n"
-                  << "base color: " << glm::to_string(mat.base_color) << "\n"
-                  << "metallic: " << mat.metallic << "\n"
-                  << "roughness: " << mat.roughness << "\n"
-                  << "color texture: " << mat.color_tex_id << "\n";
-
         materials.push_back(mat);
     }
 
     for (const auto &nid : model.scenes[model.defaultScene].nodes) {
         const tinygltf::Node &n = model.nodes[nid];
-        std::cout << "node: " << n.name << "\n";
-        std::cout << "mesh: " << n.mesh << "\n";
         if (n.mesh != -1) {
             const glm::mat4 transform = read_node_transform(n);
-            std::cout << "Transform: " << glm::to_string(transform) << "\n";
             instances.emplace_back(transform, n.mesh);
         }
     }
@@ -426,8 +410,8 @@ void Scene::load_pbrt(const std::string &file)
         }
     }
 
-    // For PBRTv3 Each Mesh corresponds to a PBRT Object, consisting of potentially multiple Shapes.
-    // This maps to a Mesh with multiple geometries, which can then be instanced
+    // For PBRTv3 Each Mesh corresponds to a PBRT Object, consisting of potentially multiple
+    // Shapes. This maps to a Mesh with multiple geometries, which can then be instanced
     // TODO: Maybe use https://github.com/greg7mdp/parallel-hashmap for perf.
     std::unordered_map<std::string, size_t> pbrt_objects;
     for (const auto &inst : scene->world->instances) {
