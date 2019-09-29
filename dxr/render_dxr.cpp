@@ -279,7 +279,7 @@ void RenderDXR::set_scene(const Scene &scene)
             const auto &inst = scene.instances[i];
             buf[i].InstanceID = i;
             buf[i].InstanceContributionToHitGroupIndex = instance_hitgroup_offset;
-            buf[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+            buf[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE;
             buf[i].AccelerationStructure = meshes[inst.mesh_id]->GetGPUVirtualAddress();
             buf[i].InstanceMask = 0xff;
 
@@ -573,8 +573,6 @@ void RenderDXR::build_shader_binding_table()
         const auto &inst = scene_bvh.instances[i];
         for (size_t j = 0; j < meshes[inst.mesh_id].geometries.size(); ++j) {
             auto &geom = meshes[inst.mesh_id].geometries[j];
-            // TODO: Later on each mesh is not necessarily an instance but can be instanced multiple
-            // times with different params (thus needing different hitgroups
             const std::wstring hg_name =
                 L"HitGroup_inst" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
 

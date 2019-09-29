@@ -1046,10 +1046,12 @@ size_t TopLevelBVH::num_instances() const
 {
     return instances.size();
 }
+
 ID3D12Resource *TopLevelBVH::operator->()
 {
     return get();
 }
+
 ID3D12Resource *TopLevelBVH::get()
 {
     return bvh.get();
