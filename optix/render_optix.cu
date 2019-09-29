@@ -76,7 +76,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 
         shadow_payload.t_hit = 1.f;
         optixTrace(launch_params.scene, hit_p, light_dir, EPSILON, light_dist, 0,
-                0xff, occlusion_flags, OCCLUSION_RAY, 0, OCCLUSION_RAY,
+                0xff, occlusion_flags, PRIMARY_RAY, 1, OCCLUSION_RAY,
                 payload_ptr.x, payload_ptr.y);
 #ifdef REPORT_RAY_STATS
         ++ray_count;
@@ -102,7 +102,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
                 float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
                 shadow_payload.t_hit = 1.f;
                 optixTrace(launch_params.scene, hit_p, w_i, EPSILON, light_dist, 0,
-                        0xff, occlusion_flags, OCCLUSION_RAY, 0, OCCLUSION_RAY,
+                        0xff, occlusion_flags, PRIMARY_RAY, 1, OCCLUSION_RAY,
                         payload_ptr.x, payload_ptr.y);
 #ifdef REPORT_RAY_STATS
                 ++ray_count;
@@ -143,7 +143,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
         pack_ptr(&payload, payload_ptr.x, payload_ptr.y);
 
         optixTrace(launch_params.scene, ray_origin, ray_dir, EPSILON, 1e20f, 0,
-                0xff, OPTIX_RAY_FLAG_DISABLE_ANYHIT, PRIMARY_RAY, 0, PRIMARY_RAY,
+                0xff, OPTIX_RAY_FLAG_DISABLE_ANYHIT, PRIMARY_RAY, 1, PRIMARY_RAY,
                 payload_ptr.x, payload_ptr.y);
 #ifdef REPORT_RAY_STATS
         ++ray_count;
@@ -245,14 +245,7 @@ extern "C" __global__ void __closesthit__closest_hit() {
     RayPayload &payload = get_payload<RayPayload>();
     payload.uv = uv;
     payload.t_hit = optixGetRayTmax();
-    payload.material_id = optixGetInstanceId();
-    // TODO: we need to transform the normal back to world-space
-    // and make sure it's normalized after
-    payload.normal = normal;
-}
-
-extern "C" __global__ void __closesthit__occlusion_hit() {
-    RayPayload &payload = get_payload<RayPayload>();
-    payload.t_hit = optixGetRayTmax();
+    payload.material_id = params.material_id;
+    payload.normal = normalize(optixTransformNormalFromObjectToWorldSpace(normal));
 }
 

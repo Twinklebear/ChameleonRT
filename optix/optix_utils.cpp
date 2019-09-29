@@ -56,7 +56,7 @@ void Buffer::clear()
     CHECK_CUDA(cudaMemset(ptr, 0, buf_size));
 }
 
-Texture2D::Texture2D(glm::uvec2 dims, cudaChannelFormatDesc channel_format)
+Texture2D::Texture2D(glm::uvec2 dims, cudaChannelFormatDesc channel_format, ColorSpace color_space)
     : tdims(dims), channel_format(channel_format)
 {
     CHECK_CUDA(cudaMallocArray(&data, &channel_format, dims.x, dims.y));
@@ -70,7 +70,7 @@ Texture2D::Texture2D(glm::uvec2 dims, cudaChannelFormatDesc channel_format)
     tex_desc.addressMode[1] = cudaAddressModeWrap;
     tex_desc.filterMode = cudaFilterModeLinear;
     tex_desc.readMode = cudaReadModeNormalizedFloat;
-    tex_desc.sRGB = 0;
+    tex_desc.sRGB = color_space == SRGB ? 1 : 0;
     tex_desc.normalizedCoords = 1;
     tex_desc.maxAnisotropy = 1;
     tex_desc.maxMipmapLevelClamp = 1;
@@ -131,35 +131,49 @@ glm::uvec2 Texture2D::dims() const
     return tdims;
 }
 
-TriangleMesh::TriangleMesh(std::shared_ptr<Buffer> vertex_buf,
-                           std::shared_ptr<Buffer> index_buf,
-                           std::shared_ptr<Buffer> normal_buf,
-                           std::shared_ptr<Buffer> uv_buf,
-                           uint32_t g_flags,
-                           uint32_t build_flags)
-    : vertex_ptr(vertex_buf->device_ptr()),
-      geom_flags(g_flags),
-      build_flags(build_flags),
-      vertex_buf(vertex_buf),
+Geometry::Geometry(std::shared_ptr<Buffer> vertex_buf,
+                   std::shared_ptr<Buffer> index_buf,
+                   std::shared_ptr<Buffer> normal_buf,
+                   std::shared_ptr<Buffer> uv_buf,
+                   uint32_t material_id,
+                   uint32_t geom_flags)
+    : vertex_buf(vertex_buf),
       index_buf(index_buf),
       normal_buf(normal_buf),
-      uv_buf(uv_buf)
+      uv_buf(uv_buf),
+      material_id(material_id),
+      geom_flags(geom_flags),
+      vertex_buf_ptr(vertex_buf->device_ptr())
 {
-    geom_desc.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
+}
 
-    // TODO: Support for multiple geom in a single bottom level BVH
-    geom_desc.triangleArray.vertexBuffers = &vertex_ptr;
-    geom_desc.triangleArray.numVertices = vertex_buf->size() / sizeof(glm::vec3);
-    geom_desc.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
-    geom_desc.triangleArray.vertexStrideInBytes = sizeof(glm::vec3);
+OptixBuildInput Geometry::geom_desc() const {
+    OptixBuildInput desc = {};
 
-    geom_desc.triangleArray.indexBuffer = index_buf->device_ptr();
-    geom_desc.triangleArray.numIndexTriplets = index_buf->size() / sizeof(glm::uvec3);
-    geom_desc.triangleArray.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
-    geom_desc.triangleArray.indexStrideInBytes = sizeof(glm::uvec3);
+    desc.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
+    desc.triangleArray.vertexBuffers = &vertex_buf_ptr;
+    desc.triangleArray.numVertices = vertex_buf->size() / sizeof(glm::vec3);
+    desc.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
+    desc.triangleArray.vertexStrideInBytes = sizeof(glm::vec3);
 
-    geom_desc.triangleArray.flags = &geom_flags;
-    geom_desc.triangleArray.numSbtRecords = 1;
+    desc.triangleArray.indexBuffer = index_buf->device_ptr();
+    desc.triangleArray.numIndexTriplets = index_buf->size() / sizeof(glm::uvec3);
+    desc.triangleArray.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
+    desc.triangleArray.indexStrideInBytes = sizeof(glm::uvec3);
+
+    desc.triangleArray.flags = &geom_flags;
+    desc.triangleArray.numSbtRecords = 1;
+    return desc;
+}
+
+TriangleMesh::TriangleMesh(std::vector<Geometry> &geoms, uint32_t build_flags)
+    : geometries(geoms), build_flags(build_flags)
+{
+    build_inputs.reserve(geometries.size());
+    std::transform(geometries.begin(),
+                   geometries.end(),
+                   std::back_inserter(build_inputs),
+                   [](const Geometry &g) { return g.geom_desc(); });
 }
 
 void TriangleMesh::enqueue_build(OptixDeviceContext &device, CUstream &stream)
@@ -170,7 +184,8 @@ void TriangleMesh::enqueue_build(OptixDeviceContext &device, CUstream &stream)
     opts.motionOptions.numKeys = 1;
 
     OptixAccelBufferSizes buf_sizes;
-    CHECK_OPTIX(optixAccelComputeMemoryUsage(device, &opts, &geom_desc, 1, &buf_sizes));
+    CHECK_OPTIX(optixAccelComputeMemoryUsage(
+        device, &opts, build_inputs.data(), build_inputs.size(), &buf_sizes));
 
 #if 0
 	std::cout << "BLAS will use output space of "
@@ -190,8 +205,8 @@ void TriangleMesh::enqueue_build(OptixDeviceContext &device, CUstream &stream)
     CHECK_OPTIX(optixAccelBuild(device,
                                 stream,
                                 &opts,
-                                &geom_desc,
-                                1,
+                                build_inputs.data(),
+                                build_inputs.size(),
                                 scratch.device_ptr(),
                                 scratch.size(),
                                 build_output.device_ptr(),
@@ -224,18 +239,15 @@ void TriangleMesh::finalize()
     post_build_info = Buffer();
 }
 
-size_t TriangleMesh::num_tris() const
-{
-    return geom_desc.triangleArray.numIndexTriplets;
-}
-
 OptixTraversableHandle TriangleMesh::handle()
 {
     return as_handle;
 }
 
-TopLevelBVH::TopLevelBVH(std::shared_ptr<Buffer> instance_buf, uint32_t build_flags)
-    : build_flags(build_flags), instance_buf(instance_buf)
+TopLevelBVH::TopLevelBVH(std::shared_ptr<Buffer> instance_buf,
+                         const std::vector<Instance> &instances,
+                         uint32_t build_flags)
+    : build_flags(build_flags), instance_buf(instance_buf), instances(instances)
 {
     geom_desc.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
     geom_desc.instanceArray.instances = instance_buf->device_ptr();

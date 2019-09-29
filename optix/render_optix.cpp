@@ -99,31 +99,38 @@ void RenderOptiX::set_scene(const Scene &scene)
     // the commands would help to make it easier to write the parallel load version which
     // won't exceed the GPU VRAM
     for (const auto &mesh : scene.meshes) {
-        auto vertices = std::make_shared<optix::Buffer>(mesh.vertices.size() * sizeof(glm::vec3));
-        vertices->upload(mesh.vertices);
+        std::vector<optix::Geometry> geometries;
+        for (const auto &geom : mesh.geometries) {
+            auto vertices =
+                std::make_shared<optix::Buffer>(geom.vertices.size() * sizeof(glm::vec3));
+            vertices->upload(geom.vertices);
 
-        auto indices = std::make_shared<optix::Buffer>(mesh.indices.size() * sizeof(glm::uvec3));
-        indices->upload(mesh.indices);
+            auto indices =
+                std::make_shared<optix::Buffer>(geom.indices.size() * sizeof(glm::uvec3));
+            indices->upload(geom.indices);
 
-        std::shared_ptr<optix::Buffer> uvs = nullptr;
-        if (!mesh.uvs.empty()) {
-            uvs = std::make_shared<optix::Buffer>(mesh.uvs.size() * sizeof(glm::vec2));
-            uvs->upload(mesh.uvs);
-        }
+            std::shared_ptr<optix::Buffer> uvs = nullptr;
+            if (!geom.uvs.empty()) {
+                uvs = std::make_shared<optix::Buffer>(geom.uvs.size() * sizeof(glm::vec2));
+                uvs->upload(geom.uvs);
+            }
 
-        std::shared_ptr<optix::Buffer> normals = nullptr;
-        if (!mesh.normals.empty()) {
-            normals = std::make_shared<optix::Buffer>(mesh.normals.size() * sizeof(glm::vec3));
-            normals->upload(mesh.normals);
+            std::shared_ptr<optix::Buffer> normals = nullptr;
+            if (!geom.normals.empty()) {
+                normals = std::make_shared<optix::Buffer>(geom.normals.size() * sizeof(glm::vec3));
+                normals->upload(geom.normals);
+            }
+
+            geometries.emplace_back(vertices,
+                                    indices,
+                                    normals,
+                                    uvs,
+                                    geom.material_id,
+                                    OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT);
         }
 
         // Build the bottom-level acceleration structure
-        meshes.emplace_back(vertices,
-                            indices,
-                            normals,
-                            uvs,
-                            OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT,
-                            OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
+        meshes.emplace_back(geometries);
 
         meshes.back().enqueue_build(device, cuda_stream);
         sync_gpu();
@@ -141,22 +148,30 @@ void RenderOptiX::set_scene(const Scene &scene)
     // set the params properly for each geom. However, eventually I do plan to support
     // instancing so it's easiest to learn the whole path on a simple case.
     std::vector<OptixInstance> instances;
-    instances.reserve(meshes.size());
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        OptixInstance instance = {};
+    {
+        instances.reserve(scene.instances.size());
+        size_t instance_hitgroup_offset = 0;
+        for (size_t i = 0; i < scene.instances.size(); ++i) {
+            const auto &inst = scene.instances[i];
+            OptixInstance instance = {};
+            instance.instanceId = i;
+            instance.sbtOffset = instance_hitgroup_offset;
+            instance.flags = OPTIX_INSTANCE_FLAG_DISABLE_ANYHIT;
+            instance.traversableHandle = meshes[inst.mesh_id].handle();
+            instance.visibilityMask = 0xff;
 
-        // Same as DXR, the transform is 3x4 row-major
-        instance.transform[0] = 1.f;
-        instance.transform[4 + 1] = 1.f;
-        instance.transform[2 * 4 + 2] = 1.f;
+            // Note: Same as D3D, row-major 3x4
+            std::memset(instance.transform, 0, sizeof(instance.transform));
+            const glm::mat4 m = glm::transpose(inst.transform);
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 4; ++c) {
+                    instance.transform[r * 4 + c] = m[r][c];
+                }
+            }
+            instances.push_back(instance);
 
-        instance.instanceId = scene.meshes[i].material_id;
-        instance.sbtOffset = i * NUM_RAY_TYPES;
-        instance.visibilityMask = 0xff;
-        instance.flags = OPTIX_INSTANCE_FLAG_DISABLE_ANYHIT;
-        instance.traversableHandle = meshes[i].handle();
-
-        instances.push_back(instance);
+            instance_hitgroup_offset += meshes[inst.mesh_id].geometries.size();
+        }
     }
 
     // Upload the instance data to the GPU
@@ -164,7 +179,8 @@ void RenderOptiX::set_scene(const Scene &scene)
         std::make_shared<optix::Buffer>(instances.size() * sizeof(OptixInstance));
     instance_buffer->upload(instances);
 
-    scene_bvh = optix::TopLevelBVH(instance_buffer, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
+    scene_bvh =
+        optix::TopLevelBVH(instance_buffer, scene.instances, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
 
     scene_bvh.enqueue_build(device, cuda_stream);
     sync_gpu();
@@ -177,7 +193,7 @@ void RenderOptiX::set_scene(const Scene &scene)
     const cudaChannelFormatDesc channel_format =
         cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
     for (const auto &t : scene.textures) {
-        textures.emplace_back(glm::uvec2(t.width, t.height), channel_format);
+        textures.emplace_back(glm::uvec2(t.width, t.height), channel_format, t.color_space);
         textures.back().upload(t.img.data());
     }
 
@@ -247,14 +263,12 @@ void RenderOptiX::build_raytracing_pipeline()
         module.create_miss(device, "__miss__miss"),
         module.create_miss(device, "__miss__occlusion_miss")};
 
-    // Make the hit groups, for each ray type
-    std::array<OptixProgramGroup, 2> hitgroup_progs = {
-        module.create_hitgroup(device, "__closesthit__closest_hit"),
-        module.create_hitgroup(device, "__closesthit__occlusion_hit")};
+    std::array<OptixProgramGroup, 1> hitgroup_progs = {
+        module.create_hitgroup(device, "__closesthit__closest_hit")};
 
     // Combine the programs into a pipeline
     std::vector<OptixProgramGroup> pipeline_progs = {
-        raygen_prog, miss_progs[0], miss_progs[1], hitgroup_progs[0], hitgroup_progs[1]};
+        raygen_prog, miss_progs[0], miss_progs[1], hitgroup_progs[0]};
 
     OptixPipelineLinkOptions link_opts = {};
     link_opts.maxTraceDepth = 1;
@@ -272,12 +286,16 @@ void RenderOptiX::build_raytracing_pipeline()
             .add_miss("miss", miss_progs[0], 0)
             .add_miss("occlusion_miss", miss_progs[1], 0);
 
-    // Hitgroups for each instance
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        shader_table_builder
-            .add_hitgroup(
-                "closest_hit_" + std::to_string(i), hitgroup_progs[0], sizeof(HitGroupParams))
-            .add_hitgroup("occlusion_hit_" + std::to_string(i), hitgroup_progs[1], 0);
+    // Hitgroups for each instance's geometries
+    for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {
+        const auto &inst = scene_bvh.instances[i];
+        for (size_t j = 0; j < meshes[inst.mesh_id].geometries.size(); ++j) {
+            auto &geom = meshes[inst.mesh_id].geometries[j];
+            shader_table_builder.add_hitgroup(
+                "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j),
+                hitgroup_progs[0],
+                sizeof(HitGroupParams));
+        }
     }
 
     shader_table = shader_table_builder.build();
@@ -289,22 +307,28 @@ void RenderOptiX::build_raytracing_pipeline()
         params.num_lights = light_params.size() / sizeof(QuadLight);
     }
 
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        HitGroupParams &params =
-            shader_table.get_shader_params<HitGroupParams>("closest_hit_" + std::to_string(i));
-        params.vertex_buffer = meshes[i].vertex_buf->device_ptr();
-        params.index_buffer = meshes[i].index_buf->device_ptr();
+    for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {
+        const auto &inst = scene_bvh.instances[i];
+        for (size_t j = 0; j < meshes[inst.mesh_id].geometries.size(); ++j) {
+            auto &geom = meshes[inst.mesh_id].geometries[j];
+            HitGroupParams &params = shader_table.get_shader_params<HitGroupParams>(
+                "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j));
 
-        if (meshes[i].uv_buf) {
-            params.uv_buffer = meshes[i].uv_buf->device_ptr();
-        } else {
-            params.uv_buffer = 0;
-        }
+            params.vertex_buffer = geom.vertex_buf->device_ptr();
+            params.index_buffer = geom.index_buf->device_ptr();
+            params.material_id = geom.material_id;
 
-        if (meshes[i].normal_buf) {
-            params.normal_buffer = meshes[i].normal_buf->device_ptr();
-        } else {
-            params.normal_buffer = 0;
+            if (geom.uv_buf) {
+                params.uv_buffer = geom.uv_buf->device_ptr();
+            } else {
+                params.uv_buffer = 0;
+            }
+
+            if (geom.normal_buf) {
+                params.normal_buffer = geom.normal_buf->device_ptr();
+            } else {
+                params.normal_buffer = 0;
+            }
         }
     }
 
@@ -316,9 +340,7 @@ void RenderOptiX::build_raytracing_pipeline()
         optixProgramGroupDestroy(miss_progs[i]);
     }
 
-    for (size_t i = 0; i < hitgroup_progs.size(); ++i) {
-        optixProgramGroupDestroy(hitgroup_progs[i]);
-    }
+    optixProgramGroupDestroy(hitgroup_progs[0]);
 }
 
 RenderStats RenderOptiX::render(const glm::vec3 &pos,

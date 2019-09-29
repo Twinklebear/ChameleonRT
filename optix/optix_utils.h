@@ -7,6 +7,8 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <optix.h>
+#include "mesh.h"
+#include "material.h"
 #include <glm/glm.hpp>
 
 #define CHECK_OPTIX(FN)                                                                \
@@ -102,7 +104,7 @@ class Texture2D {
     cudaTextureObject_t texture = 0;
 
 public:
-    Texture2D(glm::uvec2 dims, cudaChannelFormatDesc channel_format);
+    Texture2D(glm::uvec2 dims, cudaChannelFormatDesc channel_format, ColorSpace color_space);
     ~Texture2D();
 
     Texture2D(Texture2D &&t);
@@ -118,29 +120,40 @@ public:
     glm::uvec2 dims() const;
 };
 
-class TriangleMesh {
-    OptixBuildInput geom_desc = {};
-    CUdeviceptr vertex_ptr;
+struct Geometry {
+    std::shared_ptr<Buffer> vertex_buf, index_buf, normal_buf, uv_buf;
+    uint32_t material_id = 0;
+    uint32_t geom_flags = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
+    CUdeviceptr vertex_buf_ptr;
 
-    uint32_t geom_flags = OPTIX_GEOMETRY_FLAG_NONE;
-    uint32_t build_flags = OPTIX_BUILD_FLAG_NONE;
+	Geometry() = default;
+
+    // TODO: Allow other vertex and index formats? Right now this
+    // assumes vec3f verts and uint3 indices
+    Geometry(std::shared_ptr<Buffer> vertex_buf,
+             std::shared_ptr<Buffer> index_buf,
+             std::shared_ptr<Buffer> normal_buf,
+             std::shared_ptr<Buffer> uv_buf,
+             uint32_t material_id,
+             uint32_t geom_flags = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT);
+
+	 OptixBuildInput geom_desc() const;
+};
+
+class TriangleMesh {
+    uint32_t build_flags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
+    std::vector<OptixBuildInput> build_inputs;
 
     Buffer build_output, scratch, post_build_info, bvh;
 
     OptixTraversableHandle as_handle;
 
 public:
-    std::shared_ptr<Buffer> vertex_buf, index_buf, normal_buf, uv_buf;
+    std::vector<Geometry> geometries;
 
     TriangleMesh() = default;
-    // TODO: Allow other vertex and index formats? Right now this
-    // assumes vec3f verts and uint3 indices
-    TriangleMesh(std::shared_ptr<Buffer> vertex_buf,
-                 std::shared_ptr<Buffer> index_buf,
-                 std::shared_ptr<Buffer> normal_buf,
-                 std::shared_ptr<Buffer> uv_buf,
-                 uint32_t geom_flags = OPTIX_GEOMETRY_FLAG_NONE,
-                 uint32_t build_flags = OPTIX_BUILD_FLAG_NONE);
+
+    TriangleMesh(std::vector<Geometry> &geometries, uint32_t build_flags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
 
     // Enqueue the acceleration structure build construction into the passed stream
     void enqueue_build(OptixDeviceContext &device, CUstream &stream);
@@ -150,8 +163,6 @@ public:
 
     // Finalize the BVH build structures to release any scratch space
     void finalize();
-
-    size_t num_tris() const;
 
     OptixTraversableHandle handle();
 };
@@ -167,9 +178,13 @@ class TopLevelBVH {
 
 public:
     std::shared_ptr<Buffer> instance_buf;
+    std::vector<Instance> instances;
 
     TopLevelBVH() = default;
-    TopLevelBVH(std::shared_ptr<Buffer> instance_buf, uint32_t build_flags = OPTIX_BUILD_FLAG_NONE);
+
+    TopLevelBVH(std::shared_ptr<Buffer> instance_buf,
+                const std::vector<Instance> &instances,
+                uint32_t build_flags = OPTIX_BUILD_FLAG_NONE);
 
     // Enqueue the acceleration structure build construction into the passed stream
     void enqueue_build(OptixDeviceContext &device, CUstream &stream);
