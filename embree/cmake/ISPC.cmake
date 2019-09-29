@@ -64,7 +64,7 @@ function(add_ispc_library)
 			${ISPC_COMPILE_DEFINITIONS}
 			${ISPC_PIC}
 			DEPENDS ${DEPS}
-			COMMENT "Compiling ISPC file ${SRC}")
+			COMMENT "Compiling ISPC file ${CMAKE_CURRENT_LIST_DIR}/${SRC}")
 	endforeach()
 
 	add_library(${ISPC_LIB} ${ISPC_OBJS})

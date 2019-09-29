@@ -12,7 +12,7 @@ struct RenderEmbree : RenderBackend {
     RTCDevice device;
     glm::uvec2 fb_dims;
 
-    std::shared_ptr<embree::TopLevelBVH> scene;
+    std::shared_ptr<embree::TopLevelBVH> scene_bvh;
 
     std::vector<embree::MaterialParams> material_params;
     std::vector<QuadLight> lights;

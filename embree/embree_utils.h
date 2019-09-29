@@ -10,25 +10,54 @@
 
 namespace embree {
 
-class TriangleMesh {
-    RTCGeometry geom = 0;
-    RTCScene scene = 0;
-
-    RTCBuffer vbuf = 0;
-    RTCBuffer ibuf = 0;
-
-public:
+struct Geometry {
     std::vector<glm::vec4> vertex_buf;
     std::vector<glm::uvec3> index_buf;
     std::vector<glm::vec3> normal_buf;
     std::vector<glm::vec2> uv_buf;
+    uint32_t material_id = 0;
+
+    RTCBuffer vbuf = 0;
+    RTCBuffer ibuf = 0;
+
+    RTCGeometry geom = 0;
+
+    Geometry() = default;
+
+    Geometry(RTCDevice &device,
+             const std::vector<glm::vec3> &verts,
+             const std::vector<glm::uvec3> &indices,
+             const std::vector<glm::vec3> &normals,
+             const std::vector<glm::vec2> &uvs,
+             uint32_t material_id);
+
+    ~Geometry();
+
+    Geometry(const Geometry &) = delete;
+    Geometry &operator=(const Geometry &) = delete;
+};
+
+struct ISPCGeometry {
+    const glm::vec4 *vertex_buf = nullptr;
+    const glm::uvec3 *index_buf = nullptr;
+    const glm::vec3 *normal_buf = nullptr;
+    const glm::vec2 *uv_buf = nullptr;
+    uint32_t material_id = 0;
+
+    ISPCGeometry() = default;
+    ISPCGeometry(const Geometry &geom);
+};
+
+class TriangleMesh {
+    RTCScene scene = 0;
+
+public:
+    std::vector<std::shared_ptr<Geometry>> geometries;
+    std::vector<ISPCGeometry> ispc_geometries;
 
     TriangleMesh() = default;
-    TriangleMesh(RTCDevice &device,
-                 const std::vector<glm::vec3> &verts,
-                 const std::vector<glm::uvec3> &indices,
-                 const std::vector<glm::vec3> &normals = std::vector<glm::vec3>{},
-                 const std::vector<glm::vec2> &uvs = std::vector<glm::vec2>{});
+
+    TriangleMesh(RTCDevice &device, std::vector<std::shared_ptr<Geometry>> &geometries);
 
     ~TriangleMesh();
 
@@ -41,14 +70,14 @@ public:
 struct Instance {
     RTCGeometry handle = 0;
     std::shared_ptr<TriangleMesh> mesh = nullptr;
-    glm::mat4 transform, inv_transform;
-    uint32_t material_id = 0;
+    glm::mat4 object_to_world, world_to_object;
 
     Instance() = default;
+
     Instance(RTCDevice &device,
              std::shared_ptr<TriangleMesh> &mesh,
-             uint32_t material_id,
-             const glm::mat4 &transform = glm::mat4(1.f));
+             const glm::mat4 &object_to_world = glm::mat4(1.f));
+
     ~Instance();
 
     Instance(const Instance &) = delete;
@@ -56,13 +85,9 @@ struct Instance {
 };
 
 struct ISPCInstance {
-    const glm::vec4 *vertex_buf = nullptr;
-    const glm::uvec3 *index_buf = nullptr;
-    const glm::vec3 *normal_buf = nullptr;
-    const glm::vec2 *uv_buf = nullptr;
-    const float *transform = nullptr;
-    const float *inv_transform = nullptr;
-    uint32_t material_id = 0;
+    const ISPCGeometry *geometries = nullptr;
+    const float *object_to_world = nullptr;
+    const float *world_to_object = nullptr;
 
     ISPCInstance() = default;
     ISPCInstance(const Instance &instance);

@@ -2,6 +2,7 @@
 #include "util.ih"
 #include "pcg_rng.ih"
 #include "float3.ih"
+#include "mat4.ih"
 #include "lights.ih"
 #include "texture2d.ih"
 #include "disney_bsdf.ih"
@@ -31,14 +32,18 @@ struct MaterialParams {
 	ISPCTexture2D *uniform color_texture;
 };
 
+struct ISPCGeometry {
+    const float4 *uniform vertex_buf;
+    const uint3 *uniform index_buf;
+    const float3 *uniform normal_buf;
+    const float2 *uniform uv_buf;
+    uniform uint32_t material_id;
+};
+
 struct ISPCInstance {
-	const float4 *uniform vertex_buf;
-	const uint3 *uniform index_buf;
-	const float3 *uniform normal_buf;
-	const float2 *uniform uv_buf;
-	const float *uniform transform;
-	const float *uniform inv_transform;
-	const uniform uint32_t material_id;
+    const ISPCGeometry *uniform geometries;
+    const float *uniform object_to_world;
+    const float *uniform world_to_object;
 };
 
 struct SceneContext {
@@ -285,21 +290,28 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 	float3 path_throughput = make_float3(1.0);
 	float3 w_i;
 	DisneyMaterial mat;
+    mat4 matrix;
 	do {
 		const ISPCInstance *instance = &scene->instances[inst];
+        const ISPCGeometry *geometry = &instance->geometries[geom];
 
 		float2 uv = make_float2(0.f, 0.f);
-		const uint3 indices = instance->index_buf[prim];
+		const uint3 indices = geometry->index_buf[prim];
 
-		if (instance->uv_buf) {
-			float2 uva = instance->uv_buf[indices.x];
-			float2 uvb = instance->uv_buf[indices.y];
-			float2 uvc = instance->uv_buf[indices.z];
+		if (geometry->uv_buf) {
+			float2 uva = geometry->uv_buf[indices.x];
+			float2 uvb = geometry->uv_buf[indices.y];
+			float2 uvc = geometry->uv_buf[indices.z];
 			uv = (1.f - bary.x - bary.y) * uva
 				+ bary.x * uvb + bary.y * uvc;
 		}
 
-		unpack_material(mat, &scene->materials[instance->material_id], uv);
+        // Transform the normal back to world space
+        load_mat4(matrix, instance->world_to_object);
+        transpose(matrix);
+        normal = normalize(mul(matrix, normal));
+
+		unpack_material(mat, &scene->materials[geometry->material_id], uv);
 
 		// Direct light sampling
 		float3 v_x, v_y;
@@ -337,7 +349,6 @@ float3 shade_path(const SceneContext *uniform scene, const RTCRayHitNp *uniform 
 			inst = path_ray.hit.instID[0];
 			geom = path_ray.hit.geomID;
 			prim = path_ray.hit.primID;
-			instance = 0;
 
 			if (geom == RTC_INVALID_GEOMETRY_ID || inst == RTC_INVALID_GEOMETRY_ID
 					|| prim == RTC_INVALID_GEOMETRY_ID)

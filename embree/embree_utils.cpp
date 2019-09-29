@@ -5,16 +5,17 @@
 
 namespace embree {
 
-TriangleMesh::TriangleMesh(RTCDevice &device,
-                           const std::vector<glm::vec3> &verts,
-                           const std::vector<glm::uvec3> &indices,
-                           const std::vector<glm::vec3> &normals,
-                           const std::vector<glm::vec2> &uvs)
-    : geom(rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE)),
-      scene(rtcNewScene(device)),
-      index_buf(indices),
+Geometry::Geometry(RTCDevice &device,
+                   const std::vector<glm::vec3> &verts,
+                   const std::vector<glm::uvec3> &indices,
+                   const std::vector<glm::vec3> &normals,
+                   const std::vector<glm::vec2> &uvs,
+                   uint32_t material_id)
+    : index_buf(indices),
       normal_buf(normals),
-      uv_buf(uvs)
+      uv_buf(uvs),
+      material_id(material_id),
+      geom(rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE))
 {
     vertex_buf.reserve(verts.size());
     std::transform(
@@ -45,18 +46,50 @@ TriangleMesh::TriangleMesh(RTCDevice &device,
     rtcUpdateGeometryBuffer(geom, RTC_BUFFER_TYPE_VERTEX, 0);
     rtcUpdateGeometryBuffer(geom, RTC_BUFFER_TYPE_INDEX, 0);
     rtcCommitGeometry(geom);
+}
 
-    rtcAttachGeometry(scene, geom);
+Geometry::~Geometry()
+{
+    if (geom) {
+        rtcReleaseGeometry(geom);
+        rtcReleaseBuffer(vbuf);
+        rtcReleaseBuffer(ibuf);
+    }
+}
+
+ISPCGeometry::ISPCGeometry(const Geometry &geom)
+    : vertex_buf(geom.vertex_buf.data()),
+      index_buf(geom.index_buf.data()),
+      material_id(geom.material_id)
+{
+    if (!geom.normal_buf.empty()) {
+        normal_buf = geom.normal_buf.data();
+    }
+
+    if (!geom.uv_buf.empty()) {
+        uv_buf = geom.uv_buf.data();
+    }
+}
+
+TriangleMesh::TriangleMesh(RTCDevice &device, std::vector<std::shared_ptr<Geometry>> &geoms)
+    : scene(rtcNewScene(device)), geometries(geoms)
+{
+    ispc_geometries.reserve(geometries.size());
+    std::transform(geometries.begin(),
+                   geometries.end(),
+                   std::back_inserter(ispc_geometries),
+                   [](const std::shared_ptr<Geometry> &g) { return ISPCGeometry(*g); });
+
+    for (auto &g : geometries) {
+        rtcAttachGeometry(scene, g->geom);
+    }
     rtcCommitScene(scene);
 }
 
 TriangleMesh::~TriangleMesh()
 {
-    if (geom) {
-        rtcReleaseGeometry(geom);
+    if (scene) {
         rtcReleaseScene(scene);
-        rtcReleaseBuffer(vbuf);
-        rtcReleaseBuffer(ibuf);
     }
 }
 
@@ -65,18 +98,15 @@ RTCScene TriangleMesh::handle()
     return scene;
 }
 
-Instance::Instance(RTCDevice &device,
-                   std::shared_ptr<TriangleMesh> &mesh,
-                   uint32_t material_id,
-                   const glm::mat4 &xfm)
+Instance::Instance(RTCDevice &device, std::shared_ptr<TriangleMesh> &mesh, const glm::mat4 &xfm)
     : handle(rtcNewGeometry(device, RTC_GEOMETRY_TYPE_INSTANCE)),
       mesh(mesh),
-      transform(xfm),
-      inv_transform(glm::inverse(inv_transform)),
-      material_id(material_id)
+      object_to_world(xfm),
+      world_to_object(glm::inverse(object_to_world))
 {
     rtcSetGeometryInstancedScene(handle, mesh->handle());
-    rtcSetGeometryTransform(handle, 0, RTC_FORMAT_FLOAT4X4_COLUMN_MAJOR, glm::value_ptr(transform));
+    rtcSetGeometryTransform(
+        handle, 0, RTC_FORMAT_FLOAT4X4_COLUMN_MAJOR, glm::value_ptr(object_to_world));
     rtcCommitGeometry(handle);
 }
 
@@ -88,18 +118,10 @@ Instance::~Instance()
 }
 
 ISPCInstance::ISPCInstance(const Instance &instance)
-    : vertex_buf(instance.mesh->vertex_buf.data()),
-      index_buf(instance.mesh->index_buf.data()),
-      transform(glm::value_ptr(instance.transform)),
-      inv_transform(glm::value_ptr(instance.inv_transform)),
-      material_id(instance.material_id)
+    : geometries(instance.mesh->ispc_geometries.data()),
+      object_to_world(glm::value_ptr(instance.object_to_world)),
+      world_to_object(glm::value_ptr(instance.world_to_object))
 {
-    if (!instance.mesh->normal_buf.empty()) {
-        normal_buf = instance.mesh->normal_buf.data();
-    }
-    if (!instance.mesh->uv_buf.empty()) {
-        uv_buf = instance.mesh->uv_buf.data();
-    }
 }
 
 TopLevelBVH::TopLevelBVH(RTCDevice &device, const std::vector<std::shared_ptr<Instance>> &inst)

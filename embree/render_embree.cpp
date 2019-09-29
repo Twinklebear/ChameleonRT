@@ -41,29 +41,39 @@ void RenderEmbree::initialize(const int fb_width, const int fb_height)
     }
 }
 
-void RenderEmbree::set_scene(const Scene &scene_data)
+void RenderEmbree::set_scene(const Scene &scene)
 {
     frame_id = 0;
 
-    std::vector<std::shared_ptr<embree::Instance>> instances;
-    for (const auto &m : scene_data.meshes) {
-        auto trimesh =
-            std::make_shared<embree::TriangleMesh>(device, m.vertices, m.indices, m.normals, m.uvs);
+    std::vector<std::shared_ptr<embree::TriangleMesh>> meshes;
+    for (const auto &mesh : scene.meshes) {
+        std::vector<std::shared_ptr<embree::Geometry>> geometries;
+        for (const auto &geom : mesh.geometries) {
+            geometries.push_back(std::make_shared<embree::Geometry>(
+                device, geom.vertices, geom.indices, geom.normals, geom.uvs, geom.material_id));
+        }
 
-        instances.push_back(
-            std::make_shared<embree::Instance>(device, trimesh, m.material_id, glm::mat4(1.f)));
+        meshes.push_back(std::make_shared<embree::TriangleMesh>(device, geometries));
     }
-    scene = std::make_shared<embree::TopLevelBVH>(device, instances);
 
-    textures = scene_data.textures;
+    std::vector<std::shared_ptr<embree::Instance>> instances;
+    for (const auto &inst : scene.instances) {
+        instances.push_back(
+            std::make_shared<embree::Instance>(device, meshes[inst.mesh_id], inst.transform));
+    }
+
+    scene_bvh = std::make_shared<embree::TopLevelBVH>(device, instances);
+
+    textures = scene.textures;
     ispc_textures.reserve(textures.size());
+    // TODO: linearize any sRGB textures
     std::transform(
         textures.begin(), textures.end(), std::back_inserter(ispc_textures), [](const Image &img) {
             return embree::ISPCTexture2D(img);
         });
 
-    material_params.reserve(scene_data.materials.size());
-    for (const auto &m : scene_data.materials) {
+    material_params.reserve(scene.materials.size());
+    for (const auto &m : scene.materials) {
         embree::MaterialParams p;
 
         p.base_color = m.base_color;
@@ -88,7 +98,7 @@ void RenderEmbree::set_scene(const Scene &scene_data)
         material_params.push_back(p);
     }
 
-    lights = scene_data.lights;
+    lights = scene.lights;
 }
 
 RenderStats RenderEmbree::render(const glm::vec3 &pos,
@@ -116,8 +126,8 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
     view_params.frame_id = frame_id;
 
     embree::SceneContext ispc_scene;
-    ispc_scene.scene = scene->handle;
-    ispc_scene.instances = scene->ispc_instances.data();
+    ispc_scene.scene = scene_bvh->handle;
+    ispc_scene.instances = scene_bvh->ispc_instances.data();
     ispc_scene.materials = material_params.data();
     ispc_scene.lights = lights.data();
     ispc_scene.num_lights = lights.size();
