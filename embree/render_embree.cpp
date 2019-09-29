@@ -6,6 +6,7 @@
 #include <numeric>
 #include <pmmintrin.h>
 #include <tbb/parallel_for.h>
+#include <util.h>
 #include <xmmintrin.h>
 #include "render_embree_ispc.h"
 #include <glm/ext.hpp>
@@ -65,8 +66,25 @@ void RenderEmbree::set_scene(const Scene &scene)
     scene_bvh = std::make_shared<embree::TopLevelBVH>(device, instances);
 
     textures = scene.textures;
+
+    // Linearize any sRGB textures before-hand, since we don't have fancy sRGB texture interpolation
+    // support in hardware
+    tbb::parallel_for(size_t(0), textures.size(), [&](size_t i) {
+        auto &img = textures[i];
+        if (img.color_space == LINEAR) {
+            return;
+        }
+        const int convert_channels = std::min(3, img.channels);
+        tbb::parallel_for(size_t(0), size_t(img.width) * img.height, [&](size_t px) {
+            for (int c = 0; c < convert_channels; ++c) {
+                float x = img.img[px * img.channels + c] / 255.f;
+                x = srgb_to_linear(x);
+                img.img[px * img.channels + c] = glm::clamp(x * 255.f, 0.f, 255.f);
+            }
+        });
+    });
+
     ispc_textures.reserve(textures.size());
-    // TODO: linearize any sRGB textures
     std::transform(
         textures.begin(), textures.end(), std::back_inserter(ispc_textures), [](const Image &img) {
             return embree::ISPCTexture2D(img);
