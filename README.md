@@ -1,7 +1,10 @@
 # ChameleonRT
 
 An example path tracer which runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan).
-Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files. The San Miguel,
+Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files,
+[tinygltf](https://github.com/syoyo/tinygltf) to load glTF files and, optionally,
+Ingo Wald's [pbrt-parser](https://github.com/ingowald/pbrt-parser) to load PBRTv3 files.
+The San Miguel,
 Sponza and Rungholt models shown below are from Morgan McGuire's [Computer Graphics Data Archive](https://casual-effects.com/data/).
 
 [![San Miguel, Sponza and Rungholt](https://i.imgur.com/tKZYjzn.jpg)](https://i.imgur.com/pVhQK3j.jpg)
@@ -25,10 +28,13 @@ Similarly for GLM, you can point it to the glmConfig.cmake file
 in your GLM distribution by passing `-Dglm_DIR=<path>`.
 To track and report statistics about the number of rays traced per-second
 run CMake with `-DREPORT_RAY_STATS=ON`. Tracking these statistics can
-impact performance slightly.
+impact performance slightly (especially in the Vulkan backend).
 
 ChameleonRT only supports per-OBJ group/mesh materials, OBJ files using per-face materials
 can be reexported from Blender with the "Material Groups" option enabled.
+
+To build with PBRT file support set `-DpbrtParser_DIR=<path>` to the CMake export files for
+your build of the [pbrt-parser](https://github.com/ingowald/pbrt-parser).
 
 ### Embree
 
