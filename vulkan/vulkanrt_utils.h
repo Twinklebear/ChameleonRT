@@ -143,7 +143,6 @@ public:
     VkPipeline handle();
 };
 
-// TODO: The numebr of these is not tied to the number of entries in the SBT right?
 struct ShaderGroup {
     const std::shared_ptr<ShaderModule> shader_module;
     VkShaderStageFlagBits stage;

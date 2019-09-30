@@ -84,6 +84,7 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
     ray_stats_readback_buf = vkrt::Buffer::host(
         device, img.size() * ray_stats->pixel_size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    ray_counts.resize(img.size(), 0);
 #endif
 
     // Change image and accum buffer to the general layout
@@ -637,14 +638,16 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos,
     img_readback_buf->unmap();
 
 #ifdef REPORT_RAY_STATS
-    uint16_t *ray_counts = reinterpret_cast<uint16_t *>(ray_stats_readback_buf->map());
+    std::memcpy(
+        ray_counts.data(), ray_stats_readback_buf->map(), ray_counts.size() * sizeof(uint16_t));
+    ray_stats_readback_buf->unmap();
+
     const uint64_t total_rays =
-        std::accumulate(ray_counts,
-                        ray_counts + img.size(),
+        std::accumulate(ray_counts.begin(),
+                        ray_counts.end(),
                         uint64_t(0),
                         [](const uint64_t &total, const uint16_t &c) { return total + c; });
     stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
-    ray_stats_readback_buf->unmap();
 #endif
 
     ++frame_id;

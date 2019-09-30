@@ -32,6 +32,7 @@ struct RenderVulkan : RenderBackend {
 #ifdef REPORT_RAY_STATS
     std::shared_ptr<vkrt::Texture2D> ray_stats;
     std::shared_ptr<vkrt::Buffer> ray_stats_readback_buf;
+    std::vector<uint16_t> ray_counts;
 #endif
 
     std::vector<std::unique_ptr<vkrt::TriangleMesh>> meshes;
