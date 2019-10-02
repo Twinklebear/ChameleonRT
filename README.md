@@ -71,8 +71,8 @@ it's installed with `-DOptiX_INSTALL_DIR`.
 
 ### DirectX Ray Tracing
 
-If you're on Windows 10 1809, have the 10.0.17763 SDK and a DXR capable GPU you can also run
-the DirectX Ray Tracing backend.
+If you're on Windows 10 1809 or higher, have the latest Windows 10 SDK installed and a DXR
+capable GPU you can also run the DirectX Ray Tracing backend.
 
 To build the DXR backend run CMake with:
 
