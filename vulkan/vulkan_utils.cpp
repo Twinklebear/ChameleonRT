@@ -185,9 +185,12 @@ void Device::make_instance()
     create_info.pApplicationInfo = &app_info;
     create_info.enabledExtensionCount = 0;
     create_info.ppEnabledExtensionNames = nullptr;
-#ifdef _WIN32
+#ifdef _DEBUG
     create_info.enabledLayerCount = validation_layers.size();
     create_info.ppEnabledLayerNames = validation_layers.data();
+#else
+    create_info.enabledLayerCount = 0;
+    create_info.ppEnabledLayerNames = nullptr;
 #endif
 
     CHECK_VULKAN(vkCreateInstance(&create_info, nullptr, &instance));
@@ -272,8 +275,13 @@ void Device::make_logical_device()
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     create_info.queueCreateInfoCount = 1;
     create_info.pQueueCreateInfos = &queue_create_info;
+#ifdef _DEBUG
     create_info.enabledLayerCount = validation_layers.size();
     create_info.ppEnabledLayerNames = validation_layers.data();
+#else
+    create_info.enabledLayerCount = 0;
+    create_info.ppEnabledLayerNames = nullptr;
+#endif
     create_info.enabledExtensionCount = device_extensions.size();
     create_info.ppEnabledExtensionNames = device_extensions.data();
     create_info.pEnabledFeatures = &device_features;
