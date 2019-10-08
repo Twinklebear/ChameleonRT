@@ -723,8 +723,6 @@ void RenderVulkan::build_raytracing_pipeline()
 
     auto closest_hit_shader =
         std::make_shared<vkrt::ShaderModule>(device, hit_spv, sizeof(hit_spv));
-    auto occlusion_hit_shader =
-        std::make_shared<vkrt::ShaderModule>(device, occlusion_hit_spv, sizeof(occlusion_hit_spv));
 
     rt_pipeline = vkrt::RTPipelineBuilder()
                       .set_raygen("raygen", raygen_shader)
