@@ -290,7 +290,6 @@ void RenderOptiX::build_raytracing_pipeline()
     for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {
         const auto &inst = scene_bvh.instances[i];
         for (size_t j = 0; j < meshes[inst.mesh_id].geometries.size(); ++j) {
-            auto &geom = meshes[inst.mesh_id].geometries[j];
             shader_table_builder.add_hitgroup(
                 "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j),
                 hitgroup_progs[0],

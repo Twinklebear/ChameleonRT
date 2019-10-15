@@ -30,7 +30,7 @@ public:
 
     const T &operator[](const size_t i) const;
 
-    const size_t size() const;
+    size_t size() const;
 };
 
 template <typename T>
@@ -51,7 +51,7 @@ const T &Accessor<T>::operator[](const size_t i) const
 }
 
 template <typename T>
-const size_t Accessor<T>::size() const
+size_t Accessor<T>::size() const
 {
     return count;
 }

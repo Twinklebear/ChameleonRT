@@ -136,14 +136,14 @@ void Scene::load_obj(const std::string &file)
                                                attrib.vertices[3 * idx.x + 1],
                                                attrib.vertices[3 * idx.x + 2]);
 
-                    if (idx.y != -1) {
+                    if (idx.y != uint32_t(-1)) {
                         glm::vec3 n(attrib.normals[3 * idx.y],
                                     attrib.normals[3 * idx.y + 1],
                                     attrib.normals[3 * idx.y + 2]);
                         geom.normals.push_back(glm::normalize(n));
                     }
 
-                    if (idx.z != -1) {
+                    if (idx.z != uint32_t(-1)) {
                         geom.uvs.emplace_back(attrib.texcoords[2 * idx.z],
                                               attrib.texcoords[2 * idx.z + 1]);
                     }

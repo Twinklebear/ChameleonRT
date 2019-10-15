@@ -74,7 +74,7 @@ std::string get_file_extension(const std::string &fname)
 std::string get_cpu_brand()
 {
     std::string brand = "Unspecified";
-    std::array<int, 4> regs;
+    std::array<uint32_t, 4> regs;
 #ifdef _WIN32
     __cpuid(regs.data(), 0x80000000);
 #else

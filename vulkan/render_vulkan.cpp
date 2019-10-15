@@ -841,7 +841,6 @@ void RenderVulkan::build_shader_binding_table()
     for (size_t i = 0; i < scene_bvh->num_instances(); ++i) {
         const auto &inst = scene_bvh->instances[i];
         for (size_t j = 0; j < meshes[inst.mesh_id]->geometries.size(); ++j) {
-            auto &geom = meshes[inst.mesh_id]->geometries[j];
             std::string hg_name = "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j);
             sbt_builder.add_hitgroup(
                 vkrt::ShaderRecord(hg_name, "closest_hit", sizeof(HitGroupParams)));
@@ -858,8 +857,6 @@ void RenderVulkan::build_shader_binding_table()
         *params = light_params->size() / sizeof(QuadLight);
     }
 
-    uint32_t normal_buf_idx = 0;
-    uint32_t uv_buf_idx = 0;
     for (size_t i = 0; i < scene_bvh->num_instances(); ++i) {
         const auto &inst = scene_bvh->instances[i];
         for (size_t j = 0; j < meshes[inst.mesh_id]->geometries.size(); ++j) {
