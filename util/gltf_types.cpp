@@ -170,6 +170,7 @@ DTYPE gltf_type_to_dtype(int type, int component_type)
         default:
             break;
         };
+        break;
     case TINYGLTF_TYPE_VEC2:
         switch (component_type) {
         case TINYGLTF_COMPONENT_TYPE_BYTE:
@@ -191,6 +192,7 @@ DTYPE gltf_type_to_dtype(int type, int component_type)
         default:
             break;
         };
+        break;
     case TINYGLTF_TYPE_VEC3:
         switch (component_type) {
         case TINYGLTF_COMPONENT_TYPE_BYTE:
@@ -212,6 +214,7 @@ DTYPE gltf_type_to_dtype(int type, int component_type)
         default:
             break;
         };
+        break;
     case TINYGLTF_TYPE_VEC4:
         switch (component_type) {
         case TINYGLTF_COMPONENT_TYPE_BYTE:
@@ -233,6 +236,7 @@ DTYPE gltf_type_to_dtype(int type, int component_type)
         default:
             break;
         };
+        break;
     case TINYGLTF_TYPE_MAT2:
         switch (component_type) {
         case TINYGLTF_COMPONENT_TYPE_BYTE:
@@ -254,6 +258,7 @@ DTYPE gltf_type_to_dtype(int type, int component_type)
         default:
             break;
         };
+        break;
     case TINYGLTF_TYPE_MAT3:
         switch (component_type) {
         case TINYGLTF_COMPONENT_TYPE_BYTE:
@@ -275,6 +280,7 @@ DTYPE gltf_type_to_dtype(int type, int component_type)
         default:
             break;
         };
+        break;
     case TINYGLTF_TYPE_MAT4:
         switch (component_type) {
         case TINYGLTF_COMPONENT_TYPE_BYTE:
@@ -296,6 +302,7 @@ DTYPE gltf_type_to_dtype(int type, int component_type)
         default:
             break;
         };
+        break;
     default:
         break;
     }
