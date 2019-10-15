@@ -1,4 +1,5 @@
 #include "optix_utils.h"
+#include <algorithm>
 #include <iostream>
 #include <optix_stubs.h>
 #include "util.h"
@@ -147,7 +148,8 @@ Geometry::Geometry(std::shared_ptr<Buffer> vertex_buf,
 {
 }
 
-OptixBuildInput Geometry::geom_desc() const {
+OptixBuildInput Geometry::geom_desc() const
+{
     OptixBuildInput desc = {};
 
     desc.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
@@ -167,7 +169,7 @@ OptixBuildInput Geometry::geom_desc() const {
 }
 
 TriangleMesh::TriangleMesh(std::vector<Geometry> &geoms, uint32_t build_flags)
-    : geometries(geoms), build_flags(build_flags)
+    : build_flags(build_flags), geometries(geoms)
 {
     build_inputs.reserve(geometries.size());
     std::transform(geometries.begin(),
@@ -540,5 +542,4 @@ ShaderTable ShaderTableBuilder::build()
 {
     return ShaderTable(raygen_record, miss_records, hitgroup_records);
 }
-
 }

@@ -204,7 +204,7 @@ void Scene::load_obj(const std::string &file)
     // OBJ will not have any lights in it, so just generate one
     std::cout << "Generating light for OBJ scene\n";
     QuadLight light;
-    light.emission = glm::vec4(5.f);
+    light.emission = glm::vec4(20.f);
     light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);
     light.position = -10.f * light.normal;
     ortho_basis(light.v_x, light.v_y, glm::vec3(light.normal));
@@ -358,7 +358,7 @@ void Scene::load_gltf(const std::string &fname)
     // otherwise we can load them
     std::cout << "Generating light for GLTF scene\n";
     QuadLight light;
-    light.emission = glm::vec4(5.f);
+    light.emission = glm::vec4(20.f);
     light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);
     light.position = -10.f * light.normal;
     ortho_basis(light.v_x, light.v_y, glm::vec3(light.normal));
@@ -498,7 +498,7 @@ void Scene::load_pbrt(const std::string &file)
 
     std::cout << "Generating light for PBRT scene, TODO Will: Load them from the file\n";
     QuadLight light;
-    light.emission = glm::vec4(5.f);
+    light.emission = glm::vec4(20.f);
     light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);
     light.position = -10.f * light.normal;
     ortho_basis(light.v_x, light.v_y, glm::vec3(light.normal));
