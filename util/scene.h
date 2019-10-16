@@ -15,6 +15,7 @@ struct Scene {
     std::vector<QuadLight> lights;
 
     Scene(const std::string &fname);
+    Scene() = default;
 
     // Compute the unique number of triangles in the scene
     size_t unique_tris() const;

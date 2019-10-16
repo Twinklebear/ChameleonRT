@@ -67,7 +67,7 @@ void RenderEmbree::set_scene(const Scene &scene)
 
     textures = scene.textures;
 
-    // Linearize any sRGB textures before-hand, since we don't have fancy sRGB texture interpolation
+    // Linearize any sRGB textures beforehand, since we don't have fancy sRGB texture interpolation
     // support in hardware
     tbb::parallel_for(size_t(0), textures.size(), [&](size_t i) {
         auto &img = textures[i];

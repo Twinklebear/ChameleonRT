@@ -1,6 +1,6 @@
 # ChameleonRT
 
-An example path tracer which runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan).
+An example path tracer which runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan/OSPRay).
 Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files,
 [tinygltf](https://github.com/syoyo/tinygltf) to load glTF files and, optionally,
 Ingo Wald's [pbrt-parser](https://github.com/ingowald/pbrt-parser) to load PBRTv3 files.
@@ -98,12 +98,9 @@ If CMake doesn't find your install of Vulkan you can tell it where it's
 installed with `-DVULKAN_SDK`. This path should be to the specific version
 of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.1.114.0/`
 
-### OSPRay [stale]
+### OSPRay
 
-The OSPRay reference backend has gotten stale during the path tracer implementation
-in the other backends, but is on the list to get back up to date.
-
-Dependencies: [OSPRay](http://www.ospray.org/).
+Dependencies: [OSPRay 2.0](http://www.ospray.org/).
 
 To build the OSPRay backend run CMake with:
 
