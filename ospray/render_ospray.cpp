@@ -80,24 +80,13 @@ void RenderOSPRay::set_scene(const Scene &in_scene)
 
     materials.clear();
     for (const auto &mat : scene.materials) {
-        OSPMaterial m = ospNewMaterial("pathtracer", "Principled");
-        ospSetParam(m, "baseColor", OSP_VEC3F, &mat.base_color.x);
+        OSPMaterial m = ospNewMaterial("pathtracer", "default");
+        ospSetParam(m, "Kd", OSP_VEC3F, &mat.base_color.x);
         if (mat.color_tex_id != -1) {
-            ospSetParam(m, "map_baseColor", OSP_TEXTURE, &textures[mat.color_tex_id]);
+            // Note: disable texture to resolve crash, enable to reproduce
+            // On the glTF 2.0 DamagedHelmet using textures will crash immediately
+            ospSetParam(m, "map_Kd", OSP_TEXTURE, &textures[mat.color_tex_id]);
         }
-
-        ospSetParam(m, "metallic", OSP_FLOAT, &mat.metallic);
-        // TODO: Seems like "specular" here doesn't mean quite what I expect for the Disney BRDF
-        // ospSetParam(m, "specular", OSP_FLOAT, &mat.specular);
-        ospSetParam(m, "roughness", OSP_FLOAT, &mat.roughness);
-        // TODO: name for "specularTint" in OSPRay's model?
-        ospSetParam(m, "anisotropy", OSP_FLOAT, &mat.anisotropy);
-        ospSetParam(m, "sheen", OSP_FLOAT, &mat.sheen);
-        ospSetParam(m, "sheenTint", OSP_FLOAT, &mat.sheen_tint);
-        ospSetParam(m, "coat", OSP_FLOAT, &mat.clearcoat);
-        // TODO: need to mape clearcoat gloss to ospray
-        ospSetParam(m, "ior", OSP_FLOAT, &mat.ior);
-        ospSetParam(m, "transmission", OSP_FLOAT, &mat.specular_transmission);
 
         ospCommit(m);
         materials.push_back(m);
