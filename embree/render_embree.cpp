@@ -74,6 +74,7 @@ void RenderEmbree::set_scene(const Scene &scene)
         if (img.color_space == LINEAR) {
             return;
         }
+        img.color_space = LINEAR;
         const int convert_channels = std::min(3, img.channels);
         tbb::parallel_for(size_t(0), size_t(img.width) * img.height, [&](size_t px) {
             for (int c = 0; c < convert_channels; ++c) {
