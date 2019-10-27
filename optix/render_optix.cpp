@@ -276,10 +276,6 @@ void RenderOptiX::build_raytracing_pipeline()
 
     pipeline = optix::compile_pipeline(device, pipeline_opts, link_opts, pipeline_progs);
 
-    // We don't make any recursive any hit calls or use the callable shaders,
-    // so we don't need extra stack space. TODO: Though 0 seems very small?
-    CHECK_OPTIX(optixPipelineSetStackSize(pipeline, 0, 0, 0, 1));
-
     auto shader_table_builder =
         optix::ShaderTableBuilder()
             .set_raygen("perspective_camera", raygen_prog, sizeof(RayGenParams))
