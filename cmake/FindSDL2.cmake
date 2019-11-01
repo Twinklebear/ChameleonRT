@@ -27,7 +27,7 @@
 # variable, but when these values are unset, SDL2_LIBRARY does not get created.
 #
 #
-# $SDL2 is an environment variable that would
+# $SDL2_DIR is an environment variable that would
 # correspond to the ./configure --prefix=$SDL2
 # used in building SDL2.
 # l.e.galup 9-20-02
@@ -105,8 +105,8 @@
 
 FIND_PATH(SDL2_INCLUDE_DIR SDL.h
 	HINTS
-	${SDL2}
-	$ENV{SDL2}
+	${SDL2_DIR}
+	$ENV{SDL2_DIR}
 	PATH_SUFFIXES include/SDL2 include SDL2
 	i686-w64-mingw32/include/SDL2
 	x86_64-w64-mingw32/include/SDL2
@@ -125,8 +125,8 @@ FIND_PATH(SDL2_INCLUDE_DIR SDL.h
 IF(CMAKE_SIZEOF_VOID_P EQUAL 8)
 	FIND_LIBRARY(SDL2_LIBRARY_TEMP SDL2
 		HINTS
-		${SDL2}
-		$ENV{SDL2}
+		${SDL2_DIR}
+		$ENV{SDL2_DIR}
 		PATH_SUFFIXES lib64 lib
 		lib/x64
 		x86_64-w64-mingw32/lib
@@ -140,8 +140,8 @@ IF(CMAKE_SIZEOF_VOID_P EQUAL 8)
 ELSE(CMAKE_SIZEOF_VOID_P EQUAL 8)
 	FIND_LIBRARY(SDL2_LIBRARY_TEMP SDL2
 		HINTS
-		${SDL2}
-		$ENV{SDL2}
+		${SDL2_DIR}
+		$ENV{SDL2_DIR}
 		PATH_SUFFIXES lib
 		lib/x86
 		i686-w64-mingw32/lib
@@ -164,8 +164,8 @@ IF(NOT SDL2_BUILDING_LIBRARY)
 			FIND_LIBRARY(SDL2MAIN_LIBRARY
 				NAMES SDL2main
 				HINTS
-				${SDL2}
-				$ENV{SDL2}
+				${SDL2_DIR}
+				$ENV{SDL2_DIR}
 				PATH_SUFFIXES lib64 lib
 				lib/x64
 				x86_64-w64-mingw32/lib
@@ -180,8 +180,8 @@ IF(NOT SDL2_BUILDING_LIBRARY)
 			FIND_LIBRARY(SDL2MAIN_LIBRARY
 				NAMES SDL2main
 				HINTS
-				${SDL2}
-				$ENV{SDL2}
+				${SDL2_DIR}
+				$ENV{SDL2_DIR}
 				PATH_SUFFIXES lib
 				lib/x86
 				i686-w64-mingw32/lib
