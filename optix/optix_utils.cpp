@@ -501,7 +501,6 @@ ShaderTable::ShaderTable(const ShaderRecord &raygen_record,
 uint8_t *ShaderTable::get_shader_record(const std::string &shader)
 {
     return &cpu_shader_table[record_offsets[shader]];
-    ;
 }
 
 void ShaderTable::upload()
