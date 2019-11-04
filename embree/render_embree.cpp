@@ -33,12 +33,9 @@ void RenderEmbree::initialize(const int fb_width, const int fb_height)
                             fb_dims.y / tile_size.y + (fb_dims.y % tile_size.y != 0 ? 1 : 0));
     tiles.resize(ntiles.x * ntiles.y);
     ray_stats.resize(tiles.size());
-    primary_rays.resize(tiles.size());
     for (size_t i = 0; i < tiles.size(); ++i) {
         tiles[i].resize(tile_size.x * tile_size.y * 3, 0.f);
         ray_stats[i].resize(tile_size.x * tile_size.y, 0);
-        primary_rays[i].first.resize(tile_size.x * tile_size.y);
-        primary_rays[i].second.resize(tile_size.x * tile_size.y);
     }
 }
 
@@ -178,10 +175,7 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
         ispc_tile.data = tiles[tile_id].data();
         ispc_tile.ray_stats = ray_stats[tile_id].data();
 
-        RTCRayHitNp ray_hit =
-            embree::make_ray_hit_soa(primary_rays[tile_id].first, primary_rays[tile_id].second);
-
-        ispc::trace_rays(&ispc_scene, (ispc::RTCRayHitNp *)&ray_hit, &ispc_tile, &view_params);
+        ispc::trace_rays(&ispc_scene, &ispc_tile, &view_params);
 
         ispc::tile_to_uint8(&ispc_tile, color);
 #ifdef REPORT_RAY_STATS
