@@ -54,6 +54,11 @@ struct SceneContext {
     uniform uint32_t num_lights;
 };
 
+struct RayGenParams {
+    SceneContext scene;
+    ViewParams view;
+};
+
 struct Tile {
     uint32_t x, y;
     uint32_t width, height;
@@ -61,6 +66,91 @@ struct Tile {
     float *uniform data;
     uint16_t *uniform ray_stats;
 };
+
+struct ShaderTable {
+    void *uniform raygen;
+    void *uniform raygen_params;
+
+    uint8_t *uniform miss_shaders;
+    uint32_t miss_stride;
+
+    uint8_t *uniform hit_groups;
+    uint32_t hit_group_stride;
+
+    uint32_t *uniform instance_offset;
+};
+
+typedef void (*RayGen)(Tile *uniform tile, const uniform ShaderTable *uniform sbt,
+        const int2 pixel, const void *uniform _params);
+
+typedef void (*MissShader)(const RTCRay &ray, const void *params, void *_payload);
+
+typedef void (*ClosestHit)(const RTCRayHit &ray, const int prim_id, const void *params, void *_payload);
+
+export void execute_tile(const void *uniform _sbt, void *uniform _tile) {
+    const uniform ShaderTable *uniform sbt = (const uniform ShaderTable *uniform)_sbt;
+    Tile *uniform tile = (Tile *uniform)_tile;
+
+    foreach (px = 0 ... tile->width * tile->height) {
+        const uint32_t i = mod(px, tile->width);
+        const uint32_t j = px / tile->width;
+        // TODO: should just make the sbt a global
+        uniform RayGen raygen = (uniform RayGen)sbt->raygen;
+        raygen(tile, sbt, make_int2(i, j), sbt->raygen_params);
+    }
+}
+
+const int RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH = 1;
+const int RAY_FLAG_SKIP_CLOSEST_HIT = 1 << 1;
+
+void trace_ray(RTCScene scene, const float3 &ray_origin, const float3 &ray_dir, float tmin, float tmax,
+        uint32_t ray_flags, uint32_t sbt_offset, uint32_t sbt_stride, uint32_t miss_index,
+        uniform RTCIntersectContext *uniform context, const uniform ShaderTable *uniform sbt,
+        void *varying payload)
+{
+    RTCRayHit ray = make_ray_hit(ray_origin, ray_dir, tmin);
+    ray.ray.tfar = tmax;
+    if (ray_flags & RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH) {
+        rtcOccludedV(scene, context, &ray.ray);
+    } else {
+        rtcIntersectV(scene, context, &ray);
+    }
+
+    const int inst = ray.hit.instID[0];
+    const int geom = ray.hit.geomID;
+    const int prim = ray.hit.primID;
+
+    if (geom == RTC_INVALID_GEOMETRY_ID || inst == RTC_INVALID_GEOMETRY_ID
+        || prim == RTC_INVALID_GEOMETRY_ID)
+    {
+        varying MissShader shader = (varying MissShader)(sbt->miss_shaders + miss_index * sbt->miss_stride);
+        void *params = sbt->miss_shaders + miss_index * sbt->miss_stride + 8;
+        shader(ray.ray, params, payload);
+    } else if (!(ray_flags & RAY_FLAG_SKIP_CLOSEST_HIT)) {
+        const int hg = sbt_offset + sbt_stride * geom + sbt->instance_offset[inst];
+        varying ClosestHit shader = (varying ClosestHit)(sbt->hit_groups + hg * sbt->hit_group_stride);
+        void *params = sbt->hit_groups + hg * sbt->hit_group_stride + 8;
+        shader(ray, prim, params, payload);
+    }
+}
+
+struct RayPayload {
+    float2 uv;
+    float t_hit;
+    uint32_t material_id;
+
+    float3 normal;
+    float pad;
+};
+
+RayPayload make_ray_payload() {
+    RayPayload p;
+    p.uv = make_float2(0.f);
+    p.t_hit = -1.f;
+    p.material_id = 0;
+    p.normal = make_float3(0.f);
+    return p;
+}
 
 void unpack_material(DisneyMaterial &mat, const MaterialParams *p, const float2 uv) {
     if (p->color_texture) {
@@ -84,9 +174,10 @@ void unpack_material(DisneyMaterial &mat, const MaterialParams *p, const float2 
 float3 sample_direct_light(const SceneContext *uniform scene,
         const DisneyMaterial &mat, const float3 &hit_p, const float3 &n,
         const float3 &v_x, const float3 &v_y, const float3 &w_o,
-        RTCIntersectContext *uniform incoherent_context,
+        RTCIntersectContext *uniform context,
         QuadLight *uniform lights, uniform uint32_t num_lights,
-        uint16_t &ray_stats, PCGRand &rng)
+        uint16_t &ray_stats, PCGRand &rng,
+        const uniform ShaderTable *uniform sbt)
 {
     float3 illum = make_float3(0.f);
 
@@ -94,8 +185,7 @@ float3 sample_direct_light(const SceneContext *uniform scene,
     light_id = min(light_id, num_lights - 1);
     QuadLight light = lights[light_id];
 
-    RTCRay shadow_ray;
-
+    int shadow_hit = 1;
     // Sample the light to compute an incident light ray to this point
     {
         float3 light_pos = sample_quad_light_position(light, make_float2(pcg32_randomf(rng), pcg32_randomf(rng)));
@@ -106,13 +196,14 @@ float3 sample_direct_light(const SceneContext *uniform scene,
         float light_pdf = quad_light_pdf(light, light_pos, hit_p, light_dir);
         float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, v_x, v_y);
 
-        set_ray(shadow_ray, hit_p, light_dir, EPSILON);
-        shadow_ray.tfar = light_dist;
-        rtcOccludedV(scene->scene, incoherent_context, &shadow_ray);
+        trace_ray(scene->scene, hit_p, light_dir, EPSILON, light_dist,
+                RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT,
+                0, 0, 1,
+                context, sbt, &shadow_hit);
 #ifdef REPORT_RAY_STATS
         ++ray_stats;
 #endif
-        if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_ray.tfar > 0.f) {
+        if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && !shadow_hit) {
             float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
             float w = power_heuristic(1.f, light_pdf, 1.f, bsdf_pdf);
             illum = bsdf * light.emission * abs(dot(light_dir, n)) * w / light_pdf;
@@ -131,13 +222,16 @@ float3 sample_direct_light(const SceneContext *uniform scene,
             float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
             if (light_pdf >= EPSILON) {
                 float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
-                set_ray(shadow_ray, hit_p, w_i, EPSILON);
-                shadow_ray.tfar = light_dist;
-                rtcOccludedV(scene->scene, incoherent_context, &shadow_ray);
+
+                shadow_hit = 1;
+                trace_ray(scene->scene, hit_p, w_i, EPSILON, light_dist,
+                        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT,
+                        0, 0, 1,
+                        context, sbt, &shadow_hit);
 #ifdef REPORT_RAY_STATS
                 ++ray_stats;
 #endif
-                if (shadow_ray.tfar > 0.f) {
+                if (!shadow_hit) {
                     illum = illum + bsdf * light.emission * abs(dot(w_i, n)) * w / bsdf_pdf;
                 }
             }
@@ -146,8 +240,97 @@ float3 sample_direct_light(const SceneContext *uniform scene,
     return illum;
 }
 
+void raygen_perspective_camera(Tile *uniform tile, const uniform ShaderTable *uniform sbt,
+        const int2 pixel, const void *uniform _params)
+{
+    const uniform RayGenParams *uniform params = (const uniform RayGenParams *uniform)_params;
+    const uniform SceneContext *uniform scene = &params->scene;
+    const uniform ViewParams *uniform view_params = &params->view;
+
+    uniform RTCIntersectContext context;
+    rtcInitIntersectContext(&context);
+    context.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
+
+    PCGRand rng = get_rng((tile->x + pixel.x + (tile->y + pixel.y) * tile->fb_width) * (view_params->frame_id + 1));
+
+    const float px_x = (pixel.x + tile->x + pcg32_randomf(rng)) / tile->fb_width;
+    const float px_y = (pixel.y + tile->y + pcg32_randomf(rng)) / tile->fb_height;
+
+    float3 ray_org = make_float3(view_params->pos.x, view_params->pos.y, view_params->pos.z);
+    float3 ray_dir = normalize(make_float3(
+                view_params->dir_du.x * px_x + view_params->dir_dv.x * px_y + view_params->dir_top_left.x,
+                view_params->dir_du.y * px_x + view_params->dir_dv.y * px_y + view_params->dir_top_left.y,
+                view_params->dir_du.z * px_x + view_params->dir_dv.z * px_y + view_params->dir_top_left.z));
+
+    int bounce = 0;
+    uint16_t ray_stats = 0;
+    float3 illum = make_float3(0.0);
+    float3 path_throughput = make_float3(1.0);
+    DisneyMaterial mat;
+    mat4 matrix;
+    do {
+        RayPayload payload = make_ray_payload();
+        trace_ray(scene->scene, ray_org, ray_dir, EPSILON, 1e20f, 0, 0, 0, 0,
+            &context, sbt, &payload);
+
+#ifdef REPORT_RAY_STATS
+        ++ray_stats;
+#endif
+        context.flags = RTC_INTERSECT_CONTEXT_FLAG_INCOHERENT;
+
+        if (payload.t_hit <= 0.f) {
+            illum = illum + path_throughput * payload.normal;
+            break;
+        }
+
+        unpack_material(mat, &scene->materials[payload.material_id], payload.uv);
+
+        const float3 w_o = neg(ray_dir);
+        const float3 hit_p = ray_org + payload.t_hit * ray_dir;
+        float3 v_x, v_y;
+        float3 v_z = payload.normal;
+        if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
+            v_z = neg(v_z);
+        }
+        ortho_basis(v_x, v_y, v_z);
+
+        illum = illum + path_throughput
+            * sample_direct_light(scene, mat, hit_p, v_z, v_x, v_y, w_o, &context,
+                    scene->lights, scene->num_lights, ray_stats, rng, sbt);
+
+        float3 w_i;
+        float pdf;
+        float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
+        if (pdf < EPSILON || all_zero(bsdf)) {
+            break;
+        }
+        path_throughput = path_throughput * bsdf * abs(dot(w_i, v_z)) / pdf;
+
+        if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
+            break;
+        }
+
+        ray_org = hit_p;
+        ray_dir = w_i;
+
+        ++bounce;
+    } while (bounce < MAX_PATH_DEPTH);
+
+    uint32_t px = pixel.y * tile->width + pixel.x;
+#ifdef REPORT_RAY_STATS
+    tile->ray_stats[px] = ray_stats;
+#endif
+
+    px = px * 3;
+    tile->data[px] = (illum.x + view_params->frame_id * tile->data[px]) / (view_params->frame_id + 1);
+    tile->data[px + 1] = (illum.y + view_params->frame_id * tile->data[px + 1]) / (view_params->frame_id + 1);
+    tile->data[px + 2] = (illum.z + view_params->frame_id * tile->data[px + 2]) / (view_params->frame_id + 1);
+}
+
 // A miss "shader" to make the same checkerboard background for testing as in the DXR backend
-float3 miss_shader(const float3 &dir) {
+void miss_shader(const RTCRay &ray, const void *params, void *_payload) {
+    const float3 dir = make_float3(ray.dir_x, ray.dir_y, ray.dir_z);
+    RayPayload *payload = (RayPayload *)_payload;
     float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
     float v = acos(dir.y) * M_1_PI;
 
@@ -155,137 +338,59 @@ float3 miss_shader(const float3 &dir) {
     int check_y = v * 10.f;
 
     if (dir.y > -0.1 && mod(check_x + check_y,  2) == 0) {
-        return make_float3(0.5f);
+        payload->normal = make_float3(0.5f);
     }
-    return make_float3(0.1f);
+    payload->normal = make_float3(0.1f);
 }
 
-export void trace_rays(void *uniform _scene, void *uniform _tile, const void *uniform _view_params)
-{
-    SceneContext *uniform scene = (SceneContext *uniform)_scene;
-    const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
-    Tile *uniform tile = (Tile *uniform)_tile;
-    uniform RTCIntersectContext context;
-    rtcInitIntersectContext(&context);
-    context.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
+void occlusion_miss_shader(const RTCRay &ray, const void *params, void *_payload) {
+    int *payload = (int *)_payload;
+    *payload = 0;
+}
 
-    foreach (ray = 0 ... tile->width * tile->height)  {
-        const uint32_t i = mod(ray, tile->width);
-        const uint32_t j = ray / tile->width;
+void closest_hit(const RTCRayHit &ray, const int prim_id, const void *params, void *_payload) {
+    RayPayload *payload = (RayPayload *)_payload;
 
-        PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 1));
+    payload->normal = normalize(make_float3(ray.hit.Ng_x, ray.hit.Ng_y, ray.hit.Ng_z));
 
-        const float px_x = (i + tile->x + pcg32_randomf(rng)) / tile->fb_width;
-        const float px_y = (j + tile->y + pcg32_randomf(rng)) / tile->fb_height;
+    const float2 bary = make_float2(ray.hit.u, ray.hit.v);
 
-        RTCRayHit path_ray;
-        {
-            float3 org = make_float3(view_params->pos.x, view_params->pos.y, view_params->pos.z);
-            float3 dir = normalize(make_float3(
-                        view_params->dir_du.x * px_x + view_params->dir_dv.x * px_y + view_params->dir_top_left.x,
-                        view_params->dir_du.y * px_x + view_params->dir_dv.y * px_y + view_params->dir_top_left.y,
-                        view_params->dir_du.z * px_x + view_params->dir_dv.z * px_y + view_params->dir_top_left.z));
+    // TODO: The transform mats should be passed as a param
+    //const ISPCInstance *instance = &scene->instances[inst];
+    const ISPCGeometry *geometry = (const ISPCGeometry *)params;
+    const uint3 indices = geometry->index_buf[prim_id];
 
-            set_ray_hit(path_ray, org, dir, 0.f);
-        }
-
-        int bounce = 0;
-        uint16_t ray_stats = 0;
-        float3 illum = make_float3(0.0);
-        float3 path_throughput = make_float3(1.0);
-        DisneyMaterial mat;
-        mat4 matrix;
-        do {
-            rtcIntersectV(scene->scene, &context, &path_ray);
-#ifdef REPORT_RAY_STATS
-            ++ray_stats;
-#endif
-            context.flags = RTC_INTERSECT_CONTEXT_FLAG_INCOHERENT;
-
-            const int inst = path_ray.hit.instID[0];
-            const int geom = path_ray.hit.geomID;
-            const int prim = path_ray.hit.primID;
-
-            const float3 w_o = make_float3(-path_ray.ray.dir_x, -path_ray.ray.dir_y, -path_ray.ray.dir_z);
-
-            if (geom == RTC_INVALID_GEOMETRY_ID || inst == RTC_INVALID_GEOMETRY_ID
-                    || prim == RTC_INVALID_GEOMETRY_ID)
-            {
-                illum = illum + path_throughput * miss_shader(neg(w_o));
-                break;
-            }
-
-            const float3 hit_p = make_float3(path_ray.ray.org_x + path_ray.ray.tfar * path_ray.ray.dir_x,
-                    path_ray.ray.org_y + path_ray.ray.tfar * path_ray.ray.dir_y,
-                    path_ray.ray.org_z + path_ray.ray.tfar * path_ray.ray.dir_z);
-
-            float3 normal = normalize(make_float3(path_ray.hit.Ng_x,
-                        path_ray.hit.Ng_y,
-                        path_ray.hit.Ng_z));
-
-            const float2 bary = make_float2(path_ray.hit.u, path_ray.hit.v);
-
-            const ISPCInstance *instance = &scene->instances[inst];
-            const ISPCGeometry *geometry = &instance->geometries[geom];
-
-            float2 uv = make_float2(0.f, 0.f);
-            const uint3 indices = geometry->index_buf[prim];
-
-            if (geometry->uv_buf) {
-                float2 uva = geometry->uv_buf[indices.x];
-                float2 uvb = geometry->uv_buf[indices.y];
-                float2 uvc = geometry->uv_buf[indices.z];
-                uv = (1.f - bary.x - bary.y) * uva
-                    + bary.x * uvb + bary.y * uvc;
-            }
-
-            // Transform the normal back to world space
-            load_mat4(matrix, instance->world_to_object);
-            transpose(matrix);
-            normal = normalize(mul(matrix, normal));
-
-            unpack_material(mat, &scene->materials[geometry->material_id], uv);
-
-            // Direct light sampling
-            float3 v_x, v_y;
-            if (mat.specular_transmission == 0.f && dot(w_o, normal) < 0.0) {
-                normal = neg(normal);
-            }
-            ortho_basis(v_x, v_y, normal);
-            illum = illum + path_throughput
-                * sample_direct_light(scene, mat, hit_p, normal, v_x, v_y, w_o, &context,
-                        scene->lights, scene->num_lights, ray_stats, rng);
-
-            // Sample the BSDF to continue the ray
-            float pdf;
-            float3 w_i;
-            float3 bsdf = sample_disney_brdf(mat, normal, w_o, v_x, v_y, rng, w_i, pdf);
-            if (pdf < EPSILON || all_zero(bsdf)) {
-                break;
-            }
-            path_throughput = path_throughput * bsdf * abs(dot(w_i, normal)) / pdf;
-
-            if (path_throughput.x < EPSILON && path_throughput.y < EPSILON
-                    && path_throughput.z < EPSILON)
-            {
-                break;
-            }
-
-            // Trace the ray continuing the path
-            set_ray_hit(path_ray, hit_p, w_i, EPSILON);
-
-            ++bounce;
-        } while (bounce < MAX_PATH_DEPTH);
-
-#ifdef REPORT_RAY_STATS
-        tile->ray_stats[ray] = ray_stats;
-#endif
-
-        const uint32_t px_id = ray * 3;
-        tile->data[px_id] = (illum.x + view_params->frame_id * tile->data[px_id]) / (view_params->frame_id + 1);
-        tile->data[px_id + 1] = (illum.y + view_params->frame_id * tile->data[px_id + 1]) / (view_params->frame_id + 1);
-        tile->data[px_id + 2] = (illum.z + view_params->frame_id * tile->data[px_id + 2]) / (view_params->frame_id + 1);
+    payload->uv = make_float2(0.f, 0.f);
+    if (geometry->uv_buf) {
+        float2 uva = geometry->uv_buf[indices.x];
+        float2 uvb = geometry->uv_buf[indices.y];
+        float2 uvc = geometry->uv_buf[indices.z];
+        payload->uv = (1.f - bary.x - bary.y) * uva
+            + bary.x * uvb + bary.y * uvc;
     }
+
+    payload->material_id = geometry->material_id;
+    payload->t_hit = ray.ray.tfar;
+
+    // Transform the normal back to world space
+    //load_mat4(matrix, instance->world_to_object);
+    //transpose(matrix);
+    //payload->normal = normalize(mul(matrix, payload->normal));
+}
+
+export void get_miss_shader_handle(uniform uint64_t *uniform h) {
+    void *uniform x = miss_shader;
+    *h = (uniform uint64_t)x;
+}
+
+export void get_occlusion_miss_shader_handle(uniform uint64_t *uniform h) {
+    void *uniform x = occlusion_miss_shader;
+    *h = (uniform uint64_t)x;
+}
+
+export void get_closest_hit_handle(uniform uint64_t *uniform h) {
+    void *uniform x = closest_hit;
+    *h = (uniform uint64_t)x;
 }
 
 // Convert the RGBF32 tile to sRGB and write it to the RGBA8 framebuffer
@@ -301,4 +406,5 @@ export void tile_to_uint8(void *uniform _tile, uniform uint8_t *uniform fb) {
         fb[fb_px + 3] = 255;
     }
 }
+
 

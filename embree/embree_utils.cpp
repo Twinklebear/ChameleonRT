@@ -1,6 +1,8 @@
 #include "embree_utils.h"
 #include <algorithm>
+#include <cmath>
 #include <limits>
+#include <util.h>
 #include <glm/ext.hpp>
 
 namespace embree {
@@ -145,4 +147,100 @@ ISPCTexture2D::ISPCTexture2D(const Image &img)
     : width(img.width), height(img.height), channels(img.channels), data(img.img.data())
 {
 }
+
+ShaderRecord::ShaderRecord(const std::string &name, uint64_t program_handle, size_t param_size)
+    : name(name), program_handle(program_handle), param_size(param_size)
+{
+}
+
+ShaderTable::ShaderTable(const ShaderRecord &raygen_record,
+                         const std::vector<ShaderRecord> &miss_records,
+                         const std::vector<ShaderRecord> &hitgroup_records)
+{
+    const size_t raygen_entry_size = align_to(raygen_record.param_size + EMBREE_SBT_HEADER_SIZE, EMBREE_SBT_ALIGNMENT);
+
+    size_t miss_entry_size = 0;
+    for (const auto &m : miss_records) {
+        miss_entry_size = std::max(
+            miss_entry_size, align_to(m.param_size + EMBREE_SBT_HEADER_SIZE, EMBREE_SBT_ALIGNMENT));
+    }
+
+    size_t hitgroup_entry_size = 0;
+    for (const auto &h : hitgroup_records) {
+        hitgroup_entry_size = std::max(
+            hitgroup_entry_size,
+                     align_to(h.param_size + EMBREE_SBT_HEADER_SIZE, EMBREE_SBT_ALIGNMENT));
+    }
+
+    const size_t sbt_size = raygen_entry_size + miss_records.size() * miss_entry_size +
+                            hitgroup_records.size() * hitgroup_entry_size;
+
+	shader_table.resize(sbt_size, 0);
+    
+	ispc_table.raygen = &shader_table[0];
+    
+	ispc_table.miss_shaders = &shader_table[raygen_entry_size];
+    ispc_table.miss_stride = miss_entry_size;
+
+	ispc_table.hit_groups =
+        &shader_table[raygen_entry_size + ispc_table.miss_stride * miss_records.size()];
+    ispc_table.hit_group_stride = hitgroup_entry_size;
+    
+    size_t offset = 0;
+    record_offsets[raygen_record.name] = offset;
+    std::memcpy(&shader_table[offset], &raygen_record.program_handle, EMBREE_SBT_HEADER_SIZE);
+    offset += raygen_entry_size;
+
+    for (const auto &m : miss_records) {
+        record_offsets[m.name] = offset;
+        std::memcpy(&shader_table[offset], &m.program_handle, EMBREE_SBT_HEADER_SIZE);
+        offset += miss_entry_size;
+    }
+
+    for (const auto &h : hitgroup_records) {
+        record_offsets[h.name] = offset;
+        std::memcpy(&shader_table[offset], &h.program_handle, EMBREE_SBT_HEADER_SIZE);
+        offset += hitgroup_entry_size;
+    }
+}
+
+uint8_t *ShaderTable::get_shader_record(const std::string &shader)
+{
+    return &shader_table[record_offsets[shader]];
+}
+
+ISPCShaderTable &ShaderTable::table()
+{
+    return ispc_table;
+}
+
+ShaderTableBuilder &ShaderTableBuilder::set_raygen(const std::string &name,
+                                                   uint64_t program,
+                                                   size_t param_size)
+{
+    raygen_record = ShaderRecord(name, program, param_size);
+    return *this;
+}
+
+ShaderTableBuilder &ShaderTableBuilder::add_miss(const std::string &name,
+                                                 uint64_t program,
+                                                 size_t param_size)
+{
+    miss_records.emplace_back(name, program, param_size);
+    return *this;
+}
+
+ShaderTableBuilder &ShaderTableBuilder::add_hitgroup(const std::string &name,
+                                                     uint64_t program,
+                                                     size_t param_size)
+{
+    hitgroup_records.emplace_back(name, program, param_size);
+    return *this;
+}
+
+ShaderTable ShaderTableBuilder::build()
+{
+    return ShaderTable(raygen_record, miss_records, hitgroup_records);
+}
+
 }

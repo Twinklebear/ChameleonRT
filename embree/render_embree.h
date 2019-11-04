@@ -24,6 +24,9 @@ struct RenderEmbree : RenderBackend {
     std::vector<std::vector<float>> tiles;
     std::vector<std::vector<uint16_t>> ray_stats;
 
+    embree::ShaderTable shader_table;
+    std::vector<uint32_t> instance_offset;
+
     RenderEmbree();
 
     std::string name() override;

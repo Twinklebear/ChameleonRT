@@ -3,6 +3,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <unordered_map>
 #include <embree3/rtcore.h>
 #include "lights.h"
 #include "material.h"
@@ -155,6 +156,87 @@ struct Tile {
     uint32_t fb_width, fb_height;
     float *data;
     uint16_t *ray_stats;
+};
+
+class ShaderTableBuilder;
+
+struct ShaderRecord {
+    std::string name;
+    uint64_t program_handle = 0;
+    size_t param_size = 0;
+
+    ShaderRecord() = default;
+    ShaderRecord(const std::string &name, uint64_t program_handle, size_t param_size);
+};
+
+struct ISPCShaderTable {
+    void *raygen = nullptr;
+    void *raygen_params = nullptr;
+
+    uint8_t *miss_shaders = nullptr;
+    uint32_t miss_stride;
+
+    uint8_t *hit_groups = nullptr;
+    uint32_t hit_group_stride;
+
+    uint32_t *instance_offset = nullptr;
+};
+
+#define EMBREE_SBT_HEADER_SIZE sizeof(uint64_t)
+#define EMBREE_SBT_ALIGNMENT 32
+
+class ShaderTable {
+    std::vector<uint8_t> shader_table;
+    ISPCShaderTable ispc_table;
+
+    std::unordered_map<std::string, size_t> record_offsets;
+
+    ShaderTable(const ShaderRecord &raygen_record,
+                const std::vector<ShaderRecord> &miss_records,
+                const std::vector<ShaderRecord> &hitgroup_records);
+
+    friend class ShaderTableBuilder;
+
+public:
+    ShaderTable() = default;
+
+    /* Get the pointer to the start of the shader record, where the header
+     * is written
+     */
+    uint8_t *get_shader_record(const std::string &shader);
+
+    // Get a pointer to the parameters portion of the record for the shader
+    template <typename T>
+    T &get_shader_params(const std::string &shader);
+
+    ISPCShaderTable &table();
+};
+
+template <typename T>
+T &ShaderTable::get_shader_params(const std::string &shader)
+{
+    return *reinterpret_cast<T *>(get_shader_record(shader) + EMBREE_SBT_HEADER_SIZE);
+}
+
+class ShaderTableBuilder {
+    ShaderRecord raygen_record;
+    std::vector<ShaderRecord> miss_records;
+    std::vector<ShaderRecord> hitgroup_records;
+
+public:
+    ShaderTableBuilder &set_raygen(const std::string &name,
+                                   uint64_t program_handle,
+                                   size_t param_size);
+
+    ShaderTableBuilder &add_miss(const std::string &name,
+                                 uint64_t program_handle,
+                                 size_t param_size);
+
+    ShaderTableBuilder &add_hitgroup(const std::string &name,
+                                     uint64_t program_handle,
+                                     size_t param_size);
+
+    ShaderTable build();
 };
 
 }
