@@ -55,9 +55,13 @@ void RenderEmbree::set_scene(const Scene &scene)
     }
 
     std::vector<std::shared_ptr<embree::Instance>> instances;
+    instance_offset.clear();
+    uint32_t sbt_offset = 0;
     for (const auto &inst : scene.instances) {
         instances.push_back(
             std::make_shared<embree::Instance>(device, meshes[inst.mesh_id], inst.transform));
+        instance_offset.push_back(sbt_offset);
+        sbt_offset += meshes[inst.mesh_id]->geometries.size();
     }
 
     scene_bvh = std::make_shared<embree::TopLevelBVH>(device, instances);
@@ -115,6 +119,8 @@ void RenderEmbree::set_scene(const Scene &scene)
     }
 
     lights = scene.lights;
+
+	// TODO: setup our shader table
 }
 
 RenderStats RenderEmbree::render(const glm::vec3 &pos,
