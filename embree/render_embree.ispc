@@ -111,19 +111,22 @@ void trace_ray(RTCScene scene, const float3 &ray_origin, const float3 &ray_dir, 
 {
     RTCRayHit ray = make_ray_hit(ray_origin, ray_dir, tmin);
     ray.ray.tfar = tmax;
+    bool missed = false;
     if (ray_flags & RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH) {
         rtcOccludedV(scene, context, &ray.ray);
+        missed = ray.ray.tfar >= 0.f;
     } else {
         rtcIntersectV(scene, context, &ray);
+        missed = ray.hit.geomID == RTC_INVALID_GEOMETRY_ID
+            || ray.hit.instID[0] == RTC_INVALID_GEOMETRY_ID
+            || ray.hit.primID == RTC_INVALID_GEOMETRY_ID;
     }
 
     const int inst = ray.hit.instID[0];
     const int geom = ray.hit.geomID;
     const int prim = ray.hit.primID;
 
-    if (geom == RTC_INVALID_GEOMETRY_ID || inst == RTC_INVALID_GEOMETRY_ID
-        || prim == RTC_INVALID_GEOMETRY_ID)
-    {
+    if (missed) {
         uint64_t *shader_addr = (uint64_t *)(sbt->miss_shaders + miss_index * sbt->miss_stride);
         void *params = (void *)(shader_addr + 1);
         varying MissShader shader = (varying MissShader)(*shader_addr);
@@ -356,7 +359,6 @@ void occlusion_miss_shader(const RTCRay &ray, const void *params, void *uniform 
 
 void closest_hit(const RTCRayHit &ray, const int prim_id, const void *params, void *uniform _payload) {
     varying RayPayload *uniform payload = (varying RayPayload *uniform)_payload;
-    payload->t_hit = ray.ray.tfar;
 
     payload->normal = normalize(make_float3(ray.hit.Ng_x, ray.hit.Ng_y, ray.hit.Ng_z));
 
