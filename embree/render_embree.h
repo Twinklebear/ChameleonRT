@@ -25,6 +25,8 @@ struct RenderEmbree : RenderBackend {
     std::vector<std::vector<uint16_t>> ray_stats;
 
     embree::ShaderTable shader_table;
+    embree::ViewParams view_params;
+    embree::SceneContext ispc_scene;
     std::vector<uint32_t> instance_offset;
 
     RenderEmbree();
@@ -37,4 +39,7 @@ struct RenderEmbree : RenderBackend {
                        const glm::vec3 &up,
                        const float fovy,
                        const bool camera_changed) override;
+
+private:
+    void build_shader_table();
 };

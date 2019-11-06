@@ -1,6 +1,7 @@
 #include "embree_utils.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <limits>
 #include <util.h>
 #include <glm/ext.hpp>
@@ -157,7 +158,8 @@ ShaderTable::ShaderTable(const ShaderRecord &raygen_record,
                          const std::vector<ShaderRecord> &miss_records,
                          const std::vector<ShaderRecord> &hitgroup_records)
 {
-    const size_t raygen_entry_size = align_to(raygen_record.param_size + EMBREE_SBT_HEADER_SIZE, EMBREE_SBT_ALIGNMENT);
+    const size_t raygen_entry_size =
+        align_to(raygen_record.param_size + EMBREE_SBT_HEADER_SIZE, EMBREE_SBT_ALIGNMENT);
 
     size_t miss_entry_size = 0;
     for (const auto &m : miss_records) {
@@ -167,39 +169,48 @@ ShaderTable::ShaderTable(const ShaderRecord &raygen_record,
 
     size_t hitgroup_entry_size = 0;
     for (const auto &h : hitgroup_records) {
-        hitgroup_entry_size = std::max(
-            hitgroup_entry_size,
+        hitgroup_entry_size =
+            std::max(hitgroup_entry_size,
                      align_to(h.param_size + EMBREE_SBT_HEADER_SIZE, EMBREE_SBT_ALIGNMENT));
     }
 
     const size_t sbt_size = raygen_entry_size + miss_records.size() * miss_entry_size +
                             hitgroup_records.size() * hitgroup_entry_size;
 
-	shader_table.resize(sbt_size, 0);
-    
-	ispc_table.raygen = &shader_table[0];
-    
-	ispc_table.miss_shaders = &shader_table[raygen_entry_size];
+    shader_table.resize(sbt_size, 0);
+
+    ispc_table.raygen = &shader_table[0];
+
+    ispc_table.miss_shaders = &shader_table[raygen_entry_size];
     ispc_table.miss_stride = miss_entry_size;
 
-	ispc_table.hit_groups =
+    ispc_table.hit_groups =
         &shader_table[raygen_entry_size + ispc_table.miss_stride * miss_records.size()];
     ispc_table.hit_group_stride = hitgroup_entry_size;
-    
+
+    std::cout << "raygen program handle: " << std::hex << raygen_record.program_handle << std::dec
+              << "\n";
     size_t offset = 0;
     record_offsets[raygen_record.name] = offset;
     std::memcpy(&shader_table[offset], &raygen_record.program_handle, EMBREE_SBT_HEADER_SIZE);
     offset += raygen_entry_size;
 
+	std::cout << "Wrote RG handle: " << std::hex << *reinterpret_cast<uint64_t *>(shader_table.data())
+              << std::dec << "\n";
+
     for (const auto &m : miss_records) {
         record_offsets[m.name] = offset;
         std::memcpy(&shader_table[offset], &m.program_handle, EMBREE_SBT_HEADER_SIZE);
+        std::cout << "miss " << m.name << " handle: " << std::hex << m.program_handle << std::dec
+                  << "\n";
         offset += miss_entry_size;
     }
 
     for (const auto &h : hitgroup_records) {
         record_offsets[h.name] = offset;
         std::memcpy(&shader_table[offset], &h.program_handle, EMBREE_SBT_HEADER_SIZE);
+        std::cout << "HG " << h.name << " handle: " << std::hex << h.program_handle << std::dec
+                  << "\n";
         offset += hitgroup_entry_size;
     }
 }

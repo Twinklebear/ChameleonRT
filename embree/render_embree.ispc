@@ -55,8 +55,8 @@ struct SceneContext {
 };
 
 struct RayGenParams {
-    SceneContext scene;
-    ViewParams view;
+    SceneContext *uniform scene;
+    ViewParams *uniform view;
 };
 
 struct Tile {
@@ -69,7 +69,6 @@ struct Tile {
 
 struct ShaderTable {
     void *uniform raygen;
-    void *uniform raygen_params;
 
     uint8_t *uniform miss_shaders;
     uint32_t miss_stride;
@@ -83,9 +82,9 @@ struct ShaderTable {
 typedef void (*RayGen)(Tile *uniform tile, const uniform ShaderTable *uniform sbt,
         const int2 pixel, const void *uniform _params);
 
-typedef void (*MissShader)(const RTCRay &ray, const void *params, void *_payload);
+typedef void (*MissShader)(const RTCRay &ray, const void *params, void *uniform _payload);
 
-typedef void (*ClosestHit)(const RTCRayHit &ray, const int prim_id, const void *params, void *_payload);
+typedef void (*ClosestHit)(const RTCRayHit &ray, const int prim_id, const void *params, void *uniform _payload);
 
 export void execute_tile(const void *uniform _sbt, void *uniform _tile) {
     const uniform ShaderTable *uniform sbt = (const uniform ShaderTable *uniform)_sbt;
@@ -95,8 +94,10 @@ export void execute_tile(const void *uniform _sbt, void *uniform _tile) {
         const uint32_t i = mod(px, tile->width);
         const uint32_t j = px / tile->width;
         // TODO: should just make the sbt a global
-        uniform RayGen raygen = (uniform RayGen)sbt->raygen;
-        raygen(tile, sbt, make_int2(i, j), sbt->raygen_params);
+        uint64_t *uniform raygen_addr = (uint64_t *uniform)sbt->raygen;
+        uniform RayGen raygen = (uniform RayGen)(*raygen_addr);
+        void *uniform raygen_params = (void *uniform)(raygen_addr + 1);
+        raygen(tile, sbt, make_int2(i, j), raygen_params);
     }
 }
 
@@ -106,7 +107,7 @@ const int RAY_FLAG_SKIP_CLOSEST_HIT = 1 << 1;
 void trace_ray(RTCScene scene, const float3 &ray_origin, const float3 &ray_dir, float tmin, float tmax,
         uint32_t ray_flags, uint32_t sbt_offset, uint32_t sbt_stride, uint32_t miss_index,
         uniform RTCIntersectContext *uniform context, const uniform ShaderTable *uniform sbt,
-        void *varying payload)
+        void *uniform payload)
 {
     RTCRayHit ray = make_ray_hit(ray_origin, ray_dir, tmin);
     ray.ray.tfar = tmax;
@@ -123,13 +124,15 @@ void trace_ray(RTCScene scene, const float3 &ray_origin, const float3 &ray_dir, 
     if (geom == RTC_INVALID_GEOMETRY_ID || inst == RTC_INVALID_GEOMETRY_ID
         || prim == RTC_INVALID_GEOMETRY_ID)
     {
-        varying MissShader shader = (varying MissShader)(sbt->miss_shaders + miss_index * sbt->miss_stride);
-        void *params = sbt->miss_shaders + miss_index * sbt->miss_stride + 8;
+        uint64_t *shader_addr = (uint64_t *)(sbt->miss_shaders + miss_index * sbt->miss_stride);
+        void *params = (void *)(shader_addr + 1);
+        varying MissShader shader = (varying MissShader)(*shader_addr);
         shader(ray.ray, params, payload);
     } else if (!(ray_flags & RAY_FLAG_SKIP_CLOSEST_HIT)) {
         const int hg = sbt_offset + sbt_stride * geom + sbt->instance_offset[inst];
-        varying ClosestHit shader = (varying ClosestHit)(sbt->hit_groups + hg * sbt->hit_group_stride);
-        void *params = sbt->hit_groups + hg * sbt->hit_group_stride + 8;
+        uint64_t *shader_addr = (uint64_t *)(sbt->hit_groups + hg * sbt->hit_group_stride);
+        void *params = (void *)(shader_addr + 1);
+        varying ClosestHit shader = (varying ClosestHit)(*shader_addr);
         shader(ray, prim, params, payload);
     }
 }
@@ -244,8 +247,8 @@ void raygen_perspective_camera(Tile *uniform tile, const uniform ShaderTable *un
         const int2 pixel, const void *uniform _params)
 {
     const uniform RayGenParams *uniform params = (const uniform RayGenParams *uniform)_params;
-    const uniform SceneContext *uniform scene = &params->scene;
-    const uniform ViewParams *uniform view_params = &params->view;
+    const uniform SceneContext *uniform scene = params->scene;
+    const uniform ViewParams *uniform view_params = params->view;
 
     uniform RTCIntersectContext context;
     rtcInitIntersectContext(&context);
@@ -264,14 +267,16 @@ void raygen_perspective_camera(Tile *uniform tile, const uniform ShaderTable *un
 
     int bounce = 0;
     uint16_t ray_stats = 0;
-    float3 illum = make_float3(0.0);
+    float3 illum = make_float3(0.f);
     float3 path_throughput = make_float3(1.0);
     DisneyMaterial mat;
     mat4 matrix;
+    float tmin = 0.f;
     do {
         RayPayload payload = make_ray_payload();
-        trace_ray(scene->scene, ray_org, ray_dir, EPSILON, 1e20f, 0, 0, 0, 0,
+        trace_ray(scene->scene, ray_org, ray_dir, tmin, 1e20f, 0, 0, 0, 0,
             &context, sbt, &payload);
+        tmin = EPSILON;
 
 #ifdef REPORT_RAY_STATS
         ++ray_stats;
@@ -328,9 +333,9 @@ void raygen_perspective_camera(Tile *uniform tile, const uniform ShaderTable *un
 }
 
 // A miss "shader" to make the same checkerboard background for testing as in the DXR backend
-void miss_shader(const RTCRay &ray, const void *params, void *_payload) {
+void miss_shader(const RTCRay &ray, const void *params, void *uniform _payload) {
     const float3 dir = make_float3(ray.dir_x, ray.dir_y, ray.dir_z);
-    RayPayload *payload = (RayPayload *)_payload;
+    varying RayPayload *uniform payload = (varying RayPayload *uniform)_payload;
     float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
     float v = acos(dir.y) * M_1_PI;
 
@@ -339,17 +344,19 @@ void miss_shader(const RTCRay &ray, const void *params, void *_payload) {
 
     if (dir.y > -0.1 && mod(check_x + check_y,  2) == 0) {
         payload->normal = make_float3(0.5f);
+    } else {
+        payload->normal = make_float3(0.1f);
     }
-    payload->normal = make_float3(0.1f);
 }
 
-void occlusion_miss_shader(const RTCRay &ray, const void *params, void *_payload) {
-    int *payload = (int *)_payload;
+void occlusion_miss_shader(const RTCRay &ray, const void *params, void *uniform _payload) {
+    varying int *uniform payload = (varying int *uniform)_payload;
     *payload = 0;
 }
 
-void closest_hit(const RTCRayHit &ray, const int prim_id, const void *params, void *_payload) {
-    RayPayload *payload = (RayPayload *)_payload;
+void closest_hit(const RTCRayHit &ray, const int prim_id, const void *params, void *uniform _payload) {
+    varying RayPayload *uniform payload = (varying RayPayload *uniform)_payload;
+    payload->t_hit = ray.ray.tfar;
 
     payload->normal = normalize(make_float3(ray.hit.Ng_x, ray.hit.Ng_y, ray.hit.Ng_z));
 
@@ -378,19 +385,24 @@ void closest_hit(const RTCRayHit &ray, const int prim_id, const void *params, vo
     //payload->normal = normalize(mul(matrix, payload->normal));
 }
 
-export void get_miss_shader_handle(uniform uint64_t *uniform h) {
+export uniform uint64_t get_raygen_handle() {
+    void *uniform x = raygen_perspective_camera;
+    return (uniform uint64_t)x;
+}
+
+export uniform uint64_t get_miss_shader_handle() {
     void *uniform x = miss_shader;
-    *h = (uniform uint64_t)x;
+    return (uniform uint64_t)x;
 }
 
-export void get_occlusion_miss_shader_handle(uniform uint64_t *uniform h) {
+export uniform uint64_t get_occlusion_miss_shader_handle() {
     void *uniform x = occlusion_miss_shader;
-    *h = (uniform uint64_t)x;
+    return (uniform uint64_t)x;
 }
 
-export void get_closest_hit_handle(uniform uint64_t *uniform h) {
+export uniform uint64_t get_closest_hit_handle() {
     void *uniform x = closest_hit;
-    *h = (uniform uint64_t)x;
+    return (uniform uint64_t)x;
 }
 
 // Convert the RGBF32 tile to sRGB and write it to the RGBA8 framebuffer

@@ -171,7 +171,6 @@ struct ShaderRecord {
 
 struct ISPCShaderTable {
     void *raygen = nullptr;
-    void *raygen_params = nullptr;
 
     uint8_t *miss_shaders = nullptr;
     uint32_t miss_stride;

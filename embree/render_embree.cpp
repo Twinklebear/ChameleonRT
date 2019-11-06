@@ -11,6 +11,19 @@
 #include "render_embree_ispc.h"
 #include <glm/ext.hpp>
 
+struct RayGenParams {
+    embree::SceneContext *scene;
+    embree::ViewParams *view;
+};
+
+struct HitGroupParams {
+    const glm::vec4 *vertex_buf;
+    const glm::uvec3 *index_buf;
+    const glm::vec3 *normal_buf;
+    const glm::vec2 *uv_buf;
+    uint32_t material_id;
+};
+
 RenderEmbree::RenderEmbree()
 {
     _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
@@ -120,7 +133,7 @@ void RenderEmbree::set_scene(const Scene &scene)
 
     lights = scene.lights;
 
-	// TODO: setup our shader table
+    build_shader_table();
 }
 
 RenderStats RenderEmbree::render(const glm::vec3 &pos,
@@ -140,14 +153,12 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
     img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
     img_plane_size.x = img_plane_size.y * static_cast<float>(fb_dims.x) / fb_dims.y;
 
-    embree::ViewParams view_params;
     view_params.pos = pos;
     view_params.dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
     view_params.dir_dv = glm::normalize(glm::cross(view_params.dir_du, dir)) * img_plane_size.y;
     view_params.dir_top_left = dir - 0.5f * view_params.dir_du - 0.5f * view_params.dir_dv;
     view_params.frame_id = frame_id;
 
-    embree::SceneContext ispc_scene;
     ispc_scene.scene = scene_bvh->handle;
     ispc_scene.instances = scene_bvh->ispc_instances.data();
     ispc_scene.materials = material_params.data();
@@ -164,8 +175,12 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
 #endif
     uint8_t *color = reinterpret_cast<uint8_t *>(img.data());
 
+    auto ispc_shader_table = shader_table.table();
+    ispc_shader_table.instance_offset = instance_offset.data();
+
     auto start = high_resolution_clock::now();
-    tbb::parallel_for(uint32_t(0), ntiles.x * ntiles.y, [&](uint32_t tile_id) {
+    // tbb::parallel_for(uint32_t(0), ntiles.x * ntiles.y, [&](uint32_t tile_id) {
+    for (uint32_t tile_id = 0; tile_id < ntiles.x * ntiles.y; ++tile_id) {
         const glm::uvec2 tile = glm::uvec2(tile_id % ntiles.x, tile_id / ntiles.x);
         const glm::uvec2 tile_pos = tile * tile_size;
         const glm::uvec2 tile_end = glm::min(tile_pos + tile_size, fb_dims);
@@ -181,7 +196,7 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
         ispc_tile.data = tiles[tile_id].data();
         ispc_tile.ray_stats = ray_stats[tile_id].data();
 
-        ispc::trace_rays(&ispc_scene, &ispc_tile, &view_params);
+        ispc::execute_tile(&ispc_shader_table, &ispc_tile);
 
         ispc::tile_to_uint8(&ispc_tile, color);
 #ifdef REPORT_RAY_STATS
@@ -191,7 +206,7 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
                             uint64_t(0),
                             [](const uint64_t &total, const uint16_t &c) { return total + c; });
 #endif
-    });
+    }  //);
     auto end = high_resolution_clock::now();
     stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
@@ -203,4 +218,61 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
     ++frame_id;
 
     return stats;
+}
+
+void RenderEmbree::build_shader_table()
+{
+    auto sbt_builder =
+        embree::ShaderTableBuilder()
+            .set_raygen("perspective_camera", ispc::get_raygen_handle(), sizeof(RayGenParams))
+            .add_miss("miss", ispc::get_miss_shader_handle(), 0)
+            .add_miss("occlusion_miss", ispc::get_occlusion_miss_shader_handle(), 0);
+
+    const uint64_t closest_hit_handle = ispc::get_closest_hit_handle();
+    for (size_t i = 0; i < scene_bvh->instances.size(); ++i) {
+        const auto &inst = scene_bvh->instances[i];
+        for (size_t j = 0; j < inst->mesh->geometries.size(); ++j) {
+            sbt_builder.add_hitgroup(
+                "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j),
+                closest_hit_handle,
+                sizeof(HitGroupParams));
+        }
+    }
+
+    shader_table = sbt_builder.build();
+
+    // Set the parameters in the SBT
+    {
+        RayGenParams &params = shader_table.get_shader_params<RayGenParams>("perspective_camera");
+        params.scene = &ispc_scene;
+        params.view = &view_params;
+        std::cout << "ispc_scene addr: " << std::hex << &ispc_scene
+                  << ", view_params addr: " << &view_params << std::dec << "\n";
+    }
+
+    for (size_t i = 0; i < scene_bvh->instances.size(); ++i) {
+        const auto &inst = scene_bvh->instances[i];
+        for (size_t j = 0; j < inst->mesh->geometries.size(); ++j) {
+            auto &geom = inst->mesh->geometries[j];
+
+            HitGroupParams &params = shader_table.get_shader_params<HitGroupParams>(
+                "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j));
+
+            params.vertex_buf = geom->vertex_buf.data();
+            params.index_buf = geom->index_buf.data();
+            params.material_id = geom->material_id;
+
+            if (!geom->uv_buf.empty()) {
+                params.uv_buf = geom->uv_buf.data();
+            } else {
+                params.uv_buf = nullptr;
+            }
+
+            if (!geom->normal_buf.empty()) {
+                params.normal_buf = geom->normal_buf.data();
+            } else {
+                params.normal_buf = nullptr;
+            }
+        }
+    }
 }
