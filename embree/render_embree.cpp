@@ -33,7 +33,7 @@ RenderEmbree::RenderEmbree()
 
 std::string RenderEmbree::name()
 {
-    return "Embree (w/ TBB & ISPC)";
+    return "Embree SBT (w/ TBB & ISPC)";
 }
 
 void RenderEmbree::initialize(const int fb_width, const int fb_height)
