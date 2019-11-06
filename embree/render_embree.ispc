@@ -77,6 +77,7 @@ struct ShaderTable {
     uint32_t hit_group_stride;
 
     uint32_t *uniform instance_offset;
+    ISPCInstance *uniform instances;
 };
 
 typedef void (*RayGen)(Tile *uniform tile, const uniform ShaderTable *uniform sbt,
@@ -84,7 +85,9 @@ typedef void (*RayGen)(Tile *uniform tile, const uniform ShaderTable *uniform sb
 
 typedef void (*MissShader)(const RTCRay &ray, const void *params, void *uniform _payload);
 
-typedef void (*ClosestHit)(const RTCRayHit &ray, const int prim_id, const void *params, void *uniform _payload);
+typedef void (*ClosestHit)(const RTCRayHit &ray, const uniform float *varying object_to_world,
+        const uniform float *varying world_to_object, const int prim_id,
+        const void *params, void *uniform _payload);
 
 export void execute_tile(const void *uniform _sbt, void *uniform _tile) {
     const uniform ShaderTable *uniform sbt = (const uniform ShaderTable *uniform)_sbt;
@@ -132,11 +135,13 @@ void trace_ray(RTCScene scene, const float3 &ray_origin, const float3 &ray_dir, 
         varying MissShader shader = (varying MissShader)(*shader_addr);
         shader(ray.ray, params, payload);
     } else if (!(ray_flags & RAY_FLAG_SKIP_CLOSEST_HIT)) {
+        const ISPCInstance *instance = &sbt->instances[inst];
         const int hg = sbt_offset + sbt_stride * geom + sbt->instance_offset[inst];
         uint64_t *shader_addr = (uint64_t *)(sbt->hit_groups + hg * sbt->hit_group_stride);
         void *params = (void *)(shader_addr + 1);
         varying ClosestHit shader = (varying ClosestHit)(*shader_addr);
-        shader(ray, prim, params, payload);
+        shader(ray, instance->object_to_world, instance->world_to_object,
+                prim, params, payload);
     }
 }
 
@@ -277,7 +282,7 @@ void raygen_perspective_camera(Tile *uniform tile, const uniform ShaderTable *un
     float tmin = 0.f;
     do {
         RayPayload payload = make_ray_payload();
-        trace_ray(scene->scene, ray_org, ray_dir, tmin, 1e20f, 0, 0, 0, 0,
+        trace_ray(scene->scene, ray_org, ray_dir, tmin, 1e20f, 0, 0, 1, 0,
             &context, sbt, &payload);
         tmin = EPSILON;
 
@@ -357,7 +362,10 @@ void occlusion_miss_shader(const RTCRay &ray, const void *params, void *uniform 
     *payload = 0;
 }
 
-void closest_hit(const RTCRayHit &ray, const int prim_id, const void *params, void *uniform _payload) {
+void closest_hit(const RTCRayHit &ray, const uniform float *varying object_to_world,
+        const uniform float *varying world_to_object,
+        const int prim_id, const void *params, void *uniform _payload)
+{
     varying RayPayload *uniform payload = (varying RayPayload *uniform)_payload;
 
     payload->normal = normalize(make_float3(ray.hit.Ng_x, ray.hit.Ng_y, ray.hit.Ng_z));
@@ -382,9 +390,10 @@ void closest_hit(const RTCRayHit &ray, const int prim_id, const void *params, vo
     payload->t_hit = ray.ray.tfar;
 
     // Transform the normal back to world space
-    //load_mat4(matrix, instance->world_to_object);
-    //transpose(matrix);
-    //payload->normal = normalize(mul(matrix, payload->normal));
+    mat4 matrix;
+    load_mat4(matrix, world_to_object);
+    transpose(matrix);
+    payload->normal = normalize(mul(matrix, payload->normal));
 }
 
 export uniform uint64_t get_raygen_handle() {

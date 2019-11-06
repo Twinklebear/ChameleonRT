@@ -177,10 +177,10 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
 
     auto ispc_shader_table = shader_table.table();
     ispc_shader_table.instance_offset = instance_offset.data();
+    ispc_shader_table.instances = scene_bvh->ispc_instances.data();
 
     auto start = high_resolution_clock::now();
-    // tbb::parallel_for(uint32_t(0), ntiles.x * ntiles.y, [&](uint32_t tile_id) {
-    for (uint32_t tile_id = 0; tile_id < ntiles.x * ntiles.y; ++tile_id) {
+    tbb::parallel_for(uint32_t(0), ntiles.x * ntiles.y, [&](uint32_t tile_id) {
         const glm::uvec2 tile = glm::uvec2(tile_id % ntiles.x, tile_id / ntiles.x);
         const glm::uvec2 tile_pos = tile * tile_size;
         const glm::uvec2 tile_end = glm::min(tile_pos + tile_size, fb_dims);
@@ -206,7 +206,7 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
                             uint64_t(0),
                             [](const uint64_t &total, const uint16_t &c) { return total + c; });
 #endif
-    }  //);
+    });
     auto end = high_resolution_clock::now();
     stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
@@ -246,8 +246,6 @@ void RenderEmbree::build_shader_table()
         RayGenParams &params = shader_table.get_shader_params<RayGenParams>("perspective_camera");
         params.scene = &ispc_scene;
         params.view = &view_params;
-        std::cout << "ispc_scene addr: " << std::hex << &ispc_scene
-                  << ", view_params addr: " << &view_params << std::dec << "\n";
     }
 
     for (size_t i = 0; i < scene_bvh->instances.size(); ++i) {

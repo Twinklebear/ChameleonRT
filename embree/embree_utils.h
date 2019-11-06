@@ -179,6 +179,7 @@ struct ISPCShaderTable {
     uint32_t hit_group_stride;
 
     uint32_t *instance_offset = nullptr;
+    ISPCInstance *instances = nullptr;
 };
 
 #define EMBREE_SBT_HEADER_SIZE sizeof(uint64_t)
