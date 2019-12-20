@@ -17,7 +17,9 @@ size_t Mesh::num_tris() const
         });
 }
 
-Instance::Instance(const glm::mat4 &transform, size_t mesh_id)
-    : transform(transform), mesh_id(mesh_id)
+Instance::Instance(const glm::mat4 &transform,
+                   size_t mesh_id,
+                   const std::vector<uint32_t> &material_ids)
+    : transform(transform), mesh_id(mesh_id), material_ids(material_ids)
 {
 }

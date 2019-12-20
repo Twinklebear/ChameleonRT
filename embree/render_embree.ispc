@@ -37,13 +37,13 @@ struct ISPCGeometry {
     const uint3 *uniform index_buf;
     const float3 *uniform normal_buf;
     const float2 *uniform uv_buf;
-    uniform uint32_t material_id;
 };
 
 struct ISPCInstance {
     const ISPCGeometry *uniform geometries;
     const float *uniform object_to_world;
     const float *uniform world_to_object;
+    const uint32_t *uniform material_ids;
 };
 
 struct SceneContext {
@@ -244,7 +244,7 @@ export void trace_rays(void *uniform _scene, void *uniform _tile, const void *un
             transpose(matrix);
             normal = normalize(mul(matrix, normal));
 
-            unpack_material(mat, &scene->materials[geometry->material_id], uv);
+            unpack_material(mat, &scene->materials[instance->material_ids[geom]], uv);
 
             // Direct light sampling
             float3 v_x, v_y;

@@ -9,12 +9,10 @@ Geometry::Geometry(RTCDevice &device,
                    const std::vector<glm::vec3> &verts,
                    const std::vector<glm::uvec3> &indices,
                    const std::vector<glm::vec3> &normals,
-                   const std::vector<glm::vec2> &uvs,
-                   uint32_t material_id)
+                   const std::vector<glm::vec2> &uvs)
     : index_buf(indices),
       normal_buf(normals),
       uv_buf(uvs),
-      material_id(material_id),
       geom(rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE))
 {
     vertex_buf.reserve(verts.size());
@@ -23,7 +21,8 @@ Geometry::Geometry(RTCDevice &device,
             return glm::vec4(v, 0.f);
         });
 
-    vbuf = rtcNewSharedBuffer(device, vertex_buf.data(), vertex_buf.size() * sizeof(glm::vec4));
+    vbuf =
+        rtcNewSharedBuffer(device, vertex_buf.data(), vertex_buf.size() * sizeof(glm::vec4));
     ibuf = rtcNewSharedBuffer(device, index_buf.data(), index_buf.size() * sizeof(glm::uvec3));
 
     rtcSetGeometryBuffer(geom,
@@ -58,9 +57,7 @@ Geometry::~Geometry()
 }
 
 ISPCGeometry::ISPCGeometry(const Geometry &geom)
-    : vertex_buf(geom.vertex_buf.data()),
-      index_buf(geom.index_buf.data()),
-      material_id(geom.material_id)
+    : vertex_buf(geom.vertex_buf.data()), index_buf(geom.index_buf.data())
 {
     if (!geom.normal_buf.empty()) {
         normal_buf = geom.normal_buf.data();
@@ -98,11 +95,15 @@ RTCScene TriangleMesh::handle()
     return scene;
 }
 
-Instance::Instance(RTCDevice &device, std::shared_ptr<TriangleMesh> &mesh, const glm::mat4 &xfm)
+Instance::Instance(RTCDevice &device,
+                   std::shared_ptr<TriangleMesh> &mesh,
+                   const glm::mat4 &xfm,
+                   const std::vector<uint32_t> &material_ids)
     : handle(rtcNewGeometry(device, RTC_GEOMETRY_TYPE_INSTANCE)),
       mesh(mesh),
       object_to_world(xfm),
-      world_to_object(glm::inverse(object_to_world))
+      world_to_object(glm::inverse(object_to_world)),
+      material_ids(material_ids)
 {
     rtcSetGeometryInstancedScene(handle, mesh->handle());
     rtcSetGeometryTransform(
@@ -120,7 +121,8 @@ Instance::~Instance()
 ISPCInstance::ISPCInstance(const Instance &instance)
     : geometries(instance.mesh->ispc_geometries.data()),
       object_to_world(glm::value_ptr(instance.object_to_world)),
-      world_to_object(glm::value_ptr(instance.world_to_object))
+      world_to_object(glm::value_ptr(instance.world_to_object)),
+      material_ids(instance.material_ids.data())
 {
 }
 

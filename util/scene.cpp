@@ -164,7 +164,8 @@ void Scene::load_obj(const std::string &file)
     meshes.push_back(mesh);
 
     // OBJ has a single "instance"
-    instances.emplace_back(glm::mat4(1.f), 0);
+    // TODO material IDs on instances
+    instances.emplace_back(glm::mat4(1.f), 0, std::vector<uint32_t>{});
 
     std::unordered_map<std::string, int32_t> texture_ids;
     // Parse the materials over to a similar DisneyMaterial representation
@@ -187,27 +188,7 @@ void Scene::load_obj(const std::string &file)
         materials.push_back(d);
     }
 
-    const bool need_default_mat =
-        std::find_if(meshes.begin(), meshes.end(), [](const Mesh &m) {
-            return std::find_if(
-                       m.geometries.begin(), m.geometries.end(), [](const Geometry &g) {
-                           return g.material_id == uint32_t(-1);
-                       }) != m.geometries.end();
-        }) != meshes.end();
-
-    if (need_default_mat) {
-        std::cout << "No materials assigned for some or all objects, generating a default "
-                     "material\n";
-        const uint32_t default_mat_id = materials.size();
-        materials.push_back(DisneyMaterial());
-
-        // OBJ will have just one mesh, containg all geometries
-        for (auto &g : meshes[0].geometries) {
-            if (g.material_id == uint32_t(-1)) {
-                g.material_id = default_mat_id;
-            }
-        }
-    }
+    validate_materials();
 
     // OBJ will not have any lights in it, so just generate one
     std::cout << "Generating light for OBJ scene\n";
@@ -359,9 +340,12 @@ void Scene::load_gltf(const std::string &fname)
         const tinygltf::Node &n = model.nodes[nid];
         if (n.mesh != -1) {
             const glm::mat4 transform = read_node_transform(n);
-            instances.emplace_back(transform, n.mesh);
+            // TODO material IDs on instances
+            instances.emplace_back(transform, n.mesh, std::vector<uint32_t>{});
         }
     }
+
+    validate_materials();
 
     // Does GLTF have lights in the file? If one is missing we should generate one,
     // otherwise we can load them
@@ -420,11 +404,33 @@ void Scene::load_crts(const std::string &file)
         meshes.push_back(mesh);
     }
 
+    for (size_t i = 0; i < header["materials"].size(); ++i) {
+        auto &m = header["materials"][i];
+
+        DisneyMaterial mat;
+        const auto base_color_data = m["base_color"].get<std::vector<float>>();
+        mat.base_color = glm::make_vec3(base_color_data.data());
+        mat.metallic = m["metallic"].get<float>();
+        mat.specular = m["specular"].get<float>();
+        mat.roughness = m["roughness"].get<float>();
+        mat.specular_tint = m["specular_tint"].get<float>();
+        mat.anisotropy = m["anisotropy"].get<float>();
+        mat.sheen = m["sheen"].get<float>();
+        mat.sheen_tint = m["sheen_tint"].get<float>();
+        mat.clearcoat = m["clearcoat"].get<float>();
+        mat.clearcoat_gloss = m["clearcoat_gloss"].get<float>();
+        mat.ior = m["ior"].get<float>();
+        mat.specular_transmission = m["specular_transmission"].get<float>();
+        materials.push_back(mat);
+    }
+
     for (size_t i = 0; i < header["objects"].size(); ++i) {
         auto &n = header["objects"][i];
         if (n.find("mesh") != n.end()) {
             const auto matrix = n["matrix"].get<std::vector<float>>();
-            instances.emplace_back(glm::make_mat4(matrix.data()), n["mesh"].get<uint64_t>());
+            const auto mat_id = std::vector<uint32_t>{n["material"].get<uint32_t>()};
+            instances.emplace_back(
+                glm::make_mat4(matrix.data()), n["mesh"].get<uint64_t>(), mat_id);
         } else if (n.find("camera") != n.end()) {
             // TODO
         } else {
@@ -432,28 +438,7 @@ void Scene::load_crts(const std::string &file)
         }
     }
 
-    const bool need_default_mat =
-        std::find_if(meshes.begin(), meshes.end(), [](const Mesh &m) {
-            return std::find_if(
-                       m.geometries.begin(), m.geometries.end(), [](const Geometry &g) {
-                           return g.material_id == uint32_t(-1);
-                       }) != m.geometries.end();
-        }) != meshes.end();
-
-    if (need_default_mat) {
-        std::cout << "No materials assigned for some or all objects, generating a default "
-                     "material\n";
-        const uint32_t default_mat_id = materials.size();
-        materials.push_back(DisneyMaterial());
-
-        for (auto &m : meshes) {
-            for (auto &g : m.geometries) {
-                if (g.material_id == uint32_t(-1)) {
-                    g.material_id = default_mat_id;
-                }
-            }
-        }
-    }
+    validate_materials();
 
     std::cout << "TODO temporarily generating light for CRTS scene\n";
     QuadLight light;
@@ -588,18 +573,11 @@ void Scene::load_pbrt(const std::string &file)
         transform[2] = glm::vec4(inst->xfm.l.vz.x, inst->xfm.l.vz.y, inst->xfm.l.vz.z, 0.f);
         transform[3] = glm::vec4(inst->xfm.p.x, inst->xfm.p.y, inst->xfm.p.z, 1.f);
 
-        instances.emplace_back(transform, mesh_id);
+        // TODO material IDs on instances
+        instances.emplace_back(transform, mesh_id, std::vector<uint32_t>{});
     }
 
-    const uint32_t default_mat_id = materials.size();
-    materials.push_back(DisneyMaterial());
-    for (auto &m : meshes) {
-        for (auto &g : m.geometries) {
-            if (g.material_id == uint32_t(-1)) {
-                g.material_id = default_mat_id;
-            }
-        }
-    }
+    validate_materials();
 
     std::cout << "Generating light for PBRT scene, TODO Will: Load them from the file\n";
     QuadLight light;
@@ -613,3 +591,36 @@ void Scene::load_pbrt(const std::string &file)
 }
 
 #endif
+
+void Scene::validate_materials()
+{
+    const bool need_default_mat =
+        std::find_if(meshes.begin(), meshes.end(), [](const Mesh &m) {
+            return std::find_if(
+                       m.geometries.begin(), m.geometries.end(), [](const Geometry &g) {
+                           return g.material_id == uint32_t(-1);
+                       }) != m.geometries.end();
+        }) != meshes.end();
+
+    if (need_default_mat) {
+        std::cout << "No materials assigned for some or all objects, generating a default "
+                     "material\n";
+        const uint32_t default_mat_id = materials.size();
+        materials.push_back(DisneyMaterial());
+
+        for (auto &m : meshes) {
+            for (auto &g : m.geometries) {
+                if (g.material_id == uint32_t(-1)) {
+                    g.material_id = default_mat_id;
+                }
+            }
+        }
+        for (auto &i : instances) {
+            for (auto &m : i.material_ids) {
+                if (m == -1) {
+                    m = default_mat_id;
+                }
+            }
+        }
+    }
+}

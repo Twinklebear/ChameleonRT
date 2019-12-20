@@ -15,7 +15,6 @@ struct Geometry {
     std::vector<glm::uvec3> index_buf;
     std::vector<glm::vec3> normal_buf;
     std::vector<glm::vec2> uv_buf;
-    uint32_t material_id = 0;
 
     RTCBuffer vbuf = 0;
     RTCBuffer ibuf = 0;
@@ -28,8 +27,7 @@ struct Geometry {
              const std::vector<glm::vec3> &verts,
              const std::vector<glm::uvec3> &indices,
              const std::vector<glm::vec3> &normals,
-             const std::vector<glm::vec2> &uvs,
-             uint32_t material_id);
+             const std::vector<glm::vec2> &uvs);
 
     ~Geometry();
 
@@ -42,7 +40,6 @@ struct ISPCGeometry {
     const glm::uvec3 *index_buf = nullptr;
     const glm::vec3 *normal_buf = nullptr;
     const glm::vec2 *uv_buf = nullptr;
-    uint32_t material_id = 0;
 
     ISPCGeometry() = default;
     ISPCGeometry(const Geometry &geom);
@@ -71,12 +68,14 @@ struct Instance {
     RTCGeometry handle = 0;
     std::shared_ptr<TriangleMesh> mesh = nullptr;
     glm::mat4 object_to_world, world_to_object;
+    std::vector<uint32_t> material_ids;
 
     Instance() = default;
 
     Instance(RTCDevice &device,
              std::shared_ptr<TriangleMesh> &mesh,
-             const glm::mat4 &object_to_world = glm::mat4(1.f));
+             const glm::mat4 &object_to_world,
+             const std::vector<uint32_t> &material_ids);
 
     ~Instance();
 
@@ -88,6 +87,7 @@ struct ISPCInstance {
     const ISPCGeometry *geometries = nullptr;
     const float *object_to_world = nullptr;
     const float *world_to_object = nullptr;
+    const uint32_t *material_ids = nullptr;
 
     ISPCInstance() = default;
     ISPCInstance(const Instance &instance);

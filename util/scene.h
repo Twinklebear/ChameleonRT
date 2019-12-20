@@ -35,4 +35,6 @@ private:
 #ifdef PBRT_PARSER_ENABLED
     void load_pbrt(const std::string &file);
 #endif
+
+    void validate_materials();
 };
