@@ -386,7 +386,6 @@ void Scene::load_crts(const std::string &file)
     const uint64_t total_header_size = json_header_size + sizeof(uint64_t);
     json header =
         json::parse(mapping->data() + sizeof(uint64_t), mapping->data() + total_header_size);
-    std::cout << "Header of '" << file << "':\n" << header.dump(4) << "\n";
 
     const uint8_t *data_base = mapping->data() + total_header_size;
     // Blender only supports a single geometry per-mesh so this works kind of like a blend of
@@ -419,11 +418,19 @@ void Scene::load_crts(const std::string &file)
         Mesh mesh;
         mesh.geometries.push_back(geom);
         meshes.push_back(mesh);
-
-        // TODO: parse instances out from the node graph
-        instances.emplace_back(glm::mat4(1), meshes.size() - 1);
     }
-    std::cout << "Loaded scene\n" << std::flush;
+
+    for (size_t i = 0; i < header["objects"].size(); ++i) {
+        auto &n = header["objects"][i];
+        if (n.find("mesh") != n.end()) {
+            const auto matrix = n["matrix"].get<std::vector<float>>();
+            instances.emplace_back(glm::make_mat4(matrix.data()), n["mesh"].get<uint64_t>());
+        } else if (n.find("camera") != n.end()) {
+            // TODO
+        } else {
+            throw std::runtime_error("Unsupported object type: not a mesh or camera?");
+        }
+    }
 
     const bool need_default_mat =
         std::find_if(meshes.begin(), meshes.end(), [](const Mesh &m) {
@@ -450,7 +457,7 @@ void Scene::load_crts(const std::string &file)
 
     std::cout << "TODO temporarily generating light for CRTS scene\n";
     QuadLight light;
-    light.emission = glm::vec4(20.f);
+    light.emission = glm::vec4(10.f);
     light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);
     light.position = -10.f * light.normal;
     ortho_basis(light.v_x, light.v_y, glm::vec3(light.normal));
