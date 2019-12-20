@@ -30,6 +30,8 @@ private:
 
     void load_gltf(const std::string &file);
 
+    void load_crts(const std::string &file);
+
 #ifdef PBRT_PARSER_ENABLED
     void load_pbrt(const std::string &file);
 #endif

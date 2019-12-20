@@ -10,6 +10,7 @@ add_library(util
     buffer_view.cpp
     gltf_types.cpp
     flatten_gltf.cpp
+    file_mapping.cpp
     gl_core_4_5.c)
 
 set_target_properties(util PROPERTIES

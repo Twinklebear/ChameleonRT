@@ -6,8 +6,10 @@
 #include <stdexcept>
 #include <vector>
 #include "buffer_view.h"
+#include "file_mapping.h"
 #include "flatten_gltf.h"
 #include "gltf_types.h"
+#include "json.hpp"
 #include "stb_image.h"
 #include "tiny_gltf.h"
 #include "tiny_obj_loader.h"
@@ -23,7 +25,8 @@
 struct VertIdxLess {
     bool operator()(const glm::uvec3 &a, const glm::uvec3 &b) const
     {
-        return a.x < b.x || (a.x == b.x && a.y < b.y) || (a.x == b.x && a.y == b.y && a.z < b.z);
+        return a.x < b.x || (a.x == b.x && a.y < b.y) ||
+               (a.x == b.x && a.y == b.y && a.z < b.z);
     }
 };
 
@@ -39,6 +42,8 @@ Scene::Scene(const std::string &fname)
         load_obj(fname);
     } else if (ext == "gltf" || ext == "glb") {
         load_gltf(fname);
+    } else if (ext == "crts") {
+        load_crts(fname);
 #ifdef PBRT_PARSER_ENABLED
     } else if (ext == "pbrt" || ext == "pbf") {
         load_pbrt(fname);
@@ -51,9 +56,10 @@ Scene::Scene(const std::string &fname)
 
 size_t Scene::unique_tris() const
 {
-    return std::accumulate(meshes.begin(), meshes.end(), 0, [](const size_t &n, const Mesh &m) {
-        return n + m.num_tris();
-    });
+    return std::accumulate(
+        meshes.begin(), meshes.end(), 0, [](const size_t &n, const Mesh &m) {
+            return n + m.num_tris();
+        });
 }
 
 size_t Scene::total_tris() const
@@ -66,16 +72,16 @@ size_t Scene::total_tris() const
 
 size_t Scene::num_geometries() const
 {
-    return std::accumulate(meshes.begin(), meshes.end(), 0, [](const size_t &n, const Mesh &m) {
-        return n + m.geometries.size();
-    });
+    return std::accumulate(
+        meshes.begin(), meshes.end(), 0, [](const size_t &n, const Mesh &m) {
+            return n + m.geometries.size();
+        });
 }
 
 void Scene::load_obj(const std::string &file)
 {
     std::cout << "Loading OBJ: " << file << "\n";
 
-    std::vector<uint32_t> material_ids;
     // Load the model w/ tinyobjloader. We just take any OBJ groups etc. stuff
     // that may be in the file and dump them all into a single OBJ model.
     tinyobj::attrib_t attrib;
@@ -97,9 +103,9 @@ void Scene::load_obj(const std::string &file)
         // We load with triangulate on so we know the mesh will be all triangle faces
         const tinyobj::mesh_t &obj_mesh = shapes[s].mesh;
 
-        // We've got to remap from 3 indices per-vert (independent for pos, normal & uv) used by
-        // tinyobjloader over to single index per-vert (single for pos, normal & uv tuple) used by
-        // renderers
+        // We've got to remap from 3 indices per-vert (independent for pos, normal & uv) used
+        // by tinyobjloader over to single index per-vert (single for pos, normal & uv tuple)
+        // used by renderers
         std::map<glm::uvec3, uint32_t, VertIdxLess> index_mapping;
         Geometry geom;
         // Note: not supporting per-primitive materials
@@ -109,7 +115,8 @@ void Scene::load_obj(const std::string &file)
             std::minmax_element(obj_mesh.material_ids.begin(), obj_mesh.material_ids.end());
         if (*minmax_matid.first != *minmax_matid.second) {
             std::cout
-                << "Warning: per-face material IDs are not supported, materials may look wrong."
+                << "Warning: per-face material IDs are not supported, materials may look "
+                   "wrong."
                    " Please reexport your mesh with each material group as an OBJ group\n";
         }
 
@@ -182,14 +189,15 @@ void Scene::load_obj(const std::string &file)
 
     const bool need_default_mat =
         std::find_if(meshes.begin(), meshes.end(), [](const Mesh &m) {
-            return std::find_if(m.geometries.begin(), m.geometries.end(), [](const Geometry &g) {
-                       return g.material_id == uint32_t(-1);
-                   }) != m.geometries.end();
+            return std::find_if(
+                       m.geometries.begin(), m.geometries.end(), [](const Geometry &g) {
+                           return g.material_id == uint32_t(-1);
+                       }) != m.geometries.end();
         }) != meshes.end();
 
     if (need_default_mat) {
-        std::cout
-            << "No materials assigned for some or all objects, generating a default material\n";
+        std::cout << "No materials assigned for some or all objects, generating a default "
+                     "material\n";
         const uint32_t default_mat_id = materials.size();
         materials.push_back(DisneyMaterial());
 
@@ -338,7 +346,8 @@ void Scene::load_gltf(const std::string &fname)
         mat.roughness = m.pbrMetallicRoughness.roughnessFactor;
 
         if (m.pbrMetallicRoughness.baseColorTexture.index != -1) {
-            mat.color_tex_id = model.textures[m.pbrMetallicRoughness.baseColorTexture.index].source;
+            mat.color_tex_id =
+                model.textures[m.pbrMetallicRoughness.baseColorTexture.index].source;
             // If the texture is used as a color texture we know it must be srgb space
             textures[mat.color_tex_id].color_space = SRGB;
         }
@@ -357,6 +366,89 @@ void Scene::load_gltf(const std::string &fname)
     // Does GLTF have lights in the file? If one is missing we should generate one,
     // otherwise we can load them
     std::cout << "Generating light for GLTF scene\n";
+    QuadLight light;
+    light.emission = glm::vec4(20.f);
+    light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);
+    light.position = -10.f * light.normal;
+    ortho_basis(light.v_x, light.v_y, glm::vec3(light.normal));
+    light.width = 5.f;
+    light.height = 5.f;
+    lights.push_back(light);
+}
+
+void Scene::load_crts(const std::string &file)
+{
+    using json = nlohmann::json;
+    std::cout << "Loading CRTS " << file << "\n";
+
+    auto mapping = std::make_shared<FileMapping>(file);
+    const uint64_t json_header_size = *reinterpret_cast<const uint64_t *>(mapping->data());
+    const uint64_t total_header_size = json_header_size + sizeof(uint64_t);
+    json header =
+        json::parse(mapping->data() + sizeof(uint64_t), mapping->data() + total_header_size);
+    std::cout << "Header of '" << file << "':\n" << header.dump(4) << "\n";
+
+    const uint8_t *data_base = mapping->data() + total_header_size;
+    // Blender only supports a single geometry per-mesh so this works kind of like a blend of
+    // GLTF and OBJ
+    for (size_t i = 0; i < header["meshes"].size(); ++i) {
+        auto &m = header["meshes"][i];
+
+        Geometry geom;
+        {
+            const uint64_t pos_view = m["positions"].get<uint64_t>();
+            auto &v = header["views"][pos_view];
+            const DTYPE pos_dtype = parse_dtype(v["type"]);
+            BufferView view(data_base + v["byte_offset"].get<uint64_t>(),
+                            v["byte_length"].get<uint64_t>(),
+                            dtype_stride(pos_dtype));
+            Accessor<glm::vec3> accessor(view);
+            geom.vertices = std::vector<glm::vec3>(accessor.begin(), accessor.end());
+        }
+        {
+            const uint64_t idx_view = m["indices"].get<uint64_t>();
+            auto &v = header["views"][idx_view];
+            const DTYPE idx_dtype = parse_dtype(v["type"]);
+            BufferView view(data_base + v["byte_offset"].get<uint64_t>(),
+                            v["byte_length"].get<uint64_t>(),
+                            dtype_stride(idx_dtype));
+            Accessor<glm::uvec3> accessor(view);
+            geom.indices = std::vector<glm::uvec3>(accessor.begin(), accessor.end());
+        }
+
+        Mesh mesh;
+        mesh.geometries.push_back(geom);
+        meshes.push_back(mesh);
+
+        // TODO: parse instances out from the node graph
+        instances.emplace_back(glm::mat4(1), meshes.size() - 1);
+    }
+    std::cout << "Loaded scene\n" << std::flush;
+
+    const bool need_default_mat =
+        std::find_if(meshes.begin(), meshes.end(), [](const Mesh &m) {
+            return std::find_if(
+                       m.geometries.begin(), m.geometries.end(), [](const Geometry &g) {
+                           return g.material_id == uint32_t(-1);
+                       }) != m.geometries.end();
+        }) != meshes.end();
+
+    if (need_default_mat) {
+        std::cout << "No materials assigned for some or all objects, generating a default "
+                     "material\n";
+        const uint32_t default_mat_id = materials.size();
+        materials.push_back(DisneyMaterial());
+
+        for (auto &m : meshes) {
+            for (auto &g : m.geometries) {
+                if (g.material_id == uint32_t(-1)) {
+                    g.material_id = default_mat_id;
+                }
+            }
+        }
+    }
+
+    std::cout << "TODO temporarily generating light for CRTS scene\n";
     QuadLight light;
     light.emission = glm::vec4(20.f);
     light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);
@@ -406,7 +498,8 @@ void Scene::load_pbrt(const std::string &file)
             std::cout << "Encountered root level quadmesh (unsupported type). Will TODO maybe "
                          "triangulate\n";
         } else {
-            std::cout << "un-handled root level geometry type : " << obj->toString() << std::endl;
+            std::cout << "un-handled root level geometry type : " << obj->toString()
+                      << std::endl;
         }
     }
 
@@ -434,16 +527,18 @@ void Scene::load_pbrt(const std::string &file)
 
                     Geometry geom;
                     geom.vertices.reserve(mesh->vertex.size());
-                    std::transform(mesh->vertex.begin(),
-                                   mesh->vertex.end(),
-                                   std::back_inserter(geom.vertices),
-                                   [](const pbrt::vec3f &v) { return glm::vec3(v.x, v.y, v.z); });
+                    std::transform(
+                        mesh->vertex.begin(),
+                        mesh->vertex.end(),
+                        std::back_inserter(geom.vertices),
+                        [](const pbrt::vec3f &v) { return glm::vec3(v.x, v.y, v.z); });
 
                     geom.indices.reserve(mesh->index.size());
-                    std::transform(mesh->index.begin(),
-                                   mesh->index.end(),
-                                   std::back_inserter(geom.indices),
-                                   [](const pbrt::vec3i &v) { return glm::ivec3(v.x, v.y, v.z); });
+                    std::transform(
+                        mesh->index.begin(),
+                        mesh->index.end(),
+                        std::back_inserter(geom.indices),
+                        [](const pbrt::vec3i &v) { return glm::ivec3(v.x, v.y, v.z); });
 
                     geom.uvs.reserve(mesh->texcoord.size());
                     std::transform(mesh->texcoord.begin(),
@@ -452,22 +547,25 @@ void Scene::load_pbrt(const std::string &file)
                                    [](const pbrt::vec2f &v) { return glm::vec2(v.x, v.y); });
 
                     geometries.push_back(geom);
-                } else if (pbrt::QuadMesh::SP mesh = std::dynamic_pointer_cast<pbrt::QuadMesh>(g)) {
-                    std::cout
-                        << "Encountered instanced quadmesh (unsupported type). Will TODO maybe "
-                           "triangulate\n";
+                } else if (pbrt::QuadMesh::SP mesh =
+                               std::dynamic_pointer_cast<pbrt::QuadMesh>(g)) {
+                    std::cout << "Encountered instanced quadmesh (unsupported type). Will "
+                                 "TODO maybe "
+                                 "triangulate\n";
                 } else {
                     std::cout << "un-handled instanced geometry type : " << g->toString()
                               << std::endl;
                 }
             }
             if (inst->object->instances.size() > 0) {
-                std::cout << "Warning: Potentially multilevel instancing is in the scene after "
-                             "flattening?\n";
+                std::cout
+                    << "Warning: Potentially multilevel instancing is in the scene after "
+                       "flattening?\n";
             }
             // Mesh only contains unsupported objects, skip it
             if (geometries.empty()) {
-                std::cout << "WARNING: Instance contains only unsupported geometries, skipping\n";
+                std::cout
+                    << "WARNING: Instance contains only unsupported geometries, skipping\n";
                 continue;
             }
             mesh_id = meshes.size();

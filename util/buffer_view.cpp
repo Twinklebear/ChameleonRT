@@ -10,6 +10,11 @@ BufferView::BufferView(const tinygltf::BufferView &view,
 {
 }
 
+BufferView::BufferView(const uint8_t *buf, size_t byte_length, size_t byte_stride)
+    : buf(buf), length(byte_length), stride(byte_stride)
+{
+}
+
 const uint8_t *BufferView::operator[](const size_t i) const
 {
     return buf + i * stride;
