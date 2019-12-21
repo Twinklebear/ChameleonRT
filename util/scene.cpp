@@ -380,7 +380,7 @@ void Scene::load_crts(const std::string &file)
         Geometry geom;
         {
             const uint64_t pos_view = m["positions"].get<uint64_t>();
-            auto &v = header["views"][pos_view];
+            auto &v = header["buffer_views"][pos_view];
             const DTYPE pos_dtype = parse_dtype(v["type"]);
             BufferView view(data_base + v["byte_offset"].get<uint64_t>(),
                             v["byte_length"].get<uint64_t>(),
@@ -390,7 +390,7 @@ void Scene::load_crts(const std::string &file)
         }
         {
             const uint64_t idx_view = m["indices"].get<uint64_t>();
-            auto &v = header["views"][idx_view];
+            auto &v = header["buffer_views"][idx_view];
             const DTYPE idx_dtype = parse_dtype(v["type"]);
             BufferView view(data_base + v["byte_offset"].get<uint64_t>(),
                             v["byte_length"].get<uint64_t>(),
@@ -426,13 +426,32 @@ void Scene::load_crts(const std::string &file)
 
     for (size_t i = 0; i < header["objects"].size(); ++i) {
         auto &n = header["objects"][i];
-        if (n.find("mesh") != n.end()) {
-            const auto matrix = n["matrix"].get<std::vector<float>>();
+        const std::string type = n["type"];
+        const glm::mat4 matrix = glm::make_mat4(n["matrix"].get<std::vector<float>>().data());
+        if (type == "MESH") {
             const auto mat_id = std::vector<uint32_t>{n["material"].get<uint32_t>()};
-            instances.emplace_back(
-                glm::make_mat4(matrix.data()), n["mesh"].get<uint64_t>(), mat_id);
-        } else if (n.find("camera") != n.end()) {
-            // TODO
+            instances.emplace_back(matrix, n["mesh"].get<uint64_t>(), mat_id);
+        } else if (type == "LIGHT") {
+            QuadLight light;
+            const auto color = glm::make_vec3(n["color"].get<std::vector<float>>().data());
+            light.emission = glm::vec4(color * n["energy"].get<float>(), 1.f);
+            light.position = glm::column(matrix, 3);
+            light.normal = -glm::normalize(glm::column(matrix, 2));
+            light.v_x = glm::normalize(glm::column(matrix, 0));
+            light.v_y = glm::normalize(glm::column(matrix, 1));
+            light.width = n["size"][0].get<float>();
+            light.height = n["size"][1].get<float>();
+            lights.push_back(light);
+        } else if (type == "CAMERA") {
+            Camera camera;
+            camera.position = glm::column(matrix, 3);
+            const glm::vec3 dir(glm::normalize(-glm::column(matrix, 2)));
+            camera.center = camera.position + dir;
+            camera.up = glm::normalize(glm::column(matrix, 1));
+            // TODO: Not sure on why I need to scale fovy down to match Blender,
+            // it doesn't quite line up either but this is pretty close.
+            camera.fov_y = n["fov_y"].get<float>() / 1.18f;
+            cameras.push_back(camera);
         } else {
             throw std::runtime_error("Unsupported object type: not a mesh or camera?");
         }
@@ -440,15 +459,19 @@ void Scene::load_crts(const std::string &file)
 
     validate_materials();
 
-    std::cout << "TODO temporarily generating light for CRTS scene\n";
-    QuadLight light;
-    light.emission = glm::vec4(10.f);
-    light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);
-    light.position = -10.f * light.normal;
-    ortho_basis(light.v_x, light.v_y, glm::vec3(light.normal));
-    light.width = 5.f;
-    light.height = 5.f;
-    lights.push_back(light);
+    if (lights.empty()) {
+        // TODO: Should add support for other light types? Then autogenerate a directional
+        // light?
+        std::cout << "No lights found in scene, generating one\n";
+        QuadLight light;
+        light.emission = glm::vec4(10.f);
+        light.normal = glm::vec4(glm::normalize(glm::vec3(0.5, -0.8, -0.5)), 0);
+        light.position = -10.f * light.normal;
+        ortho_basis(light.v_x, light.v_y, glm::vec3(light.normal));
+        light.width = 5.f;
+        light.height = 5.f;
+        lights.push_back(light);
+    }
 }
 
 #ifdef PBRT_PARSER_ENABLED
@@ -603,11 +626,9 @@ void Scene::validate_materials()
         }) != meshes.end();
 
     if (need_default_mat) {
-        std::cout << "No materials assigned for some or all objects, generating a default "
-                     "material\n";
+        std::cout << "No materials assigned for some objects, generating a default\n";
         const uint32_t default_mat_id = materials.size();
         materials.push_back(DisneyMaterial());
-
         for (auto &m : meshes) {
             for (auto &g : m.geometries) {
                 if (g.material_id == uint32_t(-1)) {

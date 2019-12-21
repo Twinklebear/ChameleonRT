@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include "camera.h"
 #include "lights.h"
 #include "material.h"
 #include "mesh.h"
@@ -13,6 +14,7 @@ struct Scene {
     std::vector<DisneyMaterial> materials;
     std::vector<Image> textures;
     std::vector<QuadLight> lights;
+    std::vector<Camera> cameras;
 
     Scene(const std::string &fname);
     Scene() = default;

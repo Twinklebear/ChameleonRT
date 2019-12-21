@@ -55,6 +55,9 @@ const std::string USAGE =
     "\t-eye <x> <y> <z>       Set the camera position\n"
     "\t-center <x> <y> <z>    Set the camera focus point\n"
     "\t-up <x> <y> <z>        Set the camera up vector\n"
+    "\t-fov <fovy>            Specify the camera field of view (in degrees)\n"
+    "\t-camera <n>            If the scene contains multiple cameras, specify which\n"
+    "\t                       should be used. Defaults to the first camera\n"
     "\n";
 
 const std::string fullscreen_quad_vs = R"(
@@ -97,8 +100,9 @@ glm::vec2 transform_mouse(glm::vec2 in)
 int main(int argc, const char **argv)
 {
     const std::vector<std::string> args(argv, argv + argc);
-    auto fnd_help = std::find_if(
-        args.begin(), args.end(), [](const std::string &a) { return a == "-h" || a == "--help"; });
+    auto fnd_help = std::find_if(args.begin(), args.end(), [](const std::string &a) {
+        return a == "-h" || a == "--help";
+    });
 
     if (argc < 3 || fnd_help != args.end()) {
         std::cout << USAGE;
@@ -167,22 +171,33 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
 
     std::string scene_file;
     std::unique_ptr<RenderBackend> renderer = nullptr;
+    bool got_camera_args = false;
     glm::vec3 eye(0, 0, 5);
     glm::vec3 center(0);
     glm::vec3 up(0, 1, 0);
+    float fov_y = 65.f;
+    size_t camera_id = 0;
     for (size_t i = 1; i < args.size(); ++i) {
         if (args[i] == "-eye") {
             eye.x = std::stof(args[++i]);
             eye.y = std::stof(args[++i]);
             eye.z = std::stof(args[++i]);
+            got_camera_args = true;
         } else if (args[i] == "-center") {
             center.x = std::stof(args[++i]);
             center.y = std::stof(args[++i]);
             center.z = std::stof(args[++i]);
+            got_camera_args = true;
         } else if (args[i] == "-up") {
             up.x = std::stof(args[++i]);
             up.y = std::stof(args[++i]);
             up.z = std::stof(args[++i]);
+            got_camera_args = true;
+        } else if (args[i] == "-fov") {
+            fov_y = std::stof(args[++i]);
+            got_camera_args = true;
+        } else if (args[i] == "-camera") {
+            camera_id = std::stol(args[++i]);
         }
 #if ENABLE_OSPRAY
         else if (args[i] == "-ospray") {
@@ -238,12 +253,20 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
            << "# Instances: " << scene.instances.size() << "\n"
            << "# Materials: " << scene.materials.size() << "\n"
            << "# Textures: " << scene.textures.size() << "\n"
-           << "# Lights: " << scene.lights.size();
+           << "# Lights: " << scene.lights.size() << "\n"
+           << "# Cameras: " << scene.cameras.size();
 
         scene_info = ss.str();
         std::cout << scene_info << "\n";
 
         renderer->set_scene(scene);
+
+        if (!got_camera_args && !scene.cameras.empty()) {
+            eye = scene.cameras[camera_id].position;
+            center = scene.cameras[camera_id].center;
+            up = scene.cameras[camera_id].up;
+            fov_y = scene.cameras[camera_id].fov_y;
+        }
     }
 
     ArcballCamera camera(eye, center, up);
@@ -292,9 +315,10 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
                     auto eye = camera.eye();
                     auto center = camera.center();
                     auto up = camera.up();
-                    std::cout << "-eye " << eye.x << " " << eye.y << " " << eye.z << " -center "
-                              << center.x << " " << center.y << " " << center.z << " -up " << up.x
-                              << " " << up.y << " " << up.z << "\n";
+                    std::cout << "-eye " << eye.x << " " << eye.y << " " << eye.z
+                              << " -center " << center.x << " " << center.y << " " << center.z
+                              << " -up " << up.x << " " << up.y << " " << up.z << " -fov "
+                              << fov_y << "\n";
                 } else if (event.key.keysym.sym == SDLK_s) {
                     std::cout << "Image saved to " << image_output << "\n";
                     stbi_write_png(image_output.c_str(),
@@ -328,7 +352,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
                     camera_changed = true;
                 }
             }
-            if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED) {
+            if (event.type == SDL_WINDOWEVENT &&
+                event.window.event == SDL_WINDOWEVENT_RESIZED) {
                 frame_id = 0;
                 win_width = event.window.data1;
                 win_height = event.window.data2;
@@ -354,7 +379,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
         }
 
         RenderStats stats =
-            renderer->render(camera.eye(), camera.dir(), camera.up(), 65.f, camera_changed);
+            renderer->render(camera.eye(), camera.dir(), camera.up(), fov_y, camera_changed);
         ++frame_id;
 
         if (frame_id == 1) {
