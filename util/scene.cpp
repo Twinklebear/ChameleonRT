@@ -446,7 +446,7 @@ void Scene::load_crts(const std::string &file)
             Camera camera;
             camera.position = glm::column(matrix, 3);
             const glm::vec3 dir(glm::normalize(-glm::column(matrix, 2)));
-            camera.center = camera.position + dir;
+            camera.center = camera.position + dir * 10.f;
             camera.up = glm::normalize(glm::column(matrix, 1));
             // TODO: Not sure on why I need to scale fovy down to match Blender,
             // it doesn't quite line up either but this is pretty close.
