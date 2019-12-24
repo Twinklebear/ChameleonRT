@@ -379,29 +379,64 @@ void Scene::load_crts(const std::string &file)
 
         Geometry geom;
         {
-            const uint64_t pos_view = m["positions"].get<uint64_t>();
-            auto &v = header["buffer_views"][pos_view];
-            const DTYPE pos_dtype = parse_dtype(v["type"]);
+            const uint64_t view_id = m["positions"].get<uint64_t>();
+            auto &v = header["buffer_views"][view_id];
+            const DTYPE dtype = parse_dtype(v["type"]);
             BufferView view(data_base + v["byte_offset"].get<uint64_t>(),
                             v["byte_length"].get<uint64_t>(),
-                            dtype_stride(pos_dtype));
+                            dtype_stride(dtype));
             Accessor<glm::vec3> accessor(view);
             geom.vertices = std::vector<glm::vec3>(accessor.begin(), accessor.end());
         }
         {
-            const uint64_t idx_view = m["indices"].get<uint64_t>();
-            auto &v = header["buffer_views"][idx_view];
-            const DTYPE idx_dtype = parse_dtype(v["type"]);
+            const uint64_t view_id = m["indices"].get<uint64_t>();
+            auto &v = header["buffer_views"][view_id];
+            const DTYPE dtype = parse_dtype(v["type"]);
             BufferView view(data_base + v["byte_offset"].get<uint64_t>(),
                             v["byte_length"].get<uint64_t>(),
-                            dtype_stride(idx_dtype));
+                            dtype_stride(dtype));
             Accessor<glm::uvec3> accessor(view);
             geom.indices = std::vector<glm::uvec3>(accessor.begin(), accessor.end());
+        }
+        if (m.find("texcoords") != m.end()) {
+            std::cout << "Mesh " << m["name"].get<std::string>() << " has texcoords\n";
+            const uint64_t view_id = m["texcoords"].get<uint64_t>();
+            auto &v = header["buffer_views"][view_id];
+            const DTYPE dtype = parse_dtype(v["type"]);
+            BufferView view(data_base + v["byte_offset"].get<uint64_t>(),
+                            v["byte_length"].get<uint64_t>(),
+                            dtype_stride(dtype));
+            Accessor<glm::vec2> accessor(view);
+            geom.uvs = std::vector<glm::vec2>(accessor.begin(), accessor.end());
         }
 
         Mesh mesh;
         mesh.geometries.push_back(geom);
         meshes.push_back(mesh);
+    }
+
+    for (size_t i = 0; i < header["images"].size(); ++i) {
+        auto &img = header["images"][i];
+        const uint64_t view_id = img["view"].get<uint64_t>();
+        auto &v = header["buffer_views"][view_id];
+        const DTYPE dtype = parse_dtype(v["type"]);
+        BufferView view(data_base + v["byte_offset"].get<uint64_t>(),
+                        v["byte_length"].get<uint64_t>(),
+                        dtype_stride(dtype));
+        Accessor<uint8_t> accessor(view);
+
+        stbi_set_flip_vertically_on_load(1);
+        int x, y, n;
+        uint8_t *img_data =
+            stbi_load_from_memory(accessor.begin(), accessor.size(), &x, &y, &n, 0);
+        stbi_set_flip_vertically_on_load(0);
+        if (!img_data) {
+            std::cout << "Failed to load " << img["name"] << " from view\n";
+            throw std::runtime_error("Failed to load " + img["name"]);
+        }
+
+        textures.emplace_back(img_data, x, y, n, img["name"], SRGB);
+        stbi_image_free(img_data);
     }
 
     for (size_t i = 0; i < header["materials"].size(); ++i) {
