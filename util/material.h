@@ -16,6 +16,12 @@ struct Image {
     ColorSpace color_space = LINEAR;
 
     Image(const std::string &file, const std::string &name, ColorSpace color_space = LINEAR);
+    Image(const uint8_t *buf,
+          int width,
+          int height,
+          int channels,
+          const std::string &name,
+          ColorSpace color_space = LINEAR);
     Image() = default;
 };
 
