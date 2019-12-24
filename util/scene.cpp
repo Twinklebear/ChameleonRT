@@ -399,7 +399,6 @@ void Scene::load_crts(const std::string &file)
             geom.indices = std::vector<glm::uvec3>(accessor.begin(), accessor.end());
         }
         if (m.find("texcoords") != m.end()) {
-            std::cout << "Mesh " << m["name"].get<std::string>() << " has texcoords\n";
             const uint64_t view_id = m["texcoords"].get<uint64_t>();
             auto &v = header["buffer_views"][view_id];
             const DTYPE dtype = parse_dtype(v["type"]);
@@ -445,6 +444,9 @@ void Scene::load_crts(const std::string &file)
         DisneyMaterial mat;
         const auto base_color_data = m["base_color"].get<std::vector<float>>();
         mat.base_color = glm::make_vec3(base_color_data.data());
+        if (m.find("base_color_texture") != m.end()) {
+            mat.color_tex_id = m["base_color_texture"].get<int32_t>();
+        }
         mat.metallic = m["metallic"].get<float>();
         mat.specular = m["specular"].get<float>();
         mat.roughness = m["roughness"].get<float>();
