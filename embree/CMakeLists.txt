@@ -9,8 +9,12 @@ if (REPORT_RAY_STATS)
 endif()
 
 add_ispc_library(ispc_kernels render_embree.ispc
-	INCLUDE_DIRECTORIES ${EMBREE_INCLUDE_DIRS} ${CMAKE_CURRENT_LIST_DIR}
-	COMPILE_DEFINITIONS ${ISPC_COMPILE_DEFNS})
+	INCLUDE_DIRECTORIES
+        ${EMBREE_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_LIST_DIR}
+        ${PROJECT_SOURCE_DIR}
+	COMPILE_DEFINITIONS
+        ${ISPC_COMPILE_DEFNS})
 
 add_library(render_embree render_embree.cpp embree_utils.cpp)
 

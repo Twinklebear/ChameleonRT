@@ -105,10 +105,18 @@ void RenderEmbree::set_scene(const Scene &scene)
         p.ior = m.ior;
         p.specular_transmission = m.specular_transmission;
 
-        if (m.color_tex_id != -1) {
-            p.color_texture = &ispc_textures[m.color_tex_id];
-        } else {
-            p.color_texture = nullptr;
+        p.texture_channel_mask = m.texture_channel_mask;
+        if (m.base_color_texture != -1) {
+            p.color_texture = &ispc_textures[m.base_color_texture];
+        }
+        if (m.metallic_texture != -1) {
+            p.metallic_texture = &ispc_textures[m.metallic_texture];
+        }
+        if (m.specular_texture != -1) {
+            p.specular_texture = &ispc_textures[m.specular_texture];
+        }
+        if (m.roughness_texture != -1) {
+            p.roughness_texture = &ispc_textures[m.roughness_texture];
         }
 
         material_params.push_back(p);

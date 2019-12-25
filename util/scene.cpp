@@ -184,7 +184,7 @@ void Scene::load_obj(const std::string &file)
                 texture_ids[m.diffuse_texname] = textures.size();
                 textures.emplace_back(obj_base_dir + "/" + path, m.diffuse_texname, SRGB);
             }
-            d.color_tex_id = texture_ids[m.diffuse_texname];
+            d.base_color_texture = texture_ids[m.diffuse_texname];
         }
         materials.push_back(d);
     }
@@ -328,10 +328,10 @@ void Scene::load_gltf(const std::string &fname)
         mat.roughness = m.pbrMetallicRoughness.roughnessFactor;
 
         if (m.pbrMetallicRoughness.baseColorTexture.index != -1) {
-            mat.color_tex_id =
+            mat.base_color_texture =
                 model.textures[m.pbrMetallicRoughness.baseColorTexture.index].source;
             // If the texture is used as a color texture we know it must be srgb space
-            textures[mat.color_tex_id].color_space = SRGB;
+            textures[mat.base_color_texture].color_space = SRGB;
         }
 
         materials.push_back(mat);
@@ -447,22 +447,53 @@ void Scene::load_crts(const std::string &file)
         auto &m = header["materials"][i];
 
         DisneyMaterial mat;
+
         const auto base_color_data = m["base_color"].get<std::vector<float>>();
         mat.base_color = glm::make_vec3(base_color_data.data());
         if (m.find("base_color_texture") != m.end()) {
-            mat.color_tex_id = m["base_color_texture"].get<int32_t>();
+            mat.base_color_texture = m["base_color_texture"].get<int32_t>();
         }
-        mat.metallic = m["metallic"].get<float>();
-        mat.specular = m["specular"].get<float>();
-        mat.roughness = m["roughness"].get<float>();
-        mat.specular_tint = m["specular_tint"].get<float>();
-        mat.anisotropy = m["anisotropy"].get<float>();
-        mat.sheen = m["sheen"].get<float>();
-        mat.sheen_tint = m["sheen_tint"].get<float>();
-        mat.clearcoat = m["clearcoat"].get<float>();
-        mat.clearcoat_gloss = m["clearcoat_gloss"].get<float>();
-        mat.ior = m["ior"].get<float>();
-        mat.specular_transmission = m["specular_transmission"].get<float>();
+
+        auto parse_float_param =
+            [&](const std::string &param, float &val, int32_t &texture, uint32_t channel_bit) {
+                val = m[param].get<float>();
+                const std::string texture_name = param + "_texture";
+                if (m.find(texture_name) != m.end()) {
+                    texture = m[texture_name]["texture"].get<int32_t>();
+                    const uint32_t channel = m[texture_name]["channel"].get<uint32_t>();
+                    mat.texture_channel_mask |= (channel & TEXTURE_CHANNEL_BIT_MASK)
+                                                << channel_bit;
+                }
+            };
+
+        parse_float_param(
+            "metallic", mat.metallic, mat.metallic_texture, METALLIC_CHANNEL_BIT);
+        parse_float_param(
+            "specular", mat.specular, mat.specular_texture, SPECULAR_CHANNEL_BIT);
+        parse_float_param(
+            "roughness", mat.roughness, mat.roughness_texture, ROUGHNESS_CHANNEL_BIT);
+        parse_float_param("specular_tint",
+                          mat.specular_tint,
+                          mat.specular_tint_texture,
+                          SPECULAR_TINT_CHANNEL_BIT);
+        parse_float_param(
+            "anisotropic", mat.anisotropy, mat.anisotropy_texture, ANISOTROPY_CHANNEL_BIT);
+        parse_float_param("sheen", mat.sheen, mat.sheen_texture, SHEEN_CHANNEL_BIT);
+        parse_float_param(
+            "sheen_tint", mat.sheen_tint, mat.sheen_tint_texture, SHEEN_TINT_CHANNEL_BIT);
+        parse_float_param(
+            "clearcoat", mat.clearcoat, mat.clearcoat_texture, CLEARCOAT_CHANNEL_BIT);
+        // TODO: May need to invert this param coming from Blender to give clearcoat gloss?
+        // or does the disney gloss term = roughness?
+        parse_float_param("clearcoat_roughness",
+                          mat.clearcoat_gloss,
+                          mat.clearcoat_gloss_texture,
+                          CLEARCOAT_GLOSS_CHANNEL_BIT);
+        parse_float_param("ior", mat.ior, mat.ior_texture, IOR_CHANNEL_BIT);
+        parse_float_param("transmission",
+                          mat.specular_transmission,
+                          mat.specular_transmission_texture,
+                          SPECULAR_TRANSMISSION_CHANNEL_BIT);
         materials.push_back(mat);
     }
 

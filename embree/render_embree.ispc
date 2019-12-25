@@ -6,6 +6,7 @@
 #include "lights.ih"
 #include "texture2d.ih"
 #include "disney_bsdf.ih"
+#include "util/texture_channel_mask.h"
 
 struct ViewParams {
     float3 pos, dir_du, dir_dv, dir_top_left;
@@ -30,6 +31,11 @@ struct MaterialParams {
     float specular_transmission;
 
     ISPCTexture2D *uniform color_texture;
+    ISPCTexture2D *uniform metallic_texture;
+    ISPCTexture2D *uniform specular_texture;
+    ISPCTexture2D *uniform roughness_texture;
+
+    uint32_t texture_channel_mask;
 };
 
 struct ISPCGeometry {
@@ -68,9 +74,24 @@ void unpack_material(DisneyMaterial &mat, const MaterialParams *p, const float2 
     } else {
         mat.base_color = p->base_color;
     }
-    mat.metallic = p->metallic;
-    mat.specular = p->specular;
-    mat.roughness = p->roughness;
+    if (p->metallic_texture) {
+        mat.metallic = texture_channel(p->metallic_texture, uv,
+                GET_METALLIC_CHANNEL(p->texture_channel_mask));
+    } else {
+        mat.metallic = p->metallic;
+    }
+    if (p->specular_texture) {
+        mat.specular = texture_channel(p->specular_texture, uv,
+                GET_SPECULAR_CHANNEL(p->texture_channel_mask));
+    } else {
+        mat.specular = p->specular;
+    }
+    if (p->roughness_texture) {
+        mat.roughness = texture_channel(p->roughness_texture, uv,
+                GET_ROUGHNESS_CHANNEL(p->texture_channel_mask));
+    } else {
+        mat.roughness = p->roughness;
+    }
     mat.specular_tint = p->specular_tint;
     mat.anisotropy = p->anisotropy;
     mat.sheen = p->sheen;
