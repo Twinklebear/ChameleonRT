@@ -99,6 +99,7 @@ void Scene::load_obj(const std::string &file)
     }
 
     Mesh mesh;
+    std::vector<uint32_t> material_ids;
     for (size_t s = 0; s < shapes.size(); ++s) {
         // We load with triangulate on so we know the mesh will be all triangle faces
         const tinyobj::mesh_t &obj_mesh = shapes[s].mesh;
@@ -110,6 +111,7 @@ void Scene::load_obj(const std::string &file)
         Geometry geom;
         // Note: not supporting per-primitive materials
         geom.material_id = obj_mesh.material_ids[0];
+        material_ids.push_back(geom.material_id);
 
         auto minmax_matid =
             std::minmax_element(obj_mesh.material_ids.begin(), obj_mesh.material_ids.end());
@@ -164,8 +166,7 @@ void Scene::load_obj(const std::string &file)
     meshes.push_back(mesh);
 
     // OBJ has a single "instance"
-    // TODO material IDs on instances
-    instances.emplace_back(glm::mat4(1.f), 0, std::vector<uint32_t>{});
+    instances.emplace_back(glm::mat4(1.f), 0, material_ids);
 
     std::unordered_map<std::string, int32_t> texture_ids;
     // Parse the materials over to a similar DisneyMaterial representation
@@ -340,8 +341,12 @@ void Scene::load_gltf(const std::string &fname)
         const tinygltf::Node &n = model.nodes[nid];
         if (n.mesh != -1) {
             const glm::mat4 transform = read_node_transform(n);
-            // TODO material IDs on instances
-            instances.emplace_back(transform, n.mesh, std::vector<uint32_t>{});
+            std::vector<uint32_t> material_ids;
+            std::transform(meshes[n.mesh].geometries.begin(),
+                           meshes[n.mesh].geometries.end(),
+                           std::back_inserter(material_ids),
+                           [](const Geometry &g) { return g.material_id; });
+            instances.emplace_back(transform, n.mesh, material_ids);
         }
     }
 
@@ -633,8 +638,12 @@ void Scene::load_pbrt(const std::string &file)
         transform[2] = glm::vec4(inst->xfm.l.vz.x, inst->xfm.l.vz.y, inst->xfm.l.vz.z, 0.f);
         transform[3] = glm::vec4(inst->xfm.p.x, inst->xfm.p.y, inst->xfm.p.z, 1.f);
 
-        // TODO material IDs on instances
-        instances.emplace_back(transform, mesh_id, std::vector<uint32_t>{});
+        std::vector<uint32_t> material_ids;
+        std::transform(meshes[mesh_id].geometries.begin(),
+                       meshes[mesh_id].geometries.end(),
+                       std::back_inserter(material_ids),
+                       [](const Geometry &g) { return g.material_id; });
+        instances.emplace_back(transform, mesh_id, material_ids);
     }
 
     validate_materials();
@@ -655,12 +664,10 @@ void Scene::load_pbrt(const std::string &file)
 void Scene::validate_materials()
 {
     const bool need_default_mat =
-        std::find_if(meshes.begin(), meshes.end(), [](const Mesh &m) {
-            return std::find_if(
-                       m.geometries.begin(), m.geometries.end(), [](const Geometry &g) {
-                           return g.material_id == uint32_t(-1);
-                       }) != m.geometries.end();
-        }) != meshes.end();
+        std::find_if(instances.begin(), instances.end(), [](const Instance &i) {
+            return std::find(i.material_ids.begin(), i.material_ids.end(), uint32_t(-1)) !=
+                   i.material_ids.end();
+        }) != instances.end();
 
     if (need_default_mat) {
         std::cout << "No materials assigned for some objects, generating a default\n";
