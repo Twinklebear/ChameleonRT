@@ -421,6 +421,7 @@ void Scene::load_crts(const std::string &file)
 
     for (size_t i = 0; i < header["images"].size(); ++i) {
         auto &img = header["images"][i];
+
         const uint64_t view_id = img["view"].get<uint64_t>();
         auto &v = header["buffer_views"][view_id];
         const DTYPE dtype = parse_dtype(v["type"]);
@@ -439,7 +440,12 @@ void Scene::load_crts(const std::string &file)
             throw std::runtime_error("Failed to load " + img["name"]);
         }
 
-        textures.emplace_back(img_data, x, y, n, img["name"], SRGB);
+        ColorSpace color_space = SRGB;
+        if (img["color_space"].get<std::string>() == "LINEAR") {
+            color_space = LINEAR;
+        }
+
+        textures.emplace_back(img_data, x, y, n, img["name"], color_space);
         stbi_image_free(img_data);
     }
 
