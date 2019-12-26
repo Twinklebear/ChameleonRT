@@ -43,19 +43,4 @@ struct DisneyMaterial {
     float ior = 1.5;
     float specular_transmission = 0;
     glm::vec2 pad = glm::vec2(0);
-
-    // TODO: change these to only store 16bit texture ids
-    int32_t base_color_texture = -1;
-    int32_t metallic_texture = -1;
-    int32_t specular_texture = -1;
-    int32_t roughness_texture = -1;
-    int32_t specular_tint_texture = -1;
-    int32_t anisotropy_texture = -1;
-    int32_t sheen_texture = -1;
-    int32_t sheen_tint_texture = -1;
-    int32_t clearcoat_texture = -1;
-    int32_t clearcoat_gloss_texture = -1;
-    int32_t ior_texture = -1;
-    int32_t specular_transmission_texture = -1;
-    uint32_t texture_channel_mask = 0;
 };

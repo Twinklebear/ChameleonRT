@@ -10,7 +10,7 @@ struct ISPCTexture2D {
 	const uint8_t *uniform data;
 };
 
-inline float4 get_texel(ISPCTexture2D *tex, const int2 px) {
+inline float4 get_texel(const ISPCTexture2D *tex, const int2 px) {
 	float4 color = make_float4(0.f);
 	color.x = tex->data[((px.y * tex->width) + px.x) * tex->channels] / 255.f;
 	if (tex->channels >= 2) {
@@ -25,18 +25,18 @@ inline float4 get_texel(ISPCTexture2D *tex, const int2 px) {
 	return color;
 }
 
-inline float get_texel_channel(ISPCTexture2D *tex, const int2 px, const int channel) {
+inline float get_texel_channel(const ISPCTexture2D *tex, const int2 px, const int channel) {
     return tex->data[((px.y * tex->width) + px.x) * tex->channels + channel] / 255.f;
 }
 
-inline int2 get_wrapped_texcoord(ISPCTexture2D *tex, int x, int y) {
+inline int2 get_wrapped_texcoord(const ISPCTexture2D *tex, int x, int y) {
 	int w = tex->width;
 	int h = tex->height;
 	// TODO: maybe support other wrap modes?
 	return make_int2(mod(x, w), mod(y, h));
 }
 
-float4 texture(ISPCTexture2D *tex, const float2 uv) {
+float4 texture(const ISPCTexture2D *tex, const float2 uv) {
 	const float ux = uv.x * tex->width - 0.5;
 	const float uy = uv.y * tex->height - 0.5;
 
@@ -59,7 +59,7 @@ float4 texture(ISPCTexture2D *tex, const float2 uv) {
 		+ s11 * tx * ty;
 }
 
-float texture_channel(ISPCTexture2D *tex, const float2 uv, const int channel) {
+float texture_channel(const ISPCTexture2D *tex, const float2 uv, const int channel) {
 	const float ux = uv.x * tex->width - 0.5;
 	const float uy = uv.y * tex->height - 0.5;
 

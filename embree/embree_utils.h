@@ -132,16 +132,6 @@ struct MaterialParams {
 
     float ior = 1.5;
     float specular_transmission = 0;
-
-    // TODO: Probably change this to just be uint16 indices
-    // into a global texture array, and encode the index
-    // as an alias'd int in the original scalar value + the channel info
-    ISPCTexture2D *color_texture = nullptr;
-    ISPCTexture2D *metallic_texture = nullptr;
-    ISPCTexture2D *specular_texture = nullptr;
-    ISPCTexture2D *roughness_texture = nullptr;
-
-    uint32_t texture_channel_mask = 0;
 };
 
 struct ViewParams {
@@ -154,6 +144,7 @@ struct SceneContext {
     ISPCInstance *instances;
     MaterialParams *materials;
     QuadLight *lights;
+    ISPCTexture2D *textures;
     uint32_t num_lights;
 };
 

@@ -105,20 +105,6 @@ void RenderEmbree::set_scene(const Scene &scene)
         p.ior = m.ior;
         p.specular_transmission = m.specular_transmission;
 
-        p.texture_channel_mask = m.texture_channel_mask;
-        if (m.base_color_texture != -1) {
-            p.color_texture = &ispc_textures[m.base_color_texture];
-        }
-        if (m.metallic_texture != -1) {
-            p.metallic_texture = &ispc_textures[m.metallic_texture];
-        }
-        if (m.specular_texture != -1) {
-            p.specular_texture = &ispc_textures[m.specular_texture];
-        }
-        if (m.roughness_texture != -1) {
-            p.roughness_texture = &ispc_textures[m.roughness_texture];
-        }
-
         material_params.push_back(p);
     }
 
@@ -154,6 +140,7 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
     ispc_scene.scene = scene_bvh->handle;
     ispc_scene.instances = scene_bvh->ispc_instances.data();
     ispc_scene.materials = material_params.data();
+    ispc_scene.textures = ispc_textures.data();
     ispc_scene.lights = lights.data();
     ispc_scene.num_lights = lights.size();
 

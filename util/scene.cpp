@@ -184,7 +184,10 @@ void Scene::load_obj(const std::string &file)
                 texture_ids[m.diffuse_texname] = textures.size();
                 textures.emplace_back(obj_base_dir + "/" + path, m.diffuse_texname, SRGB);
             }
-            d.base_color_texture = texture_ids[m.diffuse_texname];
+            const int32_t id = texture_ids[m.diffuse_texname];
+            uint32_t tex_mask = TEXTURED_PARAM_MASK;
+            SET_TEXTURE_ID(tex_mask, id);
+            d.base_color.r = *reinterpret_cast<float *>(&tex_mask);
         }
         materials.push_back(d);
     }
@@ -328,12 +331,15 @@ void Scene::load_gltf(const std::string &fname)
         mat.roughness = m.pbrMetallicRoughness.roughnessFactor;
 
         if (m.pbrMetallicRoughness.baseColorTexture.index != -1) {
-            mat.base_color_texture =
+            const int32_t id =
                 model.textures[m.pbrMetallicRoughness.baseColorTexture.index].source;
-            // If the texture is used as a color texture we know it must be srgb space
-            textures[mat.base_color_texture].color_space = SRGB;
-        }
+            textures[id].color_space = SRGB;
 
+            uint32_t tex_mask = TEXTURED_PARAM_MASK;
+            SET_TEXTURE_ID(tex_mask, id);
+            mat.base_color.r = *reinterpret_cast<float *>(&tex_mask);
+        }
+        // TODO: Can now load roughness and metalness textures
         materials.push_back(mat);
     }
 
@@ -457,49 +463,38 @@ void Scene::load_crts(const std::string &file)
         const auto base_color_data = m["base_color"].get<std::vector<float>>();
         mat.base_color = glm::make_vec3(base_color_data.data());
         if (m.find("base_color_texture") != m.end()) {
-            mat.base_color_texture = m["base_color_texture"].get<int32_t>();
+            const int32_t id = m["base_color_texture"].get<int32_t>();
+            uint32_t tex_mask = TEXTURED_PARAM_MASK;
+            SET_TEXTURE_ID(tex_mask, id);
+            mat.base_color.r = *reinterpret_cast<float *>(&tex_mask);
         }
 
-        auto parse_float_param =
-            [&](const std::string &param, float &val, int32_t &texture, uint32_t channel_bit) {
-                val = m[param].get<float>();
-                const std::string texture_name = param + "_texture";
-                if (m.find(texture_name) != m.end()) {
-                    texture = m[texture_name]["texture"].get<int32_t>();
-                    const uint32_t channel = m[texture_name]["channel"].get<uint32_t>();
-                    mat.texture_channel_mask |= (channel & TEXTURE_CHANNEL_BIT_MASK)
-                                                << channel_bit;
-                }
-            };
+        auto parse_float_param = [&](const std::string &param, float &val) {
+            val = m[param].get<float>();
+            const std::string texture_name = param + "_texture";
+            if (m.find(texture_name) != m.end()) {
+                const int32_t id = m[texture_name]["texture"].get<int32_t>();
+                const uint32_t channel = m[texture_name]["channel"].get<uint32_t>();
+                uint32_t tex_mask = TEXTURED_PARAM_MASK;
+                SET_TEXTURE_ID(tex_mask, id);
+                SET_TEXTURE_CHANNEL(tex_mask, channel);
+                val = *reinterpret_cast<float *>(&tex_mask);
+            }
+        };
 
-        parse_float_param(
-            "metallic", mat.metallic, mat.metallic_texture, METALLIC_CHANNEL_BIT);
-        parse_float_param(
-            "specular", mat.specular, mat.specular_texture, SPECULAR_CHANNEL_BIT);
-        parse_float_param(
-            "roughness", mat.roughness, mat.roughness_texture, ROUGHNESS_CHANNEL_BIT);
-        parse_float_param("specular_tint",
-                          mat.specular_tint,
-                          mat.specular_tint_texture,
-                          SPECULAR_TINT_CHANNEL_BIT);
-        parse_float_param(
-            "anisotropic", mat.anisotropy, mat.anisotropy_texture, ANISOTROPY_CHANNEL_BIT);
-        parse_float_param("sheen", mat.sheen, mat.sheen_texture, SHEEN_CHANNEL_BIT);
-        parse_float_param(
-            "sheen_tint", mat.sheen_tint, mat.sheen_tint_texture, SHEEN_TINT_CHANNEL_BIT);
-        parse_float_param(
-            "clearcoat", mat.clearcoat, mat.clearcoat_texture, CLEARCOAT_CHANNEL_BIT);
+        parse_float_param("metallic", mat.metallic);
+        parse_float_param("specular", mat.specular);
+        parse_float_param("roughness", mat.roughness);
+        parse_float_param("specular_tint", mat.specular_tint);
+        parse_float_param("anisotropic", mat.anisotropy);
+        parse_float_param("sheen", mat.sheen);
+        parse_float_param("sheen_tint", mat.sheen_tint);
+        parse_float_param("clearcoat", mat.clearcoat);
         // TODO: May need to invert this param coming from Blender to give clearcoat gloss?
         // or does the disney gloss term = roughness?
-        parse_float_param("clearcoat_roughness",
-                          mat.clearcoat_gloss,
-                          mat.clearcoat_gloss_texture,
-                          CLEARCOAT_GLOSS_CHANNEL_BIT);
-        parse_float_param("ior", mat.ior, mat.ior_texture, IOR_CHANNEL_BIT);
-        parse_float_param("transmission",
-                          mat.specular_transmission,
-                          mat.specular_transmission_texture,
-                          SPECULAR_TRANSMISSION_CHANNEL_BIT);
+        parse_float_param("clearcoat_roughness", mat.clearcoat_gloss);
+        parse_float_param("ior", mat.ior);
+        parse_float_param("transmission", mat.specular_transmission);
         materials.push_back(mat);
     }
 

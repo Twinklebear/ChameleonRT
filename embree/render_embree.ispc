@@ -29,13 +29,6 @@ struct MaterialParams {
 
     float ior;
     float specular_transmission;
-
-    ISPCTexture2D *uniform color_texture;
-    ISPCTexture2D *uniform metallic_texture;
-    ISPCTexture2D *uniform specular_texture;
-    ISPCTexture2D *uniform roughness_texture;
-
-    uint32_t texture_channel_mask;
 };
 
 struct ISPCGeometry {
@@ -57,6 +50,7 @@ struct SceneContext {
     ISPCInstance *uniform instances;
     MaterialParams *uniform materials;
     QuadLight *uniform lights;
+    ISPCTexture2D *uniform textures;
     uniform uint32_t num_lights;
 };
 
@@ -68,30 +62,44 @@ struct Tile {
     uint16_t *uniform ray_stats;
 };
 
-void unpack_material(DisneyMaterial &mat, const MaterialParams *p, const float2 uv) {
-    if (p->color_texture) {
-        mat.base_color = make_float3(texture(p->color_texture, uv));
+void unpack_material(DisneyMaterial &mat, const MaterialParams *p,
+        const ISPCTexture2D *uniform textures, const float2 uv)
+{
+    uint32_t mask = intbits(p->base_color.x);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        mat.base_color = make_float3(texture(&textures[tex_id], uv));
     } else {
         mat.base_color = p->base_color;
     }
-    if (p->metallic_texture) {
-        mat.metallic = texture_channel(p->metallic_texture, uv,
-                GET_METALLIC_CHANNEL(p->texture_channel_mask));
+
+    mask = intbits(p->metallic);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.metallic = texture_channel(&textures[tex_id], uv, channel);
     } else {
         mat.metallic = p->metallic;
     }
-    if (p->specular_texture) {
-        mat.specular = texture_channel(p->specular_texture, uv,
-                GET_SPECULAR_CHANNEL(p->texture_channel_mask));
+
+    mask = intbits(p->specular);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.specular = texture_channel(&textures[tex_id], uv, channel);
     } else {
         mat.specular = p->specular;
     }
-    if (p->roughness_texture) {
-        mat.roughness = texture_channel(p->roughness_texture, uv,
-                GET_ROUGHNESS_CHANNEL(p->texture_channel_mask));
+
+    mask = intbits(p->roughness);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.roughness = texture_channel(&textures[tex_id], uv, channel);
     } else {
         mat.roughness = p->roughness;
     }
+
     mat.specular_tint = p->specular_tint;
     mat.anisotropy = p->anisotropy;
     mat.sheen = p->sheen;
@@ -265,7 +273,8 @@ export void trace_rays(void *uniform _scene, void *uniform _tile, const void *un
             transpose(matrix);
             normal = normalize(mul(matrix, normal));
 
-            unpack_material(mat, &scene->materials[instance->material_ids[geom]], uv);
+            unpack_material(mat, &scene->materials[instance->material_ids[geom]],
+                    scene->textures, uv);
 
             // Direct light sampling
             float3 v_x, v_y;
