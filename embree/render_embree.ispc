@@ -100,14 +100,77 @@ void unpack_material(DisneyMaterial &mat, const MaterialParams *p,
         mat.roughness = p->roughness;
     }
 
-    mat.specular_tint = p->specular_tint;
-    mat.anisotropy = p->anisotropy;
-    mat.sheen = p->sheen;
-    mat.sheen_tint = p->sheen_tint;
-    mat.clearcoat = p->clearcoat;
-    mat.clearcoat_gloss = p->clearcoat_gloss;
-    mat.ior = p->ior;
-    mat.specular_transmission = p->specular_transmission;
+    mask = intbits(p->specular_tint);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.specular_tint = texture_channel(&textures[tex_id], uv, channel);
+    } else {
+        mat.specular_tint = p->specular_tint;
+    }
+
+    mask = intbits(p->anisotropy);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.anisotropy = texture_channel(&textures[tex_id], uv, channel);
+    } else {
+        mat.anisotropy = p->anisotropy;
+    }
+
+    mask = intbits(p->sheen);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.sheen = texture_channel(&textures[tex_id], uv, channel);
+    } else {
+        mat.sheen = p->sheen;
+    }
+
+    mask = intbits(p->sheen_tint);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.sheen_tint = texture_channel(&textures[tex_id], uv, channel);
+    } else {
+        mat.sheen_tint = p->sheen_tint;
+    }
+
+    mask = intbits(p->clearcoat);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.clearcoat = texture_channel(&textures[tex_id], uv, channel);
+    } else {
+        mat.clearcoat = p->clearcoat;
+    }
+
+    mask = intbits(p->clearcoat_gloss);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.clearcoat_gloss = texture_channel(&textures[tex_id], uv, channel);
+    } else {
+        mat.clearcoat_gloss = p->clearcoat_gloss;
+    }
+
+    mask = intbits(p->ior);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.ior = texture_channel(&textures[tex_id], uv, channel);
+    } else {
+        mat.ior = p->ior;
+    }
+
+    mask = intbits(p->specular_transmission);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.specular_transmission = texture_channel(&textures[tex_id], uv, channel);
+    } else {
+        mat.specular_transmission = p->specular_transmission;
+    }
 }
 
 float3 sample_direct_light(const SceneContext *uniform scene,
