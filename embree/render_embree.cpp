@@ -18,6 +18,11 @@ RenderEmbree::RenderEmbree()
     device = rtcNewDevice(NULL);
 }
 
+RenderEmbree::~RenderEmbree()
+{
+    rtcReleaseDevice(device);
+}
+
 std::string RenderEmbree::name()
 {
     return "Embree (w/ TBB & ISPC)";
@@ -47,8 +52,12 @@ void RenderEmbree::set_scene(const Scene &scene)
     for (const auto &mesh : scene.meshes) {
         std::vector<std::shared_ptr<embree::Geometry>> geometries;
         for (const auto &geom : mesh.geometries) {
-            geometries.push_back(std::make_shared<embree::Geometry>(
-                device, geom.vertices, geom.indices, geom.normals, geom.uvs, geom.material_id));
+            geometries.push_back(std::make_shared<embree::Geometry>(device,
+                                                                    geom.vertices,
+                                                                    geom.indices,
+                                                                    geom.normals,
+                                                                    geom.uvs,
+                                                                    geom.material_id));
         }
 
         meshes.push_back(std::make_shared<embree::TriangleMesh>(device, geometries));
@@ -64,8 +73,8 @@ void RenderEmbree::set_scene(const Scene &scene)
 
     textures = scene.textures;
 
-    // Linearize any sRGB textures beforehand, since we don't have fancy sRGB texture interpolation
-    // support in hardware
+    // Linearize any sRGB textures beforehand, since we don't have fancy sRGB texture
+    // interpolation support in hardware
     tbb::parallel_for(size_t(0), textures.size(), [&](size_t i) {
         auto &img = textures[i];
         if (img.color_space == LINEAR) {
@@ -83,10 +92,10 @@ void RenderEmbree::set_scene(const Scene &scene)
     });
 
     ispc_textures.reserve(textures.size());
-    std::transform(
-        textures.begin(), textures.end(), std::back_inserter(ispc_textures), [](const Image &img) {
-            return embree::ISPCTexture2D(img);
-        });
+    std::transform(textures.begin(),
+                   textures.end(),
+                   std::back_inserter(ispc_textures),
+                   [](const Image &img) { return embree::ISPCTexture2D(img); });
 
     material_params.reserve(scene.materials.size());
     for (const auto &m : scene.materials) {
@@ -137,7 +146,8 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
     embree::ViewParams view_params;
     view_params.pos = pos;
     view_params.dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
-    view_params.dir_dv = glm::normalize(glm::cross(view_params.dir_du, dir)) * img_plane_size.y;
+    view_params.dir_dv =
+        glm::normalize(glm::cross(view_params.dir_du, dir)) * img_plane_size.y;
     view_params.dir_top_left = dir - 0.5f * view_params.dir_du - 0.5f * view_params.dir_dv;
     view_params.frame_id = frame_id;
 
@@ -179,11 +189,11 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
 
         ispc::tile_to_uint8(&ispc_tile, color);
 #ifdef REPORT_RAY_STATS
-        num_rays[tile_id] =
-            std::accumulate(ray_stats[tile_id].begin(),
-                            ray_stats[tile_id].end(),
-                            uint64_t(0),
-                            [](const uint64_t &total, const uint16_t &c) { return total + c; });
+        num_rays[tile_id] = std::accumulate(
+            ray_stats[tile_id].begin(),
+            ray_stats[tile_id].end(),
+            uint64_t(0),
+            [](const uint64_t &total, const uint16_t &c) { return total + c; });
 #endif
     });
     auto end = high_resolution_clock::now();
