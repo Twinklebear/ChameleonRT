@@ -25,6 +25,7 @@ struct RenderEmbree : RenderBackend {
     std::vector<std::vector<uint16_t>> ray_stats;
 
     RenderEmbree();
+    ~RenderEmbree();
 
     std::string name() override;
     void initialize(const int fb_width, const int fb_height) override;

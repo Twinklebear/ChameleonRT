@@ -18,6 +18,11 @@ RenderEmbree::RenderEmbree()
     device = rtcNewDevice(NULL);
 }
 
+RenderEmbree::~RenderEmbree()
+{
+    rtcReleaseDevice(device);
+}
+
 std::string RenderEmbree::name()
 {
     return "Embree (w/ TBB & ISPC)";
