@@ -439,8 +439,8 @@ void Scene::load_crts(const std::string &file)
             stbi_load_from_memory(accessor.begin(), accessor.size(), &x, &y, &n, 4);
         stbi_set_flip_vertically_on_load(0);
         if (!img_data) {
-            std::cout << "Failed to load " << img["name"] << " from view\n";
-            throw std::runtime_error("Failed to load " + img["name"]);
+            std::cout << "Failed to load " << img["name"].get<std::string>() << " from view\n";
+            throw std::runtime_error("Failed to load " + img["name"].get<std::string>());
         }
 
         ColorSpace color_space = SRGB;
@@ -448,7 +448,7 @@ void Scene::load_crts(const std::string &file)
             color_space = LINEAR;
         }
 
-        textures.emplace_back(img_data, x, y, 4, img["name"], color_space);
+        textures.emplace_back(img_data, x, y, 4, img["name"].get<std::string>(), color_space);
         stbi_image_free(img_data);
     }
 
