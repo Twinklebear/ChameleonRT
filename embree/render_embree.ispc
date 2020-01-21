@@ -62,6 +62,16 @@ struct Tile {
     uint16_t *uniform ray_stats;
 };
 
+float textured_scalar_param(const float x, const float2 &uv, const ISPCTexture2D *uniform textures) {
+    const uint32_t mask = intbits(x);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        return texture_channel(&textures[tex_id], uv, channel);
+    }
+    return x;
+}
+
 void unpack_material(DisneyMaterial &mat, const MaterialParams *p,
         const ISPCTexture2D *uniform textures, const float2 uv)
 {
@@ -73,104 +83,17 @@ void unpack_material(DisneyMaterial &mat, const MaterialParams *p,
         mat.base_color = p->base_color;
     }
 
-    mask = intbits(p->metallic);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.metallic = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.metallic = p->metallic;
-    }
-
-    mask = intbits(p->specular);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.specular = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.specular = p->specular;
-    }
-
-    mask = intbits(p->roughness);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.roughness = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.roughness = p->roughness;
-    }
-
-    mask = intbits(p->specular_tint);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.specular_tint = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.specular_tint = p->specular_tint;
-    }
-
-    mask = intbits(p->anisotropy);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.anisotropy = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.anisotropy = p->anisotropy;
-    }
-
-    mask = intbits(p->sheen);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.sheen = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.sheen = p->sheen;
-    }
-
-    mask = intbits(p->sheen_tint);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.sheen_tint = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.sheen_tint = p->sheen_tint;
-    }
-
-    mask = intbits(p->clearcoat);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.clearcoat = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.clearcoat = p->clearcoat;
-    }
-
-    mask = intbits(p->clearcoat_gloss);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.clearcoat_gloss = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.clearcoat_gloss = p->clearcoat_gloss;
-    }
-
-    mask = intbits(p->ior);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.ior = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.ior = p->ior;
-    }
-
-    mask = intbits(p->specular_transmission);
-    if (IS_TEXTURED_PARAM(mask)) {
-        const uint32_t tex_id = GET_TEXTURE_ID(mask);
-        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
-        mat.specular_transmission = texture_channel(&textures[tex_id], uv, channel);
-    } else {
-        mat.specular_transmission = p->specular_transmission;
-    }
+    mat.metallic = textured_scalar_param(p->metallic, uv, textures);
+    mat.specular = textured_scalar_param(p->specular, uv, textures);
+    mat.roughness = textured_scalar_param(p->roughness, uv, textures);
+    mat.specular_tint = textured_scalar_param(p->specular_tint, uv, textures);
+    mat.anisotropy = textured_scalar_param(p->anisotropy, uv, textures);
+    mat.sheen = textured_scalar_param(p->sheen, uv, textures);
+    mat.sheen_tint = textured_scalar_param(p->sheen_tint, uv, textures);
+    mat.clearcoat = textured_scalar_param(p->clearcoat, uv, textures);
+    mat.clearcoat_gloss = textured_scalar_param(p->clearcoat_gloss, uv, textures);
+    mat.ior = textured_scalar_param(p->ior, uv, textures);
+    mat.specular_transmission = textured_scalar_param(p->specular_transmission, uv, textures);
 }
 
 float3 sample_direct_light(const SceneContext *uniform scene,
