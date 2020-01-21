@@ -18,7 +18,8 @@ RenderVulkan::RenderVulkan()
         info.commandPool = command_pool;
         info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         info.commandBufferCount = 1;
-        CHECK_VULKAN(vkAllocateCommandBuffers(device.logical_device(), &info, &command_buffer));
+        CHECK_VULKAN(
+            vkAllocateCommandBuffers(device.logical_device(), &info, &command_buffer));
     }
 
     render_cmd_pool = device.make_command_pool();
@@ -28,8 +29,10 @@ RenderVulkan::RenderVulkan()
         info.commandPool = render_cmd_pool;
         info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         info.commandBufferCount = 1;
-        CHECK_VULKAN(vkAllocateCommandBuffers(device.logical_device(), &info, &render_cmd_buf));
-        CHECK_VULKAN(vkAllocateCommandBuffers(device.logical_device(), &info, &readback_cmd_buf));
+        CHECK_VULKAN(
+            vkAllocateCommandBuffers(device.logical_device(), &info, &render_cmd_buf));
+        CHECK_VULKAN(
+            vkAllocateCommandBuffers(device.logical_device(), &info, &readback_cmd_buf));
     }
 
     {
@@ -139,12 +142,13 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
 
         // We didn't make the buffers individually reset-able, but we're just using it as temp
         // one to do this upload so clear the pool to reset
-        vkResetCommandPool(
-            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        vkResetCommandPool(device.logical_device(),
+                           command_pool,
+                           VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
     }
 
-    // If we've loaded the scene and are rendering (i.e., the window was just resized while running)
-    // update the descriptor sets and re-record the rendering commands
+    // If we've loaded the scene and are rendering (i.e., the window was just resized while
+    // running) update the descriptor sets and re-record the rendering commands
     if (desc_set != VK_NULL_HANDLE) {
         vkrt::DescriptorSetUpdater()
             .write_storage_image(desc_set, 1, render_target)
@@ -171,16 +175,18 @@ void RenderVulkan::set_scene(const Scene &scene)
         std::vector<vkrt::Geometry> geometries;
         for (const auto &geom : mesh.geometries) {
             // Upload triangle vertices to the device
-            auto upload_verts = vkrt::Buffer::host(
-                device, geom.vertices.size() * sizeof(glm::vec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+            auto upload_verts = vkrt::Buffer::host(device,
+                                                   geom.vertices.size() * sizeof(glm::vec3),
+                                                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
             {
                 void *map = upload_verts->map();
                 std::memcpy(map, geom.vertices.data(), upload_verts->size());
                 upload_verts->unmap();
             }
 
-            auto upload_indices = vkrt::Buffer::host(
-                device, geom.indices.size() * sizeof(glm::uvec3), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+            auto upload_indices = vkrt::Buffer::host(device,
+                                                     geom.indices.size() * sizeof(glm::uvec3),
+                                                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
             {
                 void *map = upload_indices->map();
                 std::memcpy(map, geom.indices.data(), upload_indices->size());
@@ -206,8 +212,9 @@ void RenderVulkan::set_scene(const Scene &scene)
             std::shared_ptr<vkrt::Buffer> upload_uvs = nullptr;
             std::shared_ptr<vkrt::Buffer> uv_buf = nullptr;
             if (!geom.uvs.empty()) {
-                upload_uvs = vkrt::Buffer::host(
-                    device, geom.uvs.size() * sizeof(glm::vec2), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+                upload_uvs = vkrt::Buffer::host(device,
+                                                geom.uvs.size() * sizeof(glm::vec2),
+                                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
                 uv_buf = vkrt::Buffer::device(
                     device,
                     upload_uvs->size(),
@@ -237,12 +244,18 @@ void RenderVulkan::set_scene(const Scene &scene)
 
                 VkBufferCopy copy_cmd = {};
                 copy_cmd.size = upload_verts->size();
-                vkCmdCopyBuffer(
-                    command_buffer, upload_verts->handle(), vertex_buf->handle(), 1, &copy_cmd);
+                vkCmdCopyBuffer(command_buffer,
+                                upload_verts->handle(),
+                                vertex_buf->handle(),
+                                1,
+                                &copy_cmd);
 
                 copy_cmd.size = upload_indices->size();
-                vkCmdCopyBuffer(
-                    command_buffer, upload_indices->handle(), index_buf->handle(), 1, &copy_cmd);
+                vkCmdCopyBuffer(command_buffer,
+                                upload_indices->handle(),
+                                index_buf->handle(),
+                                1,
+                                &copy_cmd);
 
                 if (upload_normals) {
                     copy_cmd.size = upload_normals->size();
@@ -274,7 +287,7 @@ void RenderVulkan::set_scene(const Scene &scene)
                                    VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
             }
 
-            geometries.emplace_back(vertex_buf, index_buf, normal_buf, uv_buf, geom.material_id);
+            geometries.emplace_back(vertex_buf, index_buf, normal_buf, uv_buf);
             ++total_geom;
         }
 
@@ -296,11 +309,13 @@ void RenderVulkan::set_scene(const Scene &scene)
             submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
             submit_info.commandBufferCount = 1;
             submit_info.pCommandBuffers = &command_buffer;
-            CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+            CHECK_VULKAN(
+                vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
             vkQueueWaitIdle(device.graphics_queue());
 
-            vkResetCommandPool(
-                device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+            vkResetCommandPool(device.logical_device(),
+                               command_pool,
+                               VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
         }
 
         // Compact the BVH
@@ -318,11 +333,13 @@ void RenderVulkan::set_scene(const Scene &scene)
             submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
             submit_info.commandBufferCount = 1;
             submit_info.pCommandBuffers = &command_buffer;
-            CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+            CHECK_VULKAN(
+                vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
             vkQueueWaitIdle(device.graphics_queue());
 
-            vkResetCommandPool(
-                device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+            vkResetCommandPool(device.logical_device(),
+                               command_pool,
+                               VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
         }
         bvh->finalize();
         meshes.emplace_back(std::move(bvh));
@@ -371,8 +388,11 @@ void RenderVulkan::set_scene(const Scene &scene)
 
             VkBufferCopy copy_cmd = {};
             copy_cmd.size = upload_instances->size();
-            vkCmdCopyBuffer(
-                command_buffer, upload_instances->handle(), instance_buf->handle(), 1, &copy_cmd);
+            vkCmdCopyBuffer(command_buffer,
+                            upload_instances->handle(),
+                            instance_buf->handle(),
+                            1,
+                            &copy_cmd);
 
             CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
 
@@ -380,11 +400,13 @@ void RenderVulkan::set_scene(const Scene &scene)
             submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
             submit_info.commandBufferCount = 1;
             submit_info.pCommandBuffers = &command_buffer;
-            CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+            CHECK_VULKAN(
+                vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
             vkQueueWaitIdle(device.graphics_queue());
 
-            vkResetCommandPool(
-                device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+            vkResetCommandPool(device.logical_device(),
+                               command_pool,
+                               VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
         }
     }
 
@@ -408,15 +430,16 @@ void RenderVulkan::set_scene(const Scene &scene)
         CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
         vkQueueWaitIdle(device.graphics_queue());
 
-        vkResetCommandPool(
-            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        vkResetCommandPool(device.logical_device(),
+                           command_pool,
+                           VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
     }
     scene_bvh->finalize();
 
-    mat_params =
-        vkrt::Buffer::device(device,
-                             scene.materials.size() * sizeof(DisneyMaterial),
-                             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    mat_params = vkrt::Buffer::device(
+        device,
+        scene.materials.size() * sizeof(DisneyMaterial),
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     {
         auto upload_mat_params =
             vkrt::Buffer::host(device, mat_params->size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
@@ -443,18 +466,20 @@ void RenderVulkan::set_scene(const Scene &scene)
         CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
         vkQueueWaitIdle(device.graphics_queue());
 
-        vkResetCommandPool(
-            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        vkResetCommandPool(device.logical_device(),
+                           command_pool,
+                           VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
     }
 
     // Upload the scene textures
     for (const auto &t : scene.textures) {
-        auto format = t.color_space == SRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
-        auto tex =
-            vkrt::Texture2D::device(device,
-                                    glm::uvec2(t.width, t.height),
-                                    format,
-                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        auto format =
+            t.color_space == SRGB ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+        auto tex = vkrt::Texture2D::device(
+            device,
+            glm::uvec2(t.width, t.height),
+            format,
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
         auto upload_buf = vkrt::Buffer::host(
             device, tex->pixel_size() * t.width * t.height, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
@@ -538,8 +563,9 @@ void RenderVulkan::set_scene(const Scene &scene)
         CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
         vkQueueWaitIdle(device.graphics_queue());
 
-        vkResetCommandPool(
-            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        vkResetCommandPool(device.logical_device(),
+                           command_pool,
+                           VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
 
         textures.push_back(tex);
     }
@@ -555,13 +581,14 @@ void RenderVulkan::set_scene(const Scene &scene)
         sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         sampler_info.minLod = 0;
         sampler_info.maxLod = 0;
-        CHECK_VULKAN(vkCreateSampler(device.logical_device(), &sampler_info, nullptr, &sampler));
+        CHECK_VULKAN(
+            vkCreateSampler(device.logical_device(), &sampler_info, nullptr, &sampler));
     }
 
-    light_params =
-        vkrt::Buffer::device(device,
-                             sizeof(QuadLight) * scene.lights.size(),
-                             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    light_params = vkrt::Buffer::device(
+        device,
+        sizeof(QuadLight) * scene.lights.size(),
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     {
         auto upload_light_params =
             vkrt::Buffer::host(device, light_params->size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
@@ -576,8 +603,11 @@ void RenderVulkan::set_scene(const Scene &scene)
 
         VkBufferCopy copy_cmd = {};
         copy_cmd.size = upload_light_params->size();
-        vkCmdCopyBuffer(
-            command_buffer, upload_light_params->handle(), light_params->handle(), 1, &copy_cmd);
+        vkCmdCopyBuffer(command_buffer,
+                        upload_light_params->handle(),
+                        light_params->handle(),
+                        1,
+                        &copy_cmd);
 
         CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
 
@@ -588,8 +618,9 @@ void RenderVulkan::set_scene(const Scene &scene)
         CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
         vkQueueWaitIdle(device.graphics_queue());
 
-        vkResetCommandPool(
-            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        vkResetCommandPool(device.logical_device(),
+                           command_pool,
+                           VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
     }
 
     build_raytracing_pipeline();
@@ -638,8 +669,9 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos,
     img_readback_buf->unmap();
 
 #ifdef REPORT_RAY_STATS
-    std::memcpy(
-        ray_counts.data(), ray_stats_readback_buf->map(), ray_counts.size() * sizeof(uint16_t));
+    std::memcpy(ray_counts.data(),
+                ray_stats_readback_buf->map(),
+                ray_counts.size() * sizeof(uint16_t));
     ray_stats_readback_buf->unmap();
 
     const uint64_t total_rays =
@@ -656,17 +688,22 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos,
 
 void RenderVulkan::build_raytracing_pipeline()
 {
-    // Maybe have the builder auto compute the binding numbers? May be annoying if tweaking layouts
-    // or something though
+    // Maybe have the builder auto compute the binding numbers? May be annoying if tweaking
+    // layouts or something though
     desc_layout =
         vkrt::DescriptorSetLayoutBuilder()
-            .add_binding(
-                0, 1, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+            .add_binding(0,
+                         1,
+                         VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV,
+                         VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .add_binding(1, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
             .add_binding(2, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
-            .add_binding(3, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
-            .add_binding(4, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
-            .add_binding(5, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+            .add_binding(
+                3, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+            .add_binding(
+                4, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
+            .add_binding(
+                5, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV)
 #ifdef REPORT_RAY_STATS
             .add_binding(6, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV)
 #endif
@@ -682,21 +719,23 @@ void RenderVulkan::build_raytracing_pipeline()
 
     // Make the variable sized descriptor layout for all our varying sized buffer arrays which
     // we use to send the mesh data
-    buffer_desc_layout = vkrt::DescriptorSetLayoutBuilder()
-                             .add_binding(0,
-                                          total_geom,
-                                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
-                                          VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)
-                             .build(device);
+    buffer_desc_layout =
+        vkrt::DescriptorSetLayoutBuilder()
+            .add_binding(0,
+                         total_geom,
+                         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                         VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
+                         VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)
+            .build(device);
 
-    textures_desc_layout = vkrt::DescriptorSetLayoutBuilder()
-                               .add_binding(0,
-                                            std::max(textures.size(), size_t(1)),
-                                            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                            VK_SHADER_STAGE_RAYGEN_BIT_NV,
-                                            VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)
-                               .build(device);
+    textures_desc_layout =
+        vkrt::DescriptorSetLayoutBuilder()
+            .add_binding(0,
+                         std::max(textures.size(), size_t(1)),
+                         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                         VK_SHADER_STAGE_RAYGEN_BIT_NV,
+                         VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)
+            .build(device);
 
     std::vector<VkDescriptorSetLayout> descriptor_layouts = {desc_layout,
                                                              buffer_desc_layout,
@@ -717,7 +756,8 @@ void RenderVulkan::build_raytracing_pipeline()
     auto raygen_shader =
         std::make_shared<vkrt::ShaderModule>(device, raygen_spv, sizeof(raygen_spv));
 
-    auto miss_shader = std::make_shared<vkrt::ShaderModule>(device, miss_spv, sizeof(miss_spv));
+    auto miss_shader =
+        std::make_shared<vkrt::ShaderModule>(device, miss_spv, sizeof(miss_spv));
     auto occlusion_miss_shader = std::make_shared<vkrt::ShaderModule>(
         device, occlusion_miss_spv, sizeof(occlusion_miss_spv));
 
@@ -749,8 +789,8 @@ void RenderVulkan::build_shader_descriptor_table()
     pool_create_info.maxSets = 6;
     pool_create_info.poolSizeCount = pool_sizes.size();
     pool_create_info.pPoolSizes = pool_sizes.data();
-    CHECK_VULKAN(
-        vkCreateDescriptorPool(device.logical_device(), &pool_create_info, nullptr, &desc_pool));
+    CHECK_VULKAN(vkCreateDescriptorPool(
+        device.logical_device(), &pool_create_info, nullptr, &desc_pool));
 
     VkDescriptorSetAllocateInfo alloc_info = {};
     alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -760,9 +800,12 @@ void RenderVulkan::build_shader_descriptor_table()
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &desc_set));
 
     alloc_info.pSetLayouts = &buffer_desc_layout;
-    CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &index_desc_set));
-    CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &vert_desc_set));
-    CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &normals_desc_set));
+    CHECK_VULKAN(
+        vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &index_desc_set));
+    CHECK_VULKAN(
+        vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &vert_desc_set));
+    CHECK_VULKAN(
+        vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &normals_desc_set));
     CHECK_VULKAN(vkAllocateDescriptorSets(device.logical_device(), &alloc_info, &uv_desc_set));
 
     alloc_info.pSetLayouts = &textures_desc_layout;
@@ -841,7 +884,8 @@ void RenderVulkan::build_shader_binding_table()
     for (size_t i = 0; i < scene_bvh->num_instances(); ++i) {
         const auto &inst = scene_bvh->instances[i];
         for (size_t j = 0; j < meshes[inst.mesh_id]->geometries.size(); ++j) {
-            std::string hg_name = "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j);
+            std::string hg_name =
+                "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j);
             sbt_builder.add_hitgroup(
                 vkrt::ShaderRecord(hg_name, "closest_hit", sizeof(HitGroupParams)));
         }
@@ -855,13 +899,15 @@ void RenderVulkan::build_shader_binding_table()
     {
         uint32_t *params = reinterpret_cast<uint32_t *>(shader_table.sbt_params("raygen"));
         *params = light_params->size() / sizeof(QuadLight);
+        std::cout << "# of lights: " << *params << "\n";
     }
 
     for (size_t i = 0; i < scene_bvh->num_instances(); ++i) {
         const auto &inst = scene_bvh->instances[i];
         for (size_t j = 0; j < meshes[inst.mesh_id]->geometries.size(); ++j) {
             auto &geom = meshes[inst.mesh_id]->geometries[j];
-            std::string hg_name = "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j);
+            std::string hg_name =
+                "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j);
 
             HitGroupParams *params =
                 reinterpret_cast<HitGroupParams *>(shader_table.sbt_params(hg_name));
@@ -870,7 +916,7 @@ void RenderVulkan::build_shader_binding_table()
             params->vert_buf = buf_indices[inst.mesh_id][j].vert_buf;
             params->normal_buf = buf_indices[inst.mesh_id][j].normal_buf;
             params->uv_buf = buf_indices[inst.mesh_id][j].uv_buf;
-            params->material_id = geom.material_id;
+            params->material_id = inst.material_ids[j];
         }
     }
 
@@ -897,8 +943,9 @@ void RenderVulkan::build_shader_binding_table()
         CHECK_VULKAN(vkQueueSubmit(device.graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
         vkQueueWaitIdle(device.graphics_queue());
 
-        vkResetCommandPool(
-            device.logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+        vkResetCommandPool(device.logical_device(),
+                           command_pool,
+                           VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
     }
 }
 
@@ -909,8 +956,8 @@ void RenderVulkan::update_view_parameters(const glm::vec3 &pos,
 {
     glm::vec2 img_plane_size;
     img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
-    img_plane_size.x =
-        img_plane_size.y * static_cast<float>(render_target->dims().x) / render_target->dims().y;
+    img_plane_size.x = img_plane_size.y * static_cast<float>(render_target->dims().x) /
+                       render_target->dims().y;
 
     const glm::vec3 dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
     const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
@@ -940,10 +987,15 @@ void RenderVulkan::record_command_buffers()
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     CHECK_VULKAN(vkBeginCommandBuffer(render_cmd_buf, &begin_info));
 
-    vkCmdBindPipeline(render_cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, rt_pipeline.handle());
+    vkCmdBindPipeline(
+        render_cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, rt_pipeline.handle());
 
-    const std::vector<VkDescriptorSet> descriptor_sets = {
-        desc_set, index_desc_set, vert_desc_set, normals_desc_set, uv_desc_set, textures_desc_set};
+    const std::vector<VkDescriptorSet> descriptor_sets = {desc_set,
+                                                          index_desc_set,
+                                                          vert_desc_set,
+                                                          normals_desc_set,
+                                                          uv_desc_set,
+                                                          textures_desc_set};
 
     vkCmdBindDescriptorSets(render_cmd_buf,
                             VK_PIPELINE_BIND_POINT_RAY_TRACING_NV,

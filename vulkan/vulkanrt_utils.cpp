@@ -11,13 +11,8 @@ Geometry::Geometry(std::shared_ptr<Buffer> verts,
                    std::shared_ptr<Buffer> indices,
                    std::shared_ptr<Buffer> normal_buf,
                    std::shared_ptr<Buffer> uv_buf,
-                   uint32_t material_id,
                    uint32_t geom_flags)
-    : vertex_buf(verts),
-      index_buf(indices),
-      normal_buf(normal_buf),
-      uv_buf(uv_buf),
-      material_id(material_id)
+    : vertex_buf(verts), index_buf(indices), normal_buf(normal_buf), uv_buf(uv_buf)
 {
     geom_desc.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
     geom_desc.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_NV;
@@ -83,7 +78,8 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
     mem_info.accelerationStructure = bvh;
 
     VkMemoryRequirements2 mem_reqs = {};
-    vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
+    vkGetAccelerationStructureMemoryRequirements(
+        device->logical_device(), &mem_info, &mem_reqs);
     // Allocate space for the build output
     bvh_mem = device->alloc(mem_reqs.memoryRequirements.size,
                             mem_reqs.memoryRequirements.memoryTypeBits,
@@ -91,7 +87,8 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
 
     // Allocate scratch space for the build
     mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
-    vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
+    vkGetAccelerationStructureMemoryRequirements(
+        device->logical_device(), &mem_info, &mem_reqs);
     scratch = Buffer::device(
         *device, mem_reqs.memoryRequirements.size, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
@@ -100,11 +97,19 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
     bind_mem_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
     bind_mem_info.accelerationStructure = bvh;
     bind_mem_info.memory = bvh_mem;
-    CHECK_VULKAN(vkBindAccelerationStructureMemory(device->logical_device(), 1, &bind_mem_info));
+    CHECK_VULKAN(
+        vkBindAccelerationStructureMemory(device->logical_device(), 1, &bind_mem_info));
 
     // Enqueue the build commands into the command buffer
-    vkCmdBuildAccelerationStructure(
-        cmd_buf, &accel_info, VK_NULL_HANDLE, 0, false, bvh, VK_NULL_HANDLE, scratch->handle(), 0);
+    vkCmdBuildAccelerationStructure(cmd_buf,
+                                    &accel_info,
+                                    VK_NULL_HANDLE,
+                                    0,
+                                    false,
+                                    bvh,
+                                    VK_NULL_HANDLE,
+                                    scratch->handle(),
+                                    0);
 
     // Memory barrier to have subsequent commands wait on build completion
     VkMemoryBarrier barrier = {};
@@ -131,7 +136,8 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
         pool_ci.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
         pool_ci.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_NV;
         pool_ci.queryCount = 1;
-        CHECK_VULKAN(vkCreateQueryPool(device->logical_device(), &pool_ci, nullptr, &query_pool));
+        CHECK_VULKAN(
+            vkCreateQueryPool(device->logical_device(), &pool_ci, nullptr, &query_pool));
 
         vkCmdResetQueryPool(cmd_buf, query_pool, 0, 1);
         vkCmdBeginQuery(cmd_buf, query_pool, 0, 0);
@@ -168,7 +174,8 @@ void TriangleMesh::enqueue_compaction(VkCommandBuffer &cmd_buf)
     mem_info.accelerationStructure = bvh;
 
     VkMemoryRequirements2 mem_reqs = {};
-    vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
+    vkGetAccelerationStructureMemoryRequirements(
+        device->logical_device(), &mem_info, &mem_reqs);
     compacted_size = align_to(compacted_size, mem_reqs.memoryRequirements.alignment);
 
     compacted_mem = device->alloc(compacted_size,
@@ -186,7 +193,8 @@ void TriangleMesh::enqueue_compaction(VkCommandBuffer &cmd_buf)
     bind_mem_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
     bind_mem_info.accelerationStructure = compacted_bvh;
     bind_mem_info.memory = compacted_mem;
-    CHECK_VULKAN(vkBindAccelerationStructureMemory(device->logical_device(), 1, &bind_mem_info));
+    CHECK_VULKAN(
+        vkBindAccelerationStructureMemory(device->logical_device(), 1, &bind_mem_info));
 
     vkCmdCopyAccelerationStructure(
         cmd_buf, compacted_bvh, bvh, VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_NV);
@@ -196,8 +204,8 @@ void TriangleMesh::finalize()
 {
     scratch = nullptr;
 
-    // Compaction is done, so swap the old handle with the compacted one and free the old output
-    // memory
+    // Compaction is done, so swap the old handle with the compacted one and free the old
+    // output memory
     if (build_flags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_NV) {
         vkDestroyQueryPool(device->logical_device(), query_pool, nullptr);
         query_pool = VK_NULL_HANDLE;
@@ -212,8 +220,8 @@ void TriangleMesh::finalize()
         compacted_mem = VK_NULL_HANDLE;
     }
 
-    CHECK_VULKAN(
-        vkGetAccelerationStructureHandle(device->logical_device(), bvh, sizeof(uint64_t), &handle));
+    CHECK_VULKAN(vkGetAccelerationStructureHandle(
+        device->logical_device(), bvh, sizeof(uint64_t), &handle));
 }
 
 TopLevelBVH::TopLevelBVH(Device &dev,
@@ -254,7 +262,8 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
     mem_info.accelerationStructure = bvh;
 
     VkMemoryRequirements2 mem_reqs = {};
-    vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
+    vkGetAccelerationStructureMemoryRequirements(
+        device->logical_device(), &mem_info, &mem_reqs);
     // Allocate space for the build output
     bvh_mem = device->alloc(mem_reqs.memoryRequirements.size,
                             mem_reqs.memoryRequirements.memoryTypeBits,
@@ -262,7 +271,8 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
 
     // Determine how much additional memory we need for the build
     mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV;
-    vkGetAccelerationStructureMemoryRequirements(device->logical_device(), &mem_info, &mem_reqs);
+    vkGetAccelerationStructureMemoryRequirements(
+        device->logical_device(), &mem_info, &mem_reqs);
     scratch = Buffer::device(
         *device, mem_reqs.memoryRequirements.size, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
@@ -271,7 +281,8 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
     bind_mem_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
     bind_mem_info.accelerationStructure = bvh;
     bind_mem_info.memory = bvh_mem;
-    CHECK_VULKAN(vkBindAccelerationStructureMemory(device->logical_device(), 1, &bind_mem_info));
+    CHECK_VULKAN(
+        vkBindAccelerationStructureMemory(device->logical_device(), 1, &bind_mem_info));
 
     vkCmdBuildAccelerationStructure(cmd_buf,
                                     &accel_info,
@@ -306,8 +317,8 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
 void TopLevelBVH::finalize()
 {
     scratch = nullptr;
-    CHECK_VULKAN(
-        vkGetAccelerationStructureHandle(device->logical_device(), bvh, sizeof(uint64_t), &handle));
+    CHECK_VULKAN(vkGetAccelerationStructureHandle(
+        device->logical_device(), bvh, sizeof(uint64_t), &handle));
 }
 
 size_t TopLevelBVH::num_instances() const
@@ -339,7 +350,11 @@ ShaderGroup::ShaderGroup(const std::string &name,
                          const std::string &entry_point,
                          VkShaderStageFlagBits stage,
                          VkRayTracingShaderGroupTypeNV group)
-    : shader_module(shader_module), stage(stage), group(group), name(name), entry_point(entry_point)
+    : shader_module(shader_module),
+      stage(stage),
+      group(group),
+      name(name),
+      entry_point(entry_point)
 {
 }
 
@@ -409,7 +424,8 @@ RTPipeline RTPipelineBuilder::build(Device &device)
         VkRayTracingShaderGroupCreateInfoNV g_ci = {};
         g_ci.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV;
         g_ci.type = sg.group;
-        if (sg.stage == VK_SHADER_STAGE_RAYGEN_BIT_NV || sg.stage == VK_SHADER_STAGE_MISS_BIT_NV) {
+        if (sg.stage == VK_SHADER_STAGE_RAYGEN_BIT_NV ||
+            sg.stage == VK_SHADER_STAGE_MISS_BIT_NV) {
             g_ci.generalShader = shader_info.size();
             g_ci.closestHitShader = VK_SHADER_UNUSED_NV;
             g_ci.anyHitShader = VK_SHADER_UNUSED_NV;
@@ -507,13 +523,15 @@ SBTBuilder &SBTBuilder::add_hitgroup(const ShaderRecord &sr)
 ShaderBindingTable SBTBuilder::build(Device &device)
 {
     ShaderBindingTable sbt;
-    sbt.raygen_stride = device.raytracing_properties().shaderGroupHandleSize + raygen.param_size;
+    sbt.raygen_stride =
+        device.raytracing_properties().shaderGroupHandleSize + raygen.param_size;
     sbt.miss_start =
         align_to(sbt.raygen_stride, device.raytracing_properties().shaderGroupBaseAlignment);
 
     for (const auto &m : miss_records) {
-        sbt.miss_stride = std::max(
-            sbt.miss_stride, device.raytracing_properties().shaderGroupHandleSize + m.param_size);
+        sbt.miss_stride =
+            std::max(sbt.miss_stride,
+                     device.raytracing_properties().shaderGroupHandleSize + m.param_size);
     }
 
     sbt.hitgroup_start = align_to(sbt.miss_start + sbt.miss_stride + miss_records.size(),
@@ -524,11 +542,14 @@ ShaderBindingTable SBTBuilder::build(Device &device)
                      device.raytracing_properties().shaderGroupHandleSize + h.param_size);
     }
 
-    const size_t sbt_size = align_to(sbt.hitgroup_start + sbt.hitgroup_stride * hitgroups.size(),
-                                     device.raytracing_properties().shaderGroupBaseAlignment);
+    const size_t sbt_size =
+        align_to(sbt.hitgroup_start + sbt.hitgroup_stride * hitgroups.size(),
+                 device.raytracing_properties().shaderGroupBaseAlignment);
     sbt.upload_sbt = Buffer::host(device, sbt_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    sbt.sbt = Buffer::host(
-        device, sbt_size, VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    sbt.sbt =
+        Buffer::host(device,
+                     sbt_size,
+                     VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
     sbt.map_sbt();
 
@@ -541,7 +562,8 @@ ShaderBindingTable SBTBuilder::build(Device &device)
     offset = sbt.miss_start;
     for (const auto &m : miss_records) {
         // Copy the shader identifier and record where to write the parameters
-        std::memcpy(sbt.sbt_mapping + offset, pipeline->shader_ident(m.shader_name), ident_size);
+        std::memcpy(
+            sbt.sbt_mapping + offset, pipeline->shader_ident(m.shader_name), ident_size);
         sbt.sbt_param_offsets[m.name] = offset + ident_size;
         offset += sbt.miss_stride;
     }
@@ -549,7 +571,8 @@ ShaderBindingTable SBTBuilder::build(Device &device)
     offset = sbt.hitgroup_start;
     for (const auto &hg : hitgroups) {
         // Copy the shader identifier and record where to write the parameters
-        std::memcpy(sbt.sbt_mapping + offset, pipeline->shader_ident(hg.shader_name), ident_size);
+        std::memcpy(
+            sbt.sbt_mapping + offset, pipeline->shader_ident(hg.shader_name), ident_size);
         sbt.sbt_param_offsets[hg.name] = offset + ident_size;
         offset += sbt.hitgroup_stride;
     }

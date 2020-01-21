@@ -24,7 +24,6 @@ struct GeometryInstance {
 struct Geometry {
     std::shared_ptr<Buffer> vertex_buf, index_buf, normal_buf, uv_buf;
     VkGeometryNV geom_desc = {};
-    uint32_t material_id;
 
     Geometry() = default;
 
@@ -32,7 +31,6 @@ struct Geometry {
              std::shared_ptr<Buffer> index_buf,
              std::shared_ptr<Buffer> normal_buf,
              std::shared_ptr<Buffer> uv_buf,
-             uint32_t material_id,
              uint32_t geom_flags = VK_GEOMETRY_OPAQUE_BIT_NV);
 };
 
@@ -40,7 +38,8 @@ class TriangleMesh {
     Device *device = nullptr;
     std::vector<VkGeometryNV> geom_descs;
 
-    VkBuildAccelerationStructureFlagBitsNV build_flags = (VkBuildAccelerationStructureFlagBitsNV)0;
+    VkBuildAccelerationStructureFlagBitsNV build_flags =
+        (VkBuildAccelerationStructureFlagBitsNV)0;
     VkAccelerationStructureInfoNV accel_info = {};
 
     VkDeviceMemory bvh_mem, compacted_mem;
@@ -55,10 +54,11 @@ public:
 
     // TODO: Allow other vertex and index formats? Right now this
     // assumes vec3f verts and uint3 indices
-    TriangleMesh(Device &dev,
-                 std::vector<Geometry> geometries,
-                 uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV |
-                                        VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_NV);
+    TriangleMesh(
+        Device &dev,
+        std::vector<Geometry> geometries,
+        uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV |
+                               VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_NV);
 
     TriangleMesh() = default;
     ~TriangleMesh();
@@ -74,7 +74,8 @@ public:
     void enqueue_build(VkCommandBuffer &cmd_buf);
 
     /* Enqueue the BVH compaction copy if the BVH was built with compaction enabled.
-     * The BVH build must have been enqueued and completed so that the post build info is available
+     * The BVH build must have been enqueued and completed so that the post build info is
+     * available
      * TODO: query compacted size via vkCmdWriteAccelerationStructuresPropertiesNV
      */
     void enqueue_compaction(VkCommandBuffer &cmd_buf);
@@ -88,7 +89,8 @@ public:
 
 class TopLevelBVH {
     Device *device = nullptr;
-    VkBuildAccelerationStructureFlagBitsNV build_flags = (VkBuildAccelerationStructureFlagBitsNV)0;
+    VkBuildAccelerationStructureFlagBitsNV build_flags =
+        (VkBuildAccelerationStructureFlagBitsNV)0;
     VkAccelerationStructureInfoNV accel_info = {};
 
     VkDeviceMemory bvh_mem = VK_NULL_HANDLE;
@@ -102,10 +104,11 @@ public:
 
     // TODO: Re-check on compacting the top-level BVH in DXR, it seems to be do-able
     // in OptiX, maybe DXR and Vulkan too?
-    TopLevelBVH(Device &dev,
-                std::shared_ptr<Buffer> &instance_buf,
-                const std::vector<Instance> &instances,
-                uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
+    TopLevelBVH(
+        Device &dev,
+        std::shared_ptr<Buffer> &instance_buf,
+        const std::vector<Instance> &instances,
+        uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
 
     TopLevelBVH() = default;
     ~TopLevelBVH();
@@ -226,9 +229,9 @@ public:
 
     SBTBuilder &add_miss(const ShaderRecord &sr);
 
-    // TODO: Maybe similar to DXR where we take the per-ray type hit groups? Or should I change the
-    // DXR one to work more like this? How would the shader indexing work out easiest if I start
-    // mixing multiple geometries into a bottom level BVH?
+    // TODO: Maybe similar to DXR where we take the per-ray type hit groups? Or should I change
+    // the DXR one to work more like this? How would the shader indexing work out easiest if I
+    // start mixing multiple geometries into a bottom level BVH?
     SBTBuilder &add_hitgroup(const ShaderRecord &sr);
 
     ShaderBindingTable build(Device &device);

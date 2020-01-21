@@ -4,6 +4,7 @@
 #include "pcg_rng.glsl"
 #include "lights.glsl"
 #include "disney_bsdf.glsl"
+#include "util/texture_channel_mask.h"
 
 struct MaterialParams {
     pack_float3 base_color;
@@ -22,9 +23,6 @@ struct MaterialParams {
     float ior;
     float specular_transmission;
     vec2 pad;
-
-    int color_tex_id;
-    pack_uint3 tex_pad;
 };
 
 layout(binding = 0, set = 0) uniform accelerationStructureNV scene;
@@ -60,24 +58,39 @@ layout(shaderRecordNV) buffer SBT {
     uint32_t num_lights;
 };
 
-void unpack_material(inout DisneyMaterial mat, uint id, vec2 uv_coords) {
+float textured_scalar_param(const float x, in const vec2 uv) {
+    const uint32_t mask = floatBitsToUint(x);
+    if (IS_TEXTURED_PARAM(mask) != 0) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        return texture(textures[nonuniformEXT(tex_id)], uv)[channel];
+    }
+    return x;
+}
+
+void unpack_material(inout DisneyMaterial mat, uint id, vec2 uv) {
 	MaterialParams p = material_params[nonuniformEXT(id)];
-	if (p.color_tex_id < 0) {
+
+    const uint32_t mask = floatBitsToUint(p.base_color.x);
+    if (IS_TEXTURED_PARAM(mask) != 0) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        mat.base_color = texture(textures[nonuniformEXT(tex_id)], uv).rgb;
+    } else {
 		mat.base_color = unpack_float3(p.base_color);
-	} else {
-		mat.base_color = texture(textures[nonuniformEXT(p.color_tex_id)], uv_coords).xyz;
 	}
-	mat.metallic = p.metallic;
-	mat.specular = p.specular;
-	mat.roughness = p.roughness;
-	mat.specular_tint = p.specular_tint;
-	mat.anisotropy = p.anisotropy;
-	mat.sheen = p.sheen;
-	mat.sheen_tint = p.sheen_tint;
-	mat.clearcoat = p.clearcoat;
-	mat.clearcoat_gloss = p.clearcoat_gloss;
-	mat.ior = p.ior;
-	mat.specular_transmission = p.specular_transmission;
+
+    mat.metallic = textured_scalar_param(p.metallic, uv);
+    mat.specular = textured_scalar_param(p.specular, uv);
+    mat.roughness = textured_scalar_param(p.roughness, uv);
+    mat.specular_tint = textured_scalar_param(p.specular_tint, uv);
+    mat.anisotropy = textured_scalar_param(p.anisotropy, uv);
+    mat.sheen = textured_scalar_param(p.sheen, uv);
+    mat.sheen_tint = textured_scalar_param(p.sheen_tint, uv);
+    mat.clearcoat = textured_scalar_param(p.clearcoat, uv);
+    mat.clearcoat_gloss = textured_scalar_param(p.clearcoat_gloss, uv);
+    mat.ior = textured_scalar_param(p.ior, uv);
+    mat.specular_transmission = textured_scalar_param(p.specular_transmission, uv);
 }
 
 vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in const vec3 n,
@@ -85,7 +98,7 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 {
 	vec3 illum = vec3(0.f);
 
-	uint32_t light_id = uint32_t(pcg32_randomf(rng)) * num_lights;
+	uint32_t light_id = uint32_t(pcg32_randomf(rng) * num_lights);
 	light_id = min(light_id, num_lights - 1);
 	QuadLight light = lights[nonuniformEXT(light_id)];
 

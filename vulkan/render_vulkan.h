@@ -40,7 +40,6 @@ struct RenderVulkan : RenderBackend {
     std::vector<std::vector<GeomBufIndices>> buf_indices;
     size_t total_geom = 0;
 
-    std::vector<uint32_t> material_ids;
     std::vector<std::shared_ptr<vkrt::Texture2D>> textures;
     VkSampler sampler = VK_NULL_HANDLE;
 

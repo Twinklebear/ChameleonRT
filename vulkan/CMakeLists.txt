@@ -10,7 +10,10 @@ endif()
 add_spirv_embed_library(spv_shaders raygen.rgen miss.rmiss hit.rchit
     occlusion_miss.rmiss
 	COMPILE_OPTIONS -O
-    COMPILE_DEFINITIONS ${GLSL_COMPILE_DEFNS})
+    INCLUDE_DIRECTORIES
+        ${PROJECT_SOURCE_DIR}
+    COMPILE_DEFINITIONS
+        ${GLSL_COMPILE_DEFNS})
 
 add_library(render_vulkan render_vulkan.cpp vulkan_utils.cpp vulkanrt_utils.cpp)
 

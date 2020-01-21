@@ -98,10 +98,10 @@ function(add_spirv_embed_library)
     set(options INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS)
     cmake_parse_arguments(PARSE_ARGV 1 SPIRV "" "" "${options}")
 
-    set(GLSL_INCLUDE_DIRS "")
+    set(GLSL_INCLUDE_DIRECTORIES "")
     foreach (inc ${SPIRV_INCLUDE_DIRECTORIES})
         file(TO_NATIVE_PATH "${inc}" native_path)
-        list(APPEND GLSL_INCLUDE_DIRS "-I${native_path}")
+        list(APPEND GLSL_INCLUDE_DIRECTORIES "-I${native_path}")
     endforeach()
 
     set(GLSL_COMPILE_DEFNS "")
