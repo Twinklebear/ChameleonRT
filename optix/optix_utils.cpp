@@ -57,7 +57,9 @@ void Buffer::clear()
     CHECK_CUDA(cudaMemset(ptr, 0, buf_size));
 }
 
-Texture2D::Texture2D(glm::uvec2 dims, cudaChannelFormatDesc channel_format, ColorSpace color_space)
+Texture2D::Texture2D(glm::uvec2 dims,
+                     cudaChannelFormatDesc channel_format,
+                     ColorSpace color_space)
     : tdims(dims), channel_format(channel_format)
 {
     CHECK_CUDA(cudaMallocArray(&data, &channel_format, dims.x, dims.y));
@@ -119,7 +121,8 @@ void Texture2D::upload(const uint8_t *buf)
     const size_t pixel_size =
         (channel_format.x + channel_format.y + channel_format.z + channel_format.w) / 8;
     const size_t pitch = pixel_size * tdims.x;
-    CHECK_CUDA(cudaMemcpy2DToArray(data, 0, 0, buf, pitch, pitch, tdims.y, cudaMemcpyHostToDevice));
+    CHECK_CUDA(
+        cudaMemcpy2DToArray(data, 0, 0, buf, pitch, pitch, tdims.y, cudaMemcpyHostToDevice));
 }
 
 cudaTextureObject_t Texture2D::handle()
@@ -136,13 +139,11 @@ Geometry::Geometry(std::shared_ptr<Buffer> vertex_buf,
                    std::shared_ptr<Buffer> index_buf,
                    std::shared_ptr<Buffer> normal_buf,
                    std::shared_ptr<Buffer> uv_buf,
-                   uint32_t material_id,
                    uint32_t geom_flags)
     : vertex_buf(vertex_buf),
       index_buf(index_buf),
       normal_buf(normal_buf),
       uv_buf(uv_buf),
-      material_id(material_id),
       geom_flags(geom_flags),
       vertex_buf_ptr(vertex_buf->device_ptr())
 {
@@ -228,8 +229,8 @@ void TriangleMesh::enqueue_compaction(OptixDeviceContext &device, CUstream &stre
 #endif
     bvh = optix::Buffer(compacted_size);
 
-    CHECK_OPTIX(
-        optixAccelCompact(device, stream, as_handle, bvh.device_ptr(), bvh.size(), &as_handle));
+    CHECK_OPTIX(optixAccelCompact(
+        device, stream, as_handle, bvh.device_ptr(), bvh.size(), &as_handle));
 }
 
 void TriangleMesh::finalize()
@@ -306,8 +307,8 @@ void TopLevelBVH::enqueue_compaction(OptixDeviceContext &device, CUstream &strea
 #endif
     bvh = optix::Buffer(compacted_size);
 
-    CHECK_OPTIX(
-        optixAccelCompact(device, stream, as_handle, bvh.device_ptr(), bvh.size(), &as_handle));
+    CHECK_OPTIX(optixAccelCompact(
+        device, stream, as_handle, bvh.device_ptr(), bvh.size(), &as_handle));
 }
 
 void TopLevelBVH::finalize()
@@ -357,7 +358,8 @@ Module::~Module()
     optixModuleDestroy(module);
 }
 
-OptixProgramGroup Module::create_program(OptixDeviceContext &device, OptixProgramGroupDesc &desc)
+OptixProgramGroup Module::create_program(OptixDeviceContext &device,
+                                         OptixProgramGroupDesc &desc)
 {
     OptixProgramGroupOptions opts = {};
     OptixProgramGroup prog;
@@ -372,7 +374,8 @@ OptixProgramGroup Module::create_program(OptixDeviceContext &device, OptixProgra
     return prog;
 }
 
-OptixProgramGroup Module::create_raygen(OptixDeviceContext &device, const std::string &function)
+OptixProgramGroup Module::create_raygen(OptixDeviceContext &device,
+                                        const std::string &function)
 {
     OptixProgramGroupDesc desc = {};
     desc.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
@@ -437,7 +440,9 @@ OptixPipeline compile_pipeline(OptixDeviceContext &device,
     return pipeline;
 }
 
-ShaderRecord::ShaderRecord(const std::string &name, OptixProgramGroup program, size_t param_size)
+ShaderRecord::ShaderRecord(const std::string &name,
+                           OptixProgramGroup program,
+                           size_t param_size)
     : name(name), program(program), param_size(param_size)
 {
 }

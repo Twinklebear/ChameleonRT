@@ -68,6 +68,16 @@ __device__ float3 refract_ray(const float3 &i, const float3 &n, float eta) {
 	return eta * i - (eta * n_dot_i + sqrt(k)) * n;
 }
 
+__device__ float component(const float4 &v, const uint32_t i) {
+    switch (i) {
+    case 0: return v.x;
+    case 1: return v.y;
+    case 2: return v.z;
+    case 3: return v.w;
+    default: return CUDART_NAN_F;
+    }
+}
+
 __device__ void* unpack_ptr(uint32_t hi, uint32_t lo) {
 	const uint64_t val = static_cast<uint64_t>(hi) << 32 | lo;
 	return reinterpret_cast<void*>(val);

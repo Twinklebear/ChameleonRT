@@ -122,7 +122,6 @@ public:
 
 struct Geometry {
     std::shared_ptr<Buffer> vertex_buf, index_buf, normal_buf, uv_buf;
-    uint32_t material_id = 0;
     uint32_t geom_flags = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
     CUdeviceptr vertex_buf_ptr;
 
@@ -134,14 +133,14 @@ struct Geometry {
              std::shared_ptr<Buffer> index_buf,
              std::shared_ptr<Buffer> normal_buf,
              std::shared_ptr<Buffer> uv_buf,
-             uint32_t material_id,
              uint32_t geom_flags = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT);
 
     OptixBuildInput geom_desc() const;
 };
 
 class TriangleMesh {
-    uint32_t build_flags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+    uint32_t build_flags =
+        OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
     std::vector<OptixBuildInput> build_inputs;
 
     Buffer build_output, scratch, post_build_info, bvh;

@@ -110,8 +110,7 @@ void Scene::load_obj(const std::string &file)
         std::map<glm::uvec3, uint32_t, VertIdxLess> index_mapping;
         Geometry geom;
         // Note: not supporting per-primitive materials
-        geom.material_id = obj_mesh.material_ids[0];
-        material_ids.push_back(geom.material_id);
+        material_ids.push_back(obj_mesh.material_ids[0]);
 
         auto minmax_matid =
             std::minmax_element(obj_mesh.material_ids.begin(), obj_mesh.material_ids.end());
@@ -234,12 +233,14 @@ void Scene::load_gltf(const std::string &fname)
 
     flatten_gltf(model);
 
+    std::vector<std::vector<uint32_t>> mesh_material_ids;
     // Load the meshes
     for (auto &m : model.meshes) {
         Mesh mesh;
+        std::vector<uint32_t> material_ids;
         for (auto &p : m.primitives) {
             Geometry geom;
-            geom.material_id = p.material;
+            material_ids.push_back(p.material);
 
             if (p.mode != TINYGLTF_MODE_TRIANGLES) {
                 std::cout << "Unsupported primitive mode! File must contain only triangles\n";
@@ -295,6 +296,7 @@ void Scene::load_gltf(const std::string &fname)
             }
             mesh.geometries.push_back(geom);
         }
+        mesh_material_ids.push_back(material_ids);
         meshes.push_back(mesh);
     }
 
@@ -347,12 +349,7 @@ void Scene::load_gltf(const std::string &fname)
         const tinygltf::Node &n = model.nodes[nid];
         if (n.mesh != -1) {
             const glm::mat4 transform = read_node_transform(n);
-            std::vector<uint32_t> material_ids;
-            std::transform(meshes[n.mesh].geometries.begin(),
-                           meshes[n.mesh].geometries.end(),
-                           std::back_inserter(material_ids),
-                           [](const Geometry &g) { return g.material_id; });
-            instances.emplace_back(transform, n.mesh, material_ids);
+            instances.emplace_back(transform, n.mesh, mesh_material_ids[n.mesh]);
         }
     }
 
@@ -439,7 +436,7 @@ void Scene::load_crts(const std::string &file)
         stbi_set_flip_vertically_on_load(1);
         int x, y, n;
         uint8_t *img_data =
-            stbi_load_from_memory(accessor.begin(), accessor.size(), &x, &y, &n, 0);
+            stbi_load_from_memory(accessor.begin(), accessor.size(), &x, &y, &n, 4);
         stbi_set_flip_vertically_on_load(0);
         if (!img_data) {
             std::cout << "Failed to load " << img["name"] << " from view\n";
@@ -451,7 +448,7 @@ void Scene::load_crts(const std::string &file)
             color_space = LINEAR;
         }
 
-        textures.emplace_back(img_data, x, y, n, img["name"], color_space);
+        textures.emplace_back(img_data, x, y, 4, img["name"], color_space);
         stbi_image_free(img_data);
     }
 
@@ -603,10 +600,12 @@ void Scene::load_pbrt(const std::string &file)
         // Check if this object has already been loaded for the instance
         auto fnd = pbrt_objects.find(inst->object->name);
         size_t mesh_id = -1;
+        std::vector<uint32_t> material_ids;
         if (fnd == pbrt_objects.end()) {
             std::cout << "Loading newly encountered instanced object " << inst->object->name
                       << "\n";
 
+            // TODO: materials for pbrt
             std::vector<Geometry> geometries;
             for (const auto &g : inst->object->shapes) {
                 if (pbrt::TriangleMesh::SP mesh =
@@ -670,11 +669,6 @@ void Scene::load_pbrt(const std::string &file)
         transform[2] = glm::vec4(inst->xfm.l.vz.x, inst->xfm.l.vz.y, inst->xfm.l.vz.z, 0.f);
         transform[3] = glm::vec4(inst->xfm.p.x, inst->xfm.p.y, inst->xfm.p.z, 1.f);
 
-        std::vector<uint32_t> material_ids;
-        std::transform(meshes[mesh_id].geometries.begin(),
-                       meshes[mesh_id].geometries.end(),
-                       std::back_inserter(material_ids),
-                       [](const Geometry &g) { return g.material_id; });
         instances.emplace_back(transform, mesh_id, material_ids);
     }
 
@@ -705,13 +699,6 @@ void Scene::validate_materials()
         std::cout << "No materials assigned for some objects, generating a default\n";
         const uint32_t default_mat_id = materials.size();
         materials.push_back(DisneyMaterial());
-        for (auto &m : meshes) {
-            for (auto &g : m.geometries) {
-                if (g.material_id == uint32_t(-1)) {
-                    g.material_id = default_mat_id;
-                }
-            }
-        }
         for (auto &i : instances) {
             for (auto &m : i.material_ids) {
                 if (m == -1) {

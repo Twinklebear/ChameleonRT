@@ -117,16 +117,13 @@ void RenderOptiX::set_scene(const Scene &scene)
 
             std::shared_ptr<optix::Buffer> normals = nullptr;
             if (!geom.normals.empty()) {
-                normals = std::make_shared<optix::Buffer>(geom.normals.size() * sizeof(glm::vec3));
+                normals =
+                    std::make_shared<optix::Buffer>(geom.normals.size() * sizeof(glm::vec3));
                 normals->upload(geom.normals);
             }
 
-            geometries.emplace_back(vertices,
-                                    indices,
-                                    normals,
-                                    uvs,
-                                    geom.material_id,
-                                    OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT);
+            geometries.emplace_back(
+                vertices, indices, normals, uvs, OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT);
         }
 
         // Build the bottom-level acceleration structure
@@ -179,8 +176,8 @@ void RenderOptiX::set_scene(const Scene &scene)
         std::make_shared<optix::Buffer>(instances.size() * sizeof(OptixInstance));
     instance_buffer->upload(instances);
 
-    scene_bvh =
-        optix::TopLevelBVH(instance_buffer, scene.instances, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
+    scene_bvh = optix::TopLevelBVH(
+        instance_buffer, scene.instances, OPTIX_BUILD_FLAG_ALLOW_COMPACTION);
 
     scene_bvh.enqueue_build(device, cuda_stream);
     sync_gpu();
@@ -190,12 +187,17 @@ void RenderOptiX::set_scene(const Scene &scene)
 
     scene_bvh.finalize();
 
+    device_texture_list = optix::Buffer(scene.textures.size() * sizeof(cudaTextureObject_t));
+
     const cudaChannelFormatDesc channel_format =
         cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
+    std::vector<cudaTextureObject_t> texture_handles;
     for (const auto &t : scene.textures) {
         textures.emplace_back(glm::uvec2(t.width, t.height), channel_format, t.color_space);
         textures.back().upload(t.img.data());
+        texture_handles.push_back(textures.back().handle());
     }
+    device_texture_list.upload(texture_handles);
 
     std::vector<MaterialParams> material_params;
     material_params.reserve(scene.materials.size());
@@ -214,13 +216,6 @@ void RenderOptiX::set_scene(const Scene &scene)
         p.clearcoat_gloss = m.clearcoat_gloss;
         p.ior = m.ior;
         p.specular_transmission = m.specular_transmission;
-
-        if (m.color_tex_id != -1) {
-            p.has_color_tex = 1;
-            p.color_texture = textures[m.color_tex_id].handle();
-        } else {
-            p.has_color_tex = 0;
-        }
 
         material_params.push_back(p);
     }
@@ -256,7 +251,8 @@ void RenderOptiX::build_raytracing_pipeline()
     // Now build the program pipeline
 
     // Make the raygen program
-    OptixProgramGroup raygen_prog = module.create_raygen(device, "__raygen__perspective_camera");
+    OptixProgramGroup raygen_prog =
+        module.create_raygen(device, "__raygen__perspective_camera");
 
     // Make the miss shader programs, one for each ray type
     std::array<OptixProgramGroup, 2> miss_progs = {
@@ -296,7 +292,8 @@ void RenderOptiX::build_raytracing_pipeline()
     shader_table = shader_table_builder.build();
 
     {
-        RayGenParams &params = shader_table.get_shader_params<RayGenParams>("perspective_camera");
+        RayGenParams &params =
+            shader_table.get_shader_params<RayGenParams>("perspective_camera");
         params.materials = mat_params.device_ptr();
         params.lights = light_params.device_ptr();
         params.num_lights = light_params.size() / sizeof(QuadLight);
@@ -311,7 +308,7 @@ void RenderOptiX::build_raytracing_pipeline()
 
             params.vertex_buffer = geom.vertex_buf->device_ptr();
             params.index_buffer = geom.index_buf->device_ptr();
-            params.material_id = geom.material_id;
+            params.material_id = inst.material_ids[j];
 
             if (geom.uv_buf) {
                 params.uv_buffer = geom.uv_buf->device_ptr();
@@ -407,6 +404,7 @@ void RenderOptiX::update_view_parameters(const glm::vec3 &pos,
     params.frame_id = frame_id;
     params.framebuffer = framebuffer.device_ptr();
     params.accum_buffer = accum_buffer.device_ptr();
+    params.textures = device_texture_list.device_ptr();
 #ifdef REPORT_RAY_STATS
     params.ray_stats_buffer = ray_stats_buffer.device_ptr();
 #endif

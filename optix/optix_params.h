@@ -21,9 +21,6 @@ struct MaterialParams {
     float ior;
     float specular_transmission;
     float pad1, pad2;
-
-    int has_color_tex;
-    cudaTextureObject_t color_texture;
 };
 
 struct LaunchParams {
@@ -44,9 +41,11 @@ struct LaunchParams {
 #ifdef __CUDA_ARCH__
     uchar4 *framebuffer;
     float4 *accum_buffer;
+    cudaTextureObject_t *textures;
 #else
     CUdeviceptr framebuffer;
     CUdeviceptr accum_buffer;
+    CUdeviceptr textures;
 #endif
 
 #ifdef REPORT_RAY_STATS

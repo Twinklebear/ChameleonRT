@@ -8,12 +8,6 @@ struct Geometry {
     std::vector<glm::vec2> uvs;
     std::vector<glm::uvec3> indices;
 
-    // TODO: should separate the material ID from the geometric data itself,
-    // so one geometry can be re-used in different instances w/ different materials
-    // TODO: This should be removed but need to update the GPU backends to use the
-    // new per-instance materials method
-    uint32_t material_id = -1;
-
     size_t num_tris() const;
 };
 

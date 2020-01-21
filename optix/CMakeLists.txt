@@ -11,8 +11,11 @@ if (REPORT_RAY_STATS)
 endif()
 
 add_ptx_embed_library(optix_kernels render_optix.cu
-    INCLUDE_DIRECTORIES ${OptiX_INCLUDE_DIR}
-    COMPILE_DEFINITIONS ${CUDA_COMPILE_DEFNS})
+    INCLUDE_DIRECTORIES
+        ${OptiX_INCLUDE_DIR} 
+        ${PROJECT_SOURCE_DIR}
+    COMPILE_DEFINITIONS
+        ${CUDA_COMPILE_DEFNS})
 
 add_library(render_optix render_optix.cpp optix_utils.cpp)
 

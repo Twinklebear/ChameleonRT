@@ -3,6 +3,7 @@
 #include "disney_bsdf.h"
 #include "lights.h"
 #include "optix_params.h"
+#include "util/texture_channel_mask.h"
 
 extern "C" {
     __constant__ LaunchParams launch_params;
@@ -26,24 +27,36 @@ __device__ RayPayload make_ray_payload() {
     return p;
 }
 
+__device__ float textured_scalar_param(const float x, const float2 &uv) {
+    const uint32_t mask = __float_as_int(x);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        return component(tex2D<float4>(launch_params.textures[tex_id], uv.x, uv.y), channel);
+    }
+    return x;
+}
+
 __device__ void unpack_material(const MaterialParams &p, float2 uv, DisneyMaterial &mat) {
-    if (p.has_color_tex) {
-        mat.base_color = make_float3(tex2D<float4>(p.color_texture, uv.x, uv.y));
+    uint32_t mask = __float_as_int(p.base_color.x);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        mat.base_color = make_float3(tex2D<float4>(launch_params.textures[tex_id], uv.x, uv.y));
     } else {
         mat.base_color = p.base_color;
     }
 
-    mat.metallic = p.metallic;
-    mat.specular = p.specular;
-    mat.roughness = p.roughness;
-    mat.specular_tint = p.specular_tint;
-    mat.anisotropy = p.anisotropy;
-    mat.sheen = p.sheen;
-    mat.sheen_tint = p.sheen_tint;
-    mat.clearcoat = p.clearcoat;
-    mat.clearcoat_gloss = p.clearcoat_gloss;
-    mat.ior = p.ior;
-    mat.specular_transmission = p.specular_transmission;
+    mat.metallic = textured_scalar_param(p.metallic, uv);
+    mat.specular = textured_scalar_param(p.specular, uv);
+    mat.roughness = textured_scalar_param(p.roughness, uv);
+    mat.specular_tint = textured_scalar_param(p.specular_tint, uv);
+    mat.anisotropy = textured_scalar_param(p.anisotropy, uv);
+    mat.sheen = textured_scalar_param(p.sheen, uv);
+    mat.sheen_tint = textured_scalar_param(p.sheen_tint, uv);
+    mat.clearcoat = textured_scalar_param(p.clearcoat, uv);
+    mat.clearcoat_gloss = textured_scalar_param(p.clearcoat_gloss, uv);
+    mat.ior = textured_scalar_param(p.ior, uv);
+    mat.specular_transmission = textured_scalar_param(p.specular_transmission, uv);
 }
 
 __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &hit_p,
