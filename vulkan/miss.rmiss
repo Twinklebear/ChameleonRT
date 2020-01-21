@@ -8,7 +8,7 @@ void main() {
     payload.dist = -1;
 
 	vec3 dir = gl_WorldRayDirectionNV;
-	float u = (1.f + atan(-dir.z, dir.x) * M_1_PI) * 0.5f;
+    float u = (1.f + atan(dir.x, -dir.z) * M_1_PI) * 0.5f;
 	float v = acos(dir.y) * M_1_PI;
 
 	int check_x = int(u * 10.f);
