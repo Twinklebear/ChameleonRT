@@ -98,7 +98,9 @@ If CMake doesn't find your install of Vulkan you can tell it where it's
 installed with `-DVULKAN_SDK`. This path should be to the specific version
 of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.1.114.0/`
 
-### OSPRay
+### OSPRay [STALE]
+
+The OSPRay backend is stale until I get it updated for the official 2.0 release of OSPRay.
 
 Dependencies: [OSPRay 2.0](http://www.ospray.org/).
 
