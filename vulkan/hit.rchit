@@ -46,7 +46,6 @@ void main() {
             + attrib.x * uvb + attrib.y * uvc;
     }
 
-    // TODO: Seems like the transformed normal isn't quite right?
     mat3 inv_transp = transpose(mat3(gl_WorldToObjectNV));
     payload.normal = normalize(inv_transp * n);
     payload.dist = gl_RayTmaxNV;
