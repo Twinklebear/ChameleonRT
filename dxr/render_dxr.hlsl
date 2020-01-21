@@ -2,6 +2,7 @@
 #include "pcg_rng.hlsl"
 #include "disney_bsdf.hlsl"
 #include "lights.hlsl"
+#include "util/texture_channel_mask.h"
 
 struct MaterialParams {
     float3 base_color;
@@ -20,9 +21,6 @@ struct MaterialParams {
     float ior;
     float specular_transmission;
     float2 pad;
-
-    int color_tex_id;
-    int3 tex_pad;
 };
 
 // Raytracing output texture, accessed as a UAV
@@ -58,26 +56,41 @@ StructuredBuffer<QuadLight> lights : register(t2);
 Texture2D textures[] : register(t3);
 SamplerState tex_sampler : register(s0);
 
-void unpack_material(inout DisneyMaterial mat, uint id, float2 uv_coords) {
+float textured_scalar_param(const float x, in const float2 uv) {
+    const uint32_t mask = asuint(x);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
+        return textures[NonUniformResourceIndex(tex_id)]
+            .SampleLevel(tex_sampler, uv, 0)[channel];
+    }
+    return x;
+}
+
+
+void unpack_material(inout DisneyMaterial mat, uint id, float2 uv) {
     MaterialParams p = material_params[NonUniformResourceIndex(id)];
-    if (p.color_tex_id < 0) {
-        mat.base_color = p.base_color;
+
+    const uint32_t mask = asuint(p.base_color.x);
+    if (IS_TEXTURED_PARAM(mask)) {
+        const uint32_t tex_id = GET_TEXTURE_ID(mask);
+        mat.base_color = textures[NonUniformResourceIndex(tex_id)]
+            .SampleLevel(tex_sampler, uv, 0);
     } else {
-        mat.base_color = textures[NonUniformResourceIndex(p.color_tex_id)]
-            .SampleLevel(tex_sampler, uv_coords, 0).rgb;
+        mat.base_color = p.base_color;
     }
 
-    mat.metallic = p.metallic;
-    mat.specular = p.specular;
-    mat.roughness = p.roughness;
-    mat.specular_tint = p.specular_tint;
-    mat.anisotropy = p.anisotropy;
-    mat.sheen = p.sheen;
-    mat.sheen_tint = p.sheen_tint;
-    mat.clearcoat = p.clearcoat;
-    mat.clearcoat_gloss = p.clearcoat_gloss;
-    mat.ior = p.ior;
-    mat.specular_transmission = p.specular_transmission;
+    mat.metallic = textured_scalar_param(p.metallic, uv);
+    mat.specular = textured_scalar_param(p.specular, uv);
+    mat.roughness = textured_scalar_param(p.roughness, uv);
+    mat.specular_tint = textured_scalar_param(p.specular_tint, uv);
+    mat.anisotropy = textured_scalar_param(p.anisotropy, uv);
+    mat.sheen = textured_scalar_param(p.sheen, uv);
+    mat.sheen_tint = textured_scalar_param(p.sheen_tint, uv);
+    mat.clearcoat = textured_scalar_param(p.clearcoat, uv);
+    mat.clearcoat_gloss = textured_scalar_param(p.clearcoat_gloss, uv);
+    mat.ior = textured_scalar_param(p.ior, uv);
+    mat.specular_transmission = textured_scalar_param(p.specular_transmission, uv);
 }
 
 float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, in const float3 n,

@@ -10,8 +10,11 @@ endif()
 add_dxil_embed_library(dxr_shaders render_dxr.hlsl util.hlsl
 	disney_bsdf.hlsl pcg_rng.hlsl
 	COMPILE_OPTIONS -O3
-	COMPILE_DEFINITIONS ${HLSL_COMPILE_DEFNS}
-	INCLUDE_DIRECTORIES ${CMAKE_CURRENT_LIST_DIR})
+	COMPILE_DEFINITIONS
+        ${HLSL_COMPILE_DEFNS}
+	INCLUDE_DIRECTORIES
+        ${CMAKE_CURRENT_LIST_DIR}
+        ${PROJECT_SOURCE_DIR})
 
 add_library(render_dxr render_dxr.cpp dx12_utils.cpp dxr_utils.cpp)
 

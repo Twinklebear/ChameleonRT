@@ -57,13 +57,21 @@ class DescriptorHeapBuilder {
     uint32_t num_descriptors();
 
 public:
-    // TODO: We can autocompute the table offsets based on the order that add_* is called if we use
-    // the root sig to also guide the desc. heap write
+    // TODO: We can autocompute the table offsets based on the order that add_* is called if we
+    // use the root sig to also guide the desc. heap write
     // TODO: Each range can be assigned a name
-    DescriptorHeapBuilder &add_srv_range(uint32_t size, uint32_t base_register, uint32_t space);
-    DescriptorHeapBuilder &add_uav_range(uint32_t size, uint32_t base_register, uint32_t space);
-    DescriptorHeapBuilder &add_cbv_range(uint32_t size, uint32_t base_register, uint32_t space);
-    DescriptorHeapBuilder &add_sampler_range(uint32_t size, uint32_t base_register, uint32_t space);
+    DescriptorHeapBuilder &add_srv_range(uint32_t size,
+                                         uint32_t base_register,
+                                         uint32_t space);
+    DescriptorHeapBuilder &add_uav_range(uint32_t size,
+                                         uint32_t base_register,
+                                         uint32_t space);
+    DescriptorHeapBuilder &add_cbv_range(uint32_t size,
+                                         uint32_t base_register,
+                                         uint32_t space);
+    DescriptorHeapBuilder &add_sampler_range(uint32_t size,
+                                             uint32_t base_register,
+                                             uint32_t space);
 
     DescriptorHeap create(ID3D12Device *device);
 };
@@ -298,16 +306,15 @@ private:
 struct Geometry {
     Buffer vertex_buf, index_buf, normal_buf, uv_buf;
     D3D12_RAYTRACING_GEOMETRY_DESC desc = {0};
-    uint32_t material_id = 0;
 
     // TODO: Allow other vertex and index formats? Right now this
     // assumes vec3f verts and uint3 indices
-    Geometry(Buffer vertex_buf,
-             Buffer index_buf,
-             Buffer normal_buf,
-             Buffer uv_buf,
-             uint32_t material_id,
-             D3D12_RAYTRACING_GEOMETRY_FLAGS geom_flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE);
+    Geometry(
+        Buffer vertex_buf,
+        Buffer index_buf,
+        Buffer normal_buf,
+        Buffer uv_buf,
+        D3D12_RAYTRACING_GEOMETRY_FLAGS geom_flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE);
 };
 
 class BottomLevelBVH {
@@ -335,7 +342,8 @@ public:
     void enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list);
 
     /* Enqueue the BVH compaction copy if the BVH was built with compaction enabled.
-     * The BVH build must have been enqueued and completed so that the post build info is available
+     * The BVH build must have been enqueued and completed so that the post build info is
+     * available
      */
     void enqueue_compaction(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list);
 

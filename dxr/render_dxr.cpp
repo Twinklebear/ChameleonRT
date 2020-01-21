@@ -55,8 +55,11 @@ RenderDXR::RenderDXR()
                                              IID_PPV_ARGS(&render_cmd_allocator)));
 
     // Make the command lists
-    CHECK_ERR(device->CreateCommandList(
-        0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmd_allocator.Get(), nullptr, IID_PPV_ARGS(&cmd_list)));
+    CHECK_ERR(device->CreateCommandList(0,
+                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                        cmd_allocator.Get(),
+                                        nullptr,
+                                        IID_PPV_ARGS(&cmd_list)));
     CHECK_ERR(cmd_list->Close());
 
     CHECK_ERR(device->CreateCommandList(0,
@@ -115,8 +118,9 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
                                            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
     // Allocate the readback buffer so we can read the image back to the CPU
-    img_readback_buf = dxr::Buffer::readback(
-        device.Get(), render_target.linear_row_pitch() * fb_height, D3D12_RESOURCE_STATE_COPY_DEST);
+    img_readback_buf = dxr::Buffer::readback(device.Get(),
+                                             render_target.linear_row_pitch() * fb_height,
+                                             D3D12_RESOURCE_STATE_COPY_DEST);
 
 #ifdef REPORT_RAY_STATS
     ray_stats = dxr::Texture2D::default(device.Get(),
@@ -125,8 +129,9 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
                                         DXGI_FORMAT_R16_UINT,
                                         D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
-    ray_stats_readback_buf = dxr::Buffer::readback(
-        device.Get(), ray_stats.linear_row_pitch() * fb_height, D3D12_RESOURCE_STATE_COPY_DEST);
+    ray_stats_readback_buf = dxr::Buffer::readback(device.Get(),
+                                                   ray_stats.linear_row_pitch() * fb_height,
+                                                   D3D12_RESOURCE_STATE_COPY_DEST);
 #endif
 
     if (rt_pipeline.get()) {
@@ -150,9 +155,10 @@ void RenderDXR::set_scene(const Scene &scene)
             // Upload the mesh to the vertex buffer, build accel structures
             // Place the data in an upload heap first, then do a GPU-side copy
             // into a default heap (resident in VRAM)
-            dxr::Buffer upload_verts = dxr::Buffer::upload(device.Get(),
-                                                           geom.vertices.size() * sizeof(glm::vec3),
-                                                           D3D12_RESOURCE_STATE_GENERIC_READ);
+            dxr::Buffer upload_verts =
+                dxr::Buffer::upload(device.Get(),
+                                    geom.vertices.size() * sizeof(glm::vec3),
+                                    D3D12_RESOURCE_STATE_GENERIC_READ);
             dxr::Buffer upload_indices =
                 dxr::Buffer::upload(device.Get(),
                                     geom.indices.size() * sizeof(glm::uvec3),
@@ -211,22 +217,22 @@ void RenderDXR::set_scene(const Scene &scene)
             // Barriers to wait for the copies to finish before building the accel. structs
             {
                 std::vector<D3D12_RESOURCE_BARRIER> b;
-                b.push_back(
-                    barrier_transition(vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-                b.push_back(
-                    barrier_transition(index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+                b.push_back(barrier_transition(
+                    vertex_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+                b.push_back(barrier_transition(
+                    index_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
                 if (!geom.uvs.empty()) {
-                    b.push_back(
-                        barrier_transition(uv_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+                    b.push_back(barrier_transition(
+                        uv_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
                 };
                 if (!geom.normals.empty()) {
-                    b.push_back(barrier_transition(normal_buf,
-                                                   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+                    b.push_back(barrier_transition(
+                        normal_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
                 };
                 cmd_list->ResourceBarrier(b.size(), b.data());
             }
 
-            geometries.emplace_back(vertex_buf, index_buf, normal_buf, uv_buf, geom.material_id);
+            geometries.emplace_back(vertex_buf, index_buf, normal_buf, uv_buf);
 
             // TODO: Some possible perf improvements: We can run all the upload of
             // index data in parallel, and the BVH building in parallel for all the
@@ -312,17 +318,20 @@ void RenderDXR::set_scene(const Scene &scene)
 
     // Upload the textures
     for (const auto &t : scene.textures) {
-        const DXGI_FORMAT format =
-            t.color_space == SRGB ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;
+        const DXGI_FORMAT format = t.color_space == SRGB ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                                                         : DXGI_FORMAT_R8G8B8A8_UNORM;
 
-        dxr::Texture2D tex = dxr::Texture2D::default(
-            device.Get(), glm::uvec2(t.width, t.height), D3D12_RESOURCE_STATE_COPY_DEST, format);
+        dxr::Texture2D tex = dxr::Texture2D::default(device.Get(),
+                                                     glm::uvec2(t.width, t.height),
+                                                     D3D12_RESOURCE_STATE_COPY_DEST,
+                                                     format);
 
-        dxr::Buffer tex_upload = dxr::Buffer::upload(
-            device.Get(), tex.linear_row_pitch() * t.height, D3D12_RESOURCE_STATE_GENERIC_READ);
+        dxr::Buffer tex_upload = dxr::Buffer::upload(device.Get(),
+                                                     tex.linear_row_pitch() * t.height,
+                                                     D3D12_RESOURCE_STATE_GENERIC_READ);
 
-        // TODO: Some better texture upload handling here, and readback for handling the row pitch
-        // stuff
+        // TODO: Some better texture upload handling here, and readback for handling the row
+        // pitch stuff
         if (tex.linear_row_pitch() == t.width * tex.pixel_size()) {
             std::memcpy(tex_upload.map(), t.img.data(), tex_upload.size());
         } else {
@@ -374,9 +383,10 @@ void RenderDXR::set_scene(const Scene &scene)
     // Upload the light data
     CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
     {
-        dxr::Buffer light_upload_buf = dxr::Buffer::upload(device.Get(),
-                                                           scene.lights.size() * sizeof(QuadLight),
-                                                           D3D12_RESOURCE_STATE_GENERIC_READ);
+        dxr::Buffer light_upload_buf =
+            dxr::Buffer::upload(device.Get(),
+                                scene.lights.size() * sizeof(QuadLight),
+                                D3D12_RESOURCE_STATE_GENERIC_READ);
         std::memcpy(light_upload_buf.map(), scene.lights.data(), light_upload_buf.size());
         light_upload_buf.unmap();
 
@@ -419,8 +429,8 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     ID3D12CommandList *render_cmds = render_cmd_list.Get();
     cmd_queue->ExecuteCommandLists(1, &render_cmds);
 
-    // Signal specifically on the completion of the ray tracing work so we can time it separately
-    // from the image readback
+    // Signal specifically on the completion of the ray tracing work so we can time it
+    // separately from the image readback
     const uint64_t render_signal_val = fence_value++;
     CHECK_ERR(cmd_queue->Signal(fence.Get(), render_signal_val));
 
@@ -440,7 +450,8 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     // Map the readback buf and copy out the rendered image
     // We may have needed some padding for the readback buffer, so we might have to read
     // row by row.
-    if (render_target.linear_row_pitch() == render_target.dims().x * render_target.pixel_size()) {
+    if (render_target.linear_row_pitch() ==
+        render_target.dims().x * render_target.pixel_size()) {
         std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
     } else {
         uint8_t *buf = static_cast<uint8_t *>(img_readback_buf.map());
@@ -455,7 +466,8 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
 #ifdef REPORT_RAY_STATS
     std::vector<uint16_t> ray_counts(ray_stats.dims().x * ray_stats.dims().y, 0);
     if (ray_stats.linear_row_pitch() == ray_stats.dims().x * ray_stats.pixel_size()) {
-        std::memcpy(ray_counts.data(), ray_stats_readback_buf.map(), ray_stats_readback_buf.size());
+        std::memcpy(
+            ray_counts.data(), ray_stats_readback_buf.map(), ray_stats_readback_buf.size());
     } else {
         uint8_t *buf = static_cast<uint8_t *>(ray_stats_readback_buf.map());
         for (uint32_t y = 0; y < ray_stats.dims().y; ++y) {
@@ -485,11 +497,12 @@ void RenderDXR::build_raytracing_pipeline()
                                       {L"RayGen", L"Miss", L"ClosestHit", L"ShadowMiss"});
 
     // Create the root signature for our ray gen shader
-    dxr::RootSignature raygen_root_sig = dxr::RootSignatureBuilder::local()
-                                             .add_constants("SceneParams", 1, 1, 0)
-                                             .add_desc_heap("cbv_srv_uav_heap", raygen_desc_heap)
-                                             .add_desc_heap("sampler_heap", raygen_sampler_heap)
-                                             .create(device.Get());
+    dxr::RootSignature raygen_root_sig =
+        dxr::RootSignatureBuilder::local()
+            .add_constants("SceneParams", 1, 1, 0)
+            .add_desc_heap("cbv_srv_uav_heap", raygen_desc_heap)
+            .add_desc_heap("sampler_heap", raygen_sampler_heap)
+            .create(device.Get());
 
     // Create the root signature for our closest hit function
     dxr::RootSignature hitgroup_root_sig = dxr::RootSignatureBuilder::local()
@@ -580,20 +593,23 @@ void RenderDXR::build_shader_binding_table()
             const dxr::RootSignature *sig = rt_pipeline.shader_signature(hg_name);
 
             D3D12_GPU_VIRTUAL_ADDRESS gpu_handle = geom.vertex_buf->GetGPUVirtualAddress();
-            std::memcpy(
-                map + sig->offset("vertex_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+            std::memcpy(map + sig->offset("vertex_buf"),
+                        &gpu_handle,
+                        sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 
             gpu_handle = geom.index_buf->GetGPUVirtualAddress();
-            std::memcpy(
-                map + sig->offset("index_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+            std::memcpy(map + sig->offset("index_buf"),
+                        &gpu_handle,
+                        sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 
             if (geom.normal_buf.size() != 0) {
                 gpu_handle = geom.normal_buf->GetGPUVirtualAddress();
             } else {
                 gpu_handle = 0;
             }
-            std::memcpy(
-                map + sig->offset("normal_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+            std::memcpy(map + sig->offset("normal_buf"),
+                        &gpu_handle,
+                        sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 
             if (geom.uv_buf.size() != 0) {
                 gpu_handle = geom.uv_buf->GetGPUVirtualAddress();
@@ -603,9 +619,10 @@ void RenderDXR::build_shader_binding_table()
             std::memcpy(
                 map + sig->offset("uv_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 
-            const std::array<uint32_t, 3> mesh_data = {geom.normal_buf.size() / sizeof(glm::vec3),
-                                                       geom.uv_buf.size() / sizeof(glm::vec2),
-                                                       geom.material_id};
+            const std::array<uint32_t, 3> mesh_data = {
+                geom.normal_buf.size() / sizeof(glm::vec3),
+                geom.uv_buf.size() / sizeof(glm::vec2),
+                inst.material_ids[j]};
             std::memcpy(map + sig->offset("MeshData"),
                         mesh_data.data(),
                         mesh_data.size() * sizeof(uint32_t));

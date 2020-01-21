@@ -19,7 +19,8 @@ bool dxr_available(ComPtr<ID3D12Device5> &device)
     return feature_data.RaytracingTier >= D3D12_RAYTRACING_TIER_1_0;
 }
 
-RootParam::RootParam(D3D12_ROOT_PARAMETER param, const std::string &name) : param(param), name(name)
+RootParam::RootParam(D3D12_ROOT_PARAMETER param, const std::string &name)
+    : param(param), name(name)
 {
 }
 
@@ -83,10 +84,12 @@ bool DescriptorHeapBuilder::contains_range_type(D3D12_DESCRIPTOR_RANGE_TYPE type
 
 uint32_t DescriptorHeapBuilder::num_descriptors()
 {
-    return std::accumulate(
-        ranges.begin(), ranges.end(), 0, [](const uint32_t &n, const D3D12_DESCRIPTOR_RANGE &r) {
-            return n + r.NumDescriptors;
-        });
+    return std::accumulate(ranges.begin(),
+                           ranges.end(),
+                           0,
+                           [](const uint32_t &n, const D3D12_DESCRIPTOR_RANGE &r) {
+                               return n + r.NumDescriptors;
+                           });
 }
 
 DescriptorHeapBuilder &DescriptorHeapBuilder::add_srv_range(uint32_t size,
@@ -149,8 +152,8 @@ RootSignature::RootSignature(D3D12_ROOT_SIGNATURE_FLAGS flags,
         p.offset = offset;
         if (p.param.ParameterType == D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS) {
             // Constants must pad to a size multiple of 8 to align w/ the pointer entries
-            p.size =
-                align_to(p.param.Constants.Num32BitValues * 4, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+            p.size = align_to(p.param.Constants.Num32BitValues * 4,
+                              sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
         } else {
             p.size = sizeof(D3D12_GPU_DESCRIPTOR_HANDLE);
         }
@@ -183,10 +186,10 @@ size_t RootSignature::size(const std::string &name) const
 
 size_t RootSignature::total_size() const
 {
-    return std::accumulate(
-        param_offsets.begin(), param_offsets.end(), size_t(0), [](const size_t &n, const auto &p) {
-            return n + p.second.size;
-        });
+    return std::accumulate(param_offsets.begin(),
+                           param_offsets.end(),
+                           size_t(0),
+                           [](const size_t &n, const auto &p) { return n + p.second.size; });
 }
 
 ID3D12RootSignature *RootSignature::operator->()
@@ -395,7 +398,11 @@ HitGroup::HitGroup(const std::wstring &name,
                    const std::wstring &closest_hit,
                    const std::wstring &any_hit,
                    const std::wstring &intersection)
-    : name(name), closest_hit(closest_hit), type(type), any_hit(any_hit), intersection(intersection)
+    : name(name),
+      closest_hit(closest_hit),
+      type(type),
+      any_hit(any_hit),
+      intersection(intersection)
 {
 }
 
@@ -443,7 +450,9 @@ RTPipelineBuilder &RTPipelineBuilder::add_hit_group(const HitGroup &hg)
 }
 
 RTPipelineBuilder &RTPipelineBuilder::configure_shader_payload(
-    const std::vector<std::wstring> &functions, uint32_t max_payload_size, uint32_t max_attrib_size)
+    const std::vector<std::wstring> &functions,
+    uint32_t max_payload_size,
+    uint32_t max_attrib_size)
 {
     payload_configs.emplace_back(functions, max_payload_size, max_attrib_size);
     return *this;
@@ -680,12 +689,13 @@ RTPipeline::RTPipeline(D3D12_STATE_OBJECT_DESC &desc,
     const size_t raygen_record_offset = 0;
     dispatch_desc.RayGenerationShaderRecord.SizeInBytes = compute_shader_record_size(ray_gen);
 
-    const size_t miss_record_offset = align_to(dispatch_desc.RayGenerationShaderRecord.SizeInBytes,
-                                               D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT);
+    const size_t miss_record_offset =
+        align_to(dispatch_desc.RayGenerationShaderRecord.SizeInBytes,
+                 D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT);
     dispatch_desc.MissShaderTable.StrideInBytes = 0;
     for (const auto &m : miss_shaders) {
-        dispatch_desc.MissShaderTable.StrideInBytes =
-            std::max(dispatch_desc.MissShaderTable.StrideInBytes, compute_shader_record_size(m));
+        dispatch_desc.MissShaderTable.StrideInBytes = std::max(
+            dispatch_desc.MissShaderTable.StrideInBytes, compute_shader_record_size(m));
     }
     dispatch_desc.MissShaderTable.SizeInBytes =
         dispatch_desc.MissShaderTable.StrideInBytes * miss_shaders.size();
@@ -695,8 +705,8 @@ RTPipeline::RTPipeline(D3D12_STATE_OBJECT_DESC &desc,
                  D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT);
     dispatch_desc.HitGroupTable.StrideInBytes = 0;
     for (const auto &hg : hit_groups) {
-        dispatch_desc.HitGroupTable.StrideInBytes =
-            std::max(dispatch_desc.HitGroupTable.StrideInBytes, compute_shader_record_size(hg));
+        dispatch_desc.HitGroupTable.StrideInBytes = std::max(
+            dispatch_desc.HitGroupTable.StrideInBytes, compute_shader_record_size(hg));
     }
     dispatch_desc.HitGroupTable.SizeInBytes =
         dispatch_desc.HitGroupTable.StrideInBytes * hit_groups.size();
@@ -711,7 +721,8 @@ RTPipeline::RTPipeline(D3D12_STATE_OBJECT_DESC &desc,
     map_shader_table();
 
     // Write the ray gen shader
-    dispatch_desc.RayGenerationShaderRecord.StartAddress = shader_table->GetGPUVirtualAddress();
+    dispatch_desc.RayGenerationShaderRecord.StartAddress =
+        shader_table->GetGPUVirtualAddress();
     record_offsets[ray_gen] = 0;
     std::memcpy(sbt_mapping,
                 pipeline_props->GetShaderIdentifier(ray_gen.c_str()),
@@ -846,9 +857,8 @@ Geometry::Geometry(Buffer verts,
                    Buffer indices,
                    Buffer normals,
                    Buffer uvs,
-                   uint32_t mat_id,
                    D3D12_RAYTRACING_GEOMETRY_FLAGS geom_flags)
-    : vertex_buf(verts), index_buf(indices), normal_buf(normals), uv_buf(uvs), material_id(mat_id)
+    : vertex_buf(verts), index_buf(indices), normal_buf(normals), uv_buf(uvs)
 {
     desc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
     desc.Triangles.VertexBuffer.StartAddress = vertex_buf->GetGPUVirtualAddress();
@@ -929,14 +939,16 @@ void BottomLevelBVH::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandLi
     // Insert a barrier to wait for the build to complete, and transition the post build
     // info write buffer to copy source so we can read it back
     std::array<D3D12_RESOURCE_BARRIER, 2> barriers = {
-        barrier_uav(bvh), barrier_transition(post_build_info, D3D12_RESOURCE_STATE_COPY_SOURCE)};
+        barrier_uav(bvh),
+        barrier_transition(post_build_info, D3D12_RESOURCE_STATE_COPY_SOURCE)};
     cmd_list->ResourceBarrier(barriers.size(), barriers.data());
 
     // Enqueue a copy of the post-build info to CPU visible memory
     cmd_list->CopyResource(post_build_info_readback.get(), post_build_info.get());
 }
 
-void BottomLevelBVH::enqueue_compaction(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list)
+void BottomLevelBVH::enqueue_compaction(ID3D12Device5 *device,
+                                        ID3D12GraphicsCommandList4 *cmd_list)
 {
     uint64_t *map = static_cast<uint64_t *>(post_build_info_readback.map());
     const uint64_t compacted_size =
