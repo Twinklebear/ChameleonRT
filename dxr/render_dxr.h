@@ -33,6 +33,7 @@ struct RenderDXR : RenderBackend {
     HANDLE fence_evt;
 
     uint32_t frame_id = 0;
+    uint32_t spp = 1;
 
     RenderDXR();
 
@@ -40,7 +41,7 @@ struct RenderDXR : RenderBackend {
 
     std::string name() override;
 
-    void initialize(const int fb_width, const int fb_height) override;
+    void initialize(const int fb_width, const int fb_height, const uint32_t spp) override;
 
     void set_scene(const Scene &scene) override;
 

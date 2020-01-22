@@ -136,69 +136,70 @@ extern "C" __global__ void __raygen__perspective_camera() {
     const uint2 screen = make_uint2(optixGetLaunchDimensions().x, optixGetLaunchDimensions().y);
     const uint32_t pixel_idx = pixel.x + pixel.y * screen.x;
 
-    PCGRand rng = get_rng(pixel_idx * (launch_params.frame_id + 1));
-    const float2 d = make_float2(pixel.x + pcg32_randomf(rng), pixel.y + pcg32_randomf(rng)) / make_float2(screen);
-    float3 ray_dir = normalize(d.x * make_float3(launch_params.cam_du)
-            + d.y * make_float3(launch_params.cam_dv) + make_float3(launch_params.cam_dir_top_left));
-
-    float3 ray_origin = make_float3(launch_params.cam_pos);
-
-    DisneyMaterial mat;
-
-    uint16_t ray_count = 0;
-    const float3 light_emission = make_float3(1.0);
-    int bounce = 0;
     float3 illum = make_float3(0.0);
-    float3 path_throughput = make_float3(1.0);
-    do {
-        RayPayload payload = make_ray_payload();
-        uint2 payload_ptr;
-        pack_ptr(&payload, payload_ptr.x, payload_ptr.y);
+    uint16_t ray_count = 0;
+    DisneyMaterial mat;
+    PCGRand rng = get_rng(pixel_idx * (launch_params.frame_id + 1) * params.spp);
+    for (int i = 0; i < params.spp; ++i) {
+        const float2 d = make_float2(pixel.x + pcg32_randomf(rng), pixel.y + pcg32_randomf(rng)) / make_float2(screen);
+        float3 ray_dir = normalize(d.x * make_float3(launch_params.cam_du)
+                + d.y * make_float3(launch_params.cam_dv) + make_float3(launch_params.cam_dir_top_left));
 
-        optixTrace(launch_params.scene, ray_origin, ray_dir, EPSILON, 1e20f, 0,
-                0xff, OPTIX_RAY_FLAG_DISABLE_ANYHIT, PRIMARY_RAY, 1, PRIMARY_RAY,
-                payload_ptr.x, payload_ptr.y);
+        float3 ray_origin = make_float3(launch_params.cam_pos);
+
+        const float3 light_emission = make_float3(1.0);
+        int bounce = 0;
+        float3 path_throughput = make_float3(1.0);
+        do {
+            RayPayload payload = make_ray_payload();
+            uint2 payload_ptr;
+            pack_ptr(&payload, payload_ptr.x, payload_ptr.y);
+
+            optixTrace(launch_params.scene, ray_origin, ray_dir, EPSILON, 1e20f, 0,
+                    0xff, OPTIX_RAY_FLAG_DISABLE_ANYHIT, PRIMARY_RAY, 1, PRIMARY_RAY,
+                    payload_ptr.x, payload_ptr.y);
 #ifdef REPORT_RAY_STATS
-        ++ray_count;
+            ++ray_count;
 #endif
 
-        if (payload.t_hit <= 0.f) {
-            illum = illum + path_throughput * payload.normal;
-            break;
-        }
+            if (payload.t_hit <= 0.f) {
+                illum = illum + path_throughput * payload.normal;
+                break;
+            }
 
-        unpack_material(params.materials[payload.material_id], payload.uv, mat);
+            unpack_material(params.materials[payload.material_id], payload.uv, mat);
 
-        const float3 w_o = -ray_dir;
-        const float3 hit_p = ray_origin + payload.t_hit * ray_dir;
-        float3 v_x, v_y;
-        float3 v_z = payload.normal;
-        if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
-            v_z = -v_z;
-        }
-        ortho_basis(v_x, v_y, v_z);
+            const float3 w_o = -ray_dir;
+            const float3 hit_p = ray_origin + payload.t_hit * ray_dir;
+            float3 v_x, v_y;
+            float3 v_z = payload.normal;
+            if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
+                v_z = -v_z;
+            }
+            ortho_basis(v_x, v_y, v_z);
 
-        illum = illum + path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o,
-                params.lights, params.num_lights, ray_count, rng);
+            illum = illum + path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o,
+                    params.lights, params.num_lights, ray_count, rng);
 
-        float3 w_i;
-        float pdf;
-        float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
-        if (pdf < EPSILON || all_zero(bsdf)) {
-            break;
-        }
-        path_throughput = path_throughput * bsdf * abs(dot(w_i, v_z)) / pdf;
+            float3 w_i;
+            float pdf;
+            float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
+            if (pdf < EPSILON || all_zero(bsdf)) {
+                break;
+            }
+            path_throughput = path_throughput * bsdf * abs(dot(w_i, v_z)) / pdf;
 
-        if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
-            break;
-        }
+            if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
+                break;
+            }
 
-        ray_origin = hit_p;
-        ray_dir = w_i;
+            ray_origin = hit_p;
+            ray_dir = w_i;
 
-        ++bounce;
-    } while (bounce < MAX_PATH_DEPTH);
-
+            ++bounce;
+        } while (bounce < MAX_PATH_DEPTH);
+    }
+    illum = illum / params.spp;
     const float3 prev_color = make_float3(launch_params.accum_buffer[pixel_idx]);
     const float3 accum_color = (illum + launch_params.frame_id * prev_color) / (launch_params.frame_id + 1);
     launch_params.accum_buffer[pixel_idx] = make_float4(accum_color, 1.f);

@@ -14,7 +14,7 @@ struct RenderBackend {
 
     virtual std::string name() = 0;
 
-    virtual void initialize(const int fb_width, const int fb_height) = 0;
+    virtual void initialize(const int fb_width, const int fb_height, const uint32_t spp) = 0;
 
     // TODO Probably should take the scene through a shared_ptr
     virtual void set_scene(const Scene &scene) = 0;

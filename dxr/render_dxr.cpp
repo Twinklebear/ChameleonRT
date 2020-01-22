@@ -100,9 +100,10 @@ std::string RenderDXR::name()
     return "DirectX Ray Tracing";
 }
 
-void RenderDXR::initialize(const int fb_width, const int fb_height)
+void RenderDXR::initialize(const int fb_width, const int fb_height, const uint32_t _spp)
 {
     frame_id = 0;
+    spp = _spp;
     img.resize(fb_width * fb_height);
 
     render_target = dxr::Texture2D::default(device.Get(),
@@ -499,7 +500,7 @@ void RenderDXR::build_raytracing_pipeline()
     // Create the root signature for our ray gen shader
     dxr::RootSignature raygen_root_sig =
         dxr::RootSignatureBuilder::local()
-            .add_constants("SceneParams", 1, 1, 0)
+            .add_constants("SceneParams", 1, 2, 0)
             .add_desc_heap("cbv_srv_uav_heap", raygen_desc_heap)
             .add_desc_heap("sampler_heap", raygen_sampler_heap)
             .create(device.Get());
@@ -572,6 +573,7 @@ void RenderDXR::build_shader_binding_table()
 
         const uint32_t num_lights = light_buf.size() / sizeof(QuadLight);
         std::memcpy(map + sig->offset("SceneParams"), &num_lights, sizeof(uint32_t));
+        std::memcpy(map + sig->offset("SceneParams") + sizeof(uint32_t), &spp, sizeof(uint32_t));
 
         // Is writing the descriptor heap handle actually needed? It seems to not matter
         // if this is written or not

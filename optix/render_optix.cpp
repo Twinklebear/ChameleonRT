@@ -74,11 +74,12 @@ std::string RenderOptiX::name()
     return "OptiX";
 }
 
-void RenderOptiX::initialize(const int fb_width, const int fb_height)
+void RenderOptiX::initialize(const int fb_width, const int fb_height, const uint32_t _spp)
 {
     frame_id = 0;
     width = fb_width;
     height = fb_height;
+    spp = _spp;
     img.resize(fb_width * fb_height);
 
     framebuffer = optix::Buffer(img.size() * sizeof(uint32_t));
@@ -297,6 +298,7 @@ void RenderOptiX::build_raytracing_pipeline()
         params.materials = mat_params.device_ptr();
         params.lights = light_params.device_ptr();
         params.num_lights = light_params.size() / sizeof(QuadLight);
+        params.spp = spp;
     }
 
     for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {

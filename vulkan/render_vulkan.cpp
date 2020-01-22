@@ -60,9 +60,10 @@ std::string RenderVulkan::name()
     return "Vulkan Ray Tracing";
 }
 
-void RenderVulkan::initialize(const int fb_width, const int fb_height)
+void RenderVulkan::initialize(const int fb_width, const int fb_height, const uint32_t _spp)
 {
     frame_id = 0;
+    spp = _spp;
     img.resize(fb_width * fb_height);
 
     render_target =
@@ -877,7 +878,7 @@ void RenderVulkan::build_shader_descriptor_table()
 void RenderVulkan::build_shader_binding_table()
 {
     vkrt::SBTBuilder sbt_builder(&rt_pipeline);
-    sbt_builder.set_raygen(vkrt::ShaderRecord("raygen", "raygen", sizeof(uint32_t)))
+    sbt_builder.set_raygen(vkrt::ShaderRecord("raygen", "raygen", 2 * sizeof(uint32_t)))
         .add_miss(vkrt::ShaderRecord("miss", "miss", 0))
         .add_miss(vkrt::ShaderRecord("occlusion_miss", "occlusion_miss", 0));
 
@@ -898,8 +899,8 @@ void RenderVulkan::build_shader_binding_table()
     // Raygen shader gets the number of lights through the SBT
     {
         uint32_t *params = reinterpret_cast<uint32_t *>(shader_table.sbt_params("raygen"));
-        *params = light_params->size() / sizeof(QuadLight);
-        std::cout << "# of lights: " << *params << "\n";
+        params[0] = light_params->size() / sizeof(QuadLight);
+        params[1] = spp;
     }
 
     for (size_t i = 0; i < scene_bvh->num_instances(); ++i) {

@@ -59,6 +59,7 @@ const std::string USAGE =
     "\t-camera <n>            If the scene contains multiple cameras, specify which\n"
     "\t                       should be used. Defaults to the first camera\n"
     "\t-no-textures           Specify to skip loading textures\n"
+    "\t-spp                   Specify the number of samples to take per-pixel each frame\n"
     "\n";
 
 const std::string fullscreen_quad_vs = R"(
@@ -179,6 +180,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
     float fov_y = 65.f;
     size_t camera_id = 0;
     bool use_textures = true;
+    uint32_t spp = 1;
     for (size_t i = 1; i < args.size(); ++i) {
         if (args[i] == "-eye") {
             eye.x = std::stof(args[++i]);
@@ -202,6 +204,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
             camera_id = std::stol(args[++i]);
         } else if (args[i] == "-no-textures") {
             use_textures = false;
+        } else if (args[i] == "-spp") {
+            spp = std::stoi(args[++i]);
         }
 #if ENABLE_OSPRAY
         else if (args[i] == "-ospray") {
@@ -242,7 +246,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
         std::exit(1);
     }
 
-    renderer->initialize(win_width, win_height);
+    renderer->initialize(win_width, win_height, spp);
 
     std::string scene_info;
     {
@@ -363,7 +367,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
                 win_height = event.window.data2;
                 io.DisplaySize.x = win_width;
                 io.DisplaySize.y = win_height;
-                renderer->initialize(win_width, win_height);
+                renderer->initialize(win_width, win_height, spp);
 
                 glDeleteTextures(1, &render_texture);
                 glGenTextures(1, &render_texture);
@@ -415,6 +419,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
         ImGui::Text("CPU: %s", cpu_brand.c_str());
         ImGui::Text("GPU: %s", gpu_brand.c_str());
         ImGui::Text("Accumulated Frames: %llu", frame_id);
+        ImGui::Text("Samples per-pixel: %u", spp);
         ImGui::Text("%s", scene_info.c_str());
 
         if (ImGui::Button("Save Image")) {

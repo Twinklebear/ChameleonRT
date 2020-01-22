@@ -24,12 +24,13 @@ struct RenderOptiX : RenderBackend {
 
     int width, height;
     uint32_t frame_id = 0;
+    uint32_t spp = 1;
 
     RenderOptiX();
     ~RenderOptiX();
 
     std::string name() override;
-    void initialize(const int fb_width, const int fb_height) override;
+    void initialize(const int fb_width, const int fb_height, const uint32_t spp) override;
     void set_scene(const Scene &scene) override;
     RenderStats render(const glm::vec3 &pos,
                        const glm::vec3 &dir,

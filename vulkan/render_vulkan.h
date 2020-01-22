@@ -70,6 +70,7 @@ struct RenderVulkan : RenderBackend {
     VkFence fence = VK_NULL_HANDLE;
 
     size_t frame_id = 0;
+    uint32_t spp = 1;
 
     RenderVulkan();
 
@@ -77,7 +78,7 @@ struct RenderVulkan : RenderBackend {
 
     std::string name() override;
 
-    void initialize(const int fb_width, const int fb_height) override;
+    void initialize(const int fb_width, const int fb_height, const uint32_t spp) override;
 
     void set_scene(const Scene &scene) override;
 

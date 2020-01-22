@@ -68,6 +68,7 @@ struct RayGenParams {
     CUdeviceptr lights;
 #endif
     uint32_t num_lights;
+    uint32_t spp;
 };
 
 struct HitGroupParams {

@@ -56,6 +56,7 @@ layout(location = OCCLUSION_RAY) rayPayloadNV bool occlusion_hit;
 
 layout(shaderRecordNV) buffer SBT {
     uint32_t num_lights;
+    uint32_t spp;
 };
 
 float textured_scalar_param(const float x, in const vec2 uv) {
@@ -162,66 +163,69 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 void main() {
     const ivec2 pixel = ivec2(gl_LaunchIDNV.xy);
     const vec2 dims = vec2(gl_LaunchSizeNV.xy);
-    PCGRand rng = get_rng(frame_id);
-    vec2 d = (pixel + vec2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
-
-    vec3 ray_origin = cam_pos.xyz;
-    vec3 ray_dir = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
-    float t_min = 0;
-    float t_max = 1e20f;
+    PCGRand rng = get_rng(frame_id * int(spp));
 
     DisneyMaterial mat;
 
 	uint ray_count = 0;
-	int bounce = 0;
 	vec3 illum = vec3(0.f);
-	vec3 path_throughput = vec3(1.f);
-    do {
-        traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY,
-                ray_origin, t_min, ray_dir, t_max, PRIMARY_RAY);
+    for (int i = 0; i < spp; ++i) {
+        vec2 d = (pixel + vec2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
+
+        vec3 ray_origin = cam_pos.xyz;
+        vec3 ray_dir = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
+        float t_min = 0;
+        float t_max = 1e20f;
+
+        int bounce = 0;
+        vec3 path_throughput = vec3(1.f);
+        do {
+            traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY,
+                    ray_origin, t_min, ray_dir, t_max, PRIMARY_RAY);
 #ifdef REPORT_RAY_STATS
-		++ray_count;
+            ++ray_count;
 #endif
-        // If we hit nothing, include the scene background color from the miss shader
-        if (payload.dist < 0.f) {
-            illum += path_throughput * payload.normal.rgb;
-            break;
-        }
+            // If we hit nothing, include the scene background color from the miss shader
+            if (payload.dist < 0.f) {
+                illum += path_throughput * payload.normal.rgb;
+                break;
+            }
 
-		const vec3 w_o = -ray_dir;
-		const vec3 hit_p = ray_origin + payload.dist * ray_dir;
-		unpack_material(mat, payload.material_id, payload.uv);
+            const vec3 w_o = -ray_dir;
+            const vec3 hit_p = ray_origin + payload.dist * ray_dir;
+            unpack_material(mat, payload.material_id, payload.uv);
 
-		vec3 v_x, v_y;
-		vec3 v_z = payload.normal;
-		// For opaque objects (or in the future, thin ones) make the normal face forward
-		if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
-			v_z = -v_z;
-		}
-		ortho_basis(v_x, v_y, v_z);
+            vec3 v_x, v_y;
+            vec3 v_z = payload.normal;
+            // For opaque objects (or in the future, thin ones) make the normal face forward
+            if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
+                v_z = -v_z;
+            }
+            ortho_basis(v_x, v_y, v_z);
 
-		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, ray_count, rng);
+            illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, ray_count, rng);
 
-		vec3 w_i;
-		float pdf;
-		vec3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
-		if (pdf < EPSILON || all(equal(bsdf, vec3(0.f)))) {
-			break;
-		}
-		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
+            vec3 w_i;
+            float pdf;
+            vec3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
+            if (pdf < EPSILON || all(equal(bsdf, vec3(0.f)))) {
+                break;
+            }
+            path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
 
-		if (all(lessThan(path_throughput, vec3(EPSILON)))) {
-			break;
-		}
+            if (all(lessThan(path_throughput, vec3(EPSILON)))) {
+                break;
+            }
 
-		ray_origin = hit_p;
-		ray_dir = w_i;
-		t_min = EPSILON;
-		t_max = 1e20f;
+            ray_origin = hit_p;
+            ray_dir = w_i;
+            t_min = EPSILON;
+            t_max = 1e20f;
 
-		++bounce;
-	} while (bounce < MAX_PATH_DEPTH);
-
+            ++bounce;
+        } while (bounce < MAX_PATH_DEPTH);
+    }
+    illum = illum / spp;
     vec4 accum_color = imageLoad(accum_buffer, pixel);
 	accum_color = (vec4(illum, 1.0) + frame_id * accum_color) / (frame_id + 1);
     imageStore(accum_buffer, pixel, accum_color);
