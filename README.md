@@ -21,11 +21,13 @@ arguments will print help information.
 ```
 
 All five ray tracing backends use [SDL2](https://www.libsdl.org/index.php) for window management
-and [GLM](https://glm.g-truc.net/0.9.9/index.html) for math.
+and [GLM](https://glm.g-truc.net/0.9.9/index.html) for math. For now please use
+[my fork of GLM](https://github.com/Twinklebear/glm) which packages some useful CMake
+config for the project.
 If CMake doesn't find your SDL2 install you can point it to the root
 of your SDL2 directory by passing `-DSDL2_DIR=<path>`.
 Similarly for GLM, you can point it to the glmConfig.cmake file
-in your GLM distribution by passing `-Dglm_DIR=<path>`.
+in the GLM root directory by passing `-Dglm_DIR=<path>`.
 To track and report statistics about the number of rays traced per-second
 run CMake with `-DREPORT_RAY_STATS=ON`. Tracking these statistics can
 impact performance slightly (especially in the Vulkan backend).
