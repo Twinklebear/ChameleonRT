@@ -16,7 +16,7 @@ struct Scene {
     std::vector<QuadLight> lights;
     std::vector<Camera> cameras;
 
-    Scene(const std::string &fname);
+    Scene(const std::string &fname, bool use_textures);
     Scene() = default;
 
     // Compute the unique number of triangles in the scene
@@ -28,14 +28,14 @@ struct Scene {
     size_t num_geometries() const;
 
 private:
-    void load_obj(const std::string &file);
+    void load_obj(const std::string &file, bool use_textures);
 
-    void load_gltf(const std::string &file);
+    void load_gltf(const std::string &file, bool use_textures);
 
-    void load_crts(const std::string &file);
+    void load_crts(const std::string &file, bool use_textures);
 
 #ifdef PBRT_PARSER_ENABLED
-    void load_pbrt(const std::string &file);
+    void load_pbrt(const std::string &file, bool use_textures);
 #endif
 
     void validate_materials();

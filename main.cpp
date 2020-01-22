@@ -58,6 +58,7 @@ const std::string USAGE =
     "\t-fov <fovy>            Specify the camera field of view (in degrees)\n"
     "\t-camera <n>            If the scene contains multiple cameras, specify which\n"
     "\t                       should be used. Defaults to the first camera\n"
+    "\t-no-textures           Specify to skip loading textures\n"
     "\n";
 
 const std::string fullscreen_quad_vs = R"(
@@ -177,6 +178,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
     glm::vec3 up(0, 1, 0);
     float fov_y = 65.f;
     size_t camera_id = 0;
+    bool use_textures = true;
     for (size_t i = 1; i < args.size(); ++i) {
         if (args[i] == "-eye") {
             eye.x = std::stof(args[++i]);
@@ -198,6 +200,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
             got_camera_args = true;
         } else if (args[i] == "-camera") {
             camera_id = std::stol(args[++i]);
+        } else if (args[i] == "-no-textures") {
+            use_textures = false;
         }
 #if ENABLE_OSPRAY
         else if (args[i] == "-ospray") {
@@ -242,7 +246,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
 
     std::string scene_info;
     {
-        Scene scene(scene_file);
+        Scene scene(scene_file, use_textures);
 
         std::stringstream ss;
         ss << "Scene '" << scene_file << "':\n"

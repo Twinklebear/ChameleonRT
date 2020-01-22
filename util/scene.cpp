@@ -35,18 +35,18 @@ bool operator==(const glm::uvec3 &a, const glm::uvec3 &b)
     return a.x == b.x && a.y == b.y && a.z == b.z;
 }
 
-Scene::Scene(const std::string &fname)
+Scene::Scene(const std::string &fname, bool use_textures)
 {
     const std::string ext = get_file_extension(fname);
     if (ext == "obj") {
-        load_obj(fname);
+        load_obj(fname, use_textures);
     } else if (ext == "gltf" || ext == "glb") {
-        load_gltf(fname);
+        load_gltf(fname, use_textures);
     } else if (ext == "crts") {
-        load_crts(fname);
+        load_crts(fname, use_textures);
 #ifdef PBRT_PARSER_ENABLED
     } else if (ext == "pbrt" || ext == "pbf") {
-        load_pbrt(fname);
+        load_pbrt(fname, use_textures);
 #endif
     } else {
         std::cout << "Unsupported file type '" << ext << "'\n";
@@ -78,7 +78,7 @@ size_t Scene::num_geometries() const
         });
 }
 
-void Scene::load_obj(const std::string &file)
+void Scene::load_obj(const std::string &file, bool use_textures)
 {
     std::cout << "Loading OBJ: " << file << "\n";
 
@@ -176,7 +176,7 @@ void Scene::load_obj(const std::string &file)
         d.roughness = 1.f - d.specular;
         d.specular_transmission = glm::clamp(1.f - m.dissolve, 0.f, 1.f);
 
-        if (!m.diffuse_texname.empty()) {
+        if (use_textures && !m.diffuse_texname.empty()) {
             std::string path = m.diffuse_texname;
             canonicalize_path(path);
             if (texture_ids.find(m.diffuse_texname) == texture_ids.end()) {
@@ -205,7 +205,7 @@ void Scene::load_obj(const std::string &file)
     lights.push_back(light);
 }
 
-void Scene::load_gltf(const std::string &fname)
+void Scene::load_gltf(const std::string &fname, bool use_textures)
 {
     std::cout << "Loading GLTF " << fname << "\n";
 
@@ -332,7 +332,7 @@ void Scene::load_gltf(const std::string &fname)
 
         mat.roughness = m.pbrMetallicRoughness.roughnessFactor;
 
-        if (m.pbrMetallicRoughness.baseColorTexture.index != -1) {
+        if (use_textures && m.pbrMetallicRoughness.baseColorTexture.index != -1) {
             const int32_t id =
                 model.textures[m.pbrMetallicRoughness.baseColorTexture.index].source;
             textures[id].color_space = SRGB;
@@ -368,7 +368,7 @@ void Scene::load_gltf(const std::string &fname)
     lights.push_back(light);
 }
 
-void Scene::load_crts(const std::string &file)
+void Scene::load_crts(const std::string &file, bool use_textures)
 {
     using json = nlohmann::json;
     std::cout << "Loading CRTS " << file << "\n";
@@ -459,7 +459,7 @@ void Scene::load_crts(const std::string &file)
 
         const auto base_color_data = m["base_color"].get<std::vector<float>>();
         mat.base_color = glm::make_vec3(base_color_data.data());
-        if (m.find("base_color_texture") != m.end()) {
+        if (use_textures && m.find("base_color_texture") != m.end()) {
             const int32_t id = m["base_color_texture"].get<int32_t>();
             uint32_t tex_mask = TEXTURED_PARAM_MASK;
             SET_TEXTURE_ID(tex_mask, id);
@@ -469,7 +469,7 @@ void Scene::load_crts(const std::string &file)
         auto parse_float_param = [&](const std::string &param, float &val) {
             val = m[param].get<float>();
             const std::string texture_name = param + "_texture";
-            if (m.find(texture_name) != m.end()) {
+            if (use_textures && m.find(texture_name) != m.end()) {
                 const int32_t id = m[texture_name]["texture"].get<int32_t>();
                 const uint32_t channel = m[texture_name]["channel"].get<uint32_t>();
                 uint32_t tex_mask = TEXTURED_PARAM_MASK;
@@ -547,7 +547,7 @@ void Scene::load_crts(const std::string &file)
 
 #ifdef PBRT_PARSER_ENABLED
 
-void Scene::load_pbrt(const std::string &file)
+void Scene::load_pbrt(const std::string &file, bool use_textures)
 {
     std::shared_ptr<pbrt::Scene> scene = nullptr;
     try {
