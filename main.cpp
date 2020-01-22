@@ -309,6 +309,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
     glm::vec2 prev_mouse(-2.f);
     bool done = false;
     bool camera_changed = true;
+
     while (!done) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -389,6 +390,11 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
         RenderStats stats =
             renderer->render(camera.eye(), camera.dir(), camera.up(), fov_y, camera_changed);
         ++frame_id;
+
+        // If we're running slow, just show the last time instead of averaging together
+        if (stats.render_time > 100) {
+            frame_id = 1;
+        }
 
         if (frame_id == 1) {
             render_time = stats.render_time;
