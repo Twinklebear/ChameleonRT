@@ -132,7 +132,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
     const uint2 screen = make_uint2(optixGetLaunchDimensions().x, optixGetLaunchDimensions().y);
     const uint32_t pixel_idx = pixel.x + pixel.y * screen.x;
 
-    PCGRand rng = get_rng(pixel_idx * (launch_params.frame_id + 1));
+    PCGRand rng = get_rng(launch_params.frame_id + 1);
     const float2 d = make_float2(pixel.x + pcg32_randomf(rng), pixel.y + pcg32_randomf(rng)) / make_float2(screen);
     float3 ray_dir = normalize(d.x * make_float3(launch_params.cam_du)
             + d.y * make_float3(launch_params.cam_dv) + make_float3(launch_params.cam_dir_top_left));
