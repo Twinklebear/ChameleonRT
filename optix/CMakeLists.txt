@@ -15,7 +15,10 @@ add_ptx_embed_library(optix_kernels render_optix.cu
         ${OptiX_INCLUDE_DIR} 
         ${PROJECT_SOURCE_DIR}
     COMPILE_DEFINITIONS
-        ${CUDA_COMPILE_DEFNS})
+        ${CUDA_COMPILE_DEFNS}
+        # These options don't seem to do print any warnings?
+        -Xptxas --warn-on-double-precision-use
+        -Xptxas -Werror)
 
 add_library(render_optix render_optix.cpp optix_utils.cpp)
 

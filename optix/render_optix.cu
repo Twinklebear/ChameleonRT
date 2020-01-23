@@ -97,7 +97,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
         if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_payload.t_hit <= 0.f) {
             float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
             float w = power_heuristic(1.f, light_pdf, 1.f, bsdf_pdf);
-            illum = bsdf * light.emission * abs(dot(light_dir, n)) * w / light_pdf;
+            illum = bsdf * light.emission * fabs(dot(light_dir, n)) * w / light_pdf;
         }
     }
 
@@ -121,7 +121,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
                 ++ray_count;
 #endif
                 if (shadow_payload.t_hit <= 0.f) {
-                    illum = illum + bsdf * light.emission * abs(dot(w_i, n)) * w / bsdf_pdf;
+                    illum = illum + bsdf * light.emission * fabs(dot(w_i, n)) * w / bsdf_pdf;
                 }
             }
         }
@@ -136,7 +136,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
     const uint2 screen = make_uint2(optixGetLaunchDimensions().x, optixGetLaunchDimensions().y);
     const uint32_t pixel_idx = pixel.x + pixel.y * screen.x;
 
-    float3 illum = make_float3(0.0);
+    float3 illum = make_float3(0.f);
     uint16_t ray_count = 0;
     DisneyMaterial mat;
     PCGRand rng = get_rng(pixel_idx * (launch_params.frame_id + 1) * params.spp);
@@ -147,9 +147,9 @@ extern "C" __global__ void __raygen__perspective_camera() {
 
         float3 ray_origin = make_float3(launch_params.cam_pos);
 
-        const float3 light_emission = make_float3(1.0);
+        const float3 light_emission = make_float3(1.f);
         int bounce = 0;
-        float3 path_throughput = make_float3(1.0);
+        float3 path_throughput = make_float3(1.f);
         do {
             RayPayload payload = make_ray_payload();
             uint2 payload_ptr;
@@ -173,7 +173,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
             const float3 hit_p = ray_origin + payload.t_hit * ray_dir;
             float3 v_x, v_y;
             float3 v_z = payload.normal;
-            if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
+            if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.f) {
                 v_z = -v_z;
             }
             ortho_basis(v_x, v_y, v_z);
@@ -187,7 +187,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
             if (pdf < EPSILON || all_zero(bsdf)) {
                 break;
             }
-            path_throughput = path_throughput * bsdf * abs(dot(w_i, v_z)) / pdf;
+            path_throughput = path_throughput * bsdf * fabs(dot(w_i, v_z)) / pdf;
 
             if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
                 break;
@@ -225,7 +225,7 @@ extern "C" __global__ void __miss__miss() {
     int check_x = u * 10.f;
     int check_y = v * 10.f;
 
-    if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
+    if (dir.y > -0.1f && (check_x + check_y) % 2 == 0) {
         payload.normal = make_float3(0.5f);
     } else {
         payload.normal = make_float3(0.1f);

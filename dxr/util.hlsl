@@ -1,10 +1,10 @@
 #ifndef UTIL_HLSL
 #define UTIL_HLSL
 
-#define M_PI 3.14159265358979323846
-#define M_1_PI 0.318309886183790671538
+#define M_PI 3.14159265358979323846f
+#define M_1_PI 0.318309886183790671538f
 // TODO: Maybe implement the ray offset method in Ray Tracing Gems
-#define EPSILON 0.001
+#define EPSILON 0.001f
 
 #define PRIMARY_RAY 0
 #define OCCLUSION_RAY 1
