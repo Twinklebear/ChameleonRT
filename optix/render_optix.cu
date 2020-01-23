@@ -135,7 +135,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
     float3 illum = make_float3(0.f);
     uint16_t ray_count = 0;
     DisneyMaterial mat;
-    PCGRand rng = get_rng(pixel_idx * (launch_params.frame_id + 1) * params.spp);
+    PCGRand rng = get_rng(launch_params.frame_id * params.spp);
     for (int i = 0; i < params.spp; ++i) {
         const float2 d = make_float2(pixel.x + pcg32_randomf(rng), pixel.y + pcg32_randomf(rng)) / make_float2(screen);
         float3 ray_dir = normalize(d.x * make_float3(launch_params.cam_du)
