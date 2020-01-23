@@ -69,10 +69,6 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
     light_id = min(light_id, num_lights - 1);
     QuadLight light = lights[light_id];
 
-    RayPayload shadow_payload = make_ray_payload();
-    uint2 payload_ptr;
-    pack_ptr(&shadow_payload, payload_ptr.x, payload_ptr.y);
-
     const uint32_t occlusion_flags = OPTIX_RAY_FLAG_DISABLE_ANYHIT
         | OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT
         | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT;
@@ -87,14 +83,14 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
         float light_pdf = quad_light_pdf(light, light_pos, hit_p, light_dir);
         float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, v_x, v_y);
 
-        shadow_payload.t_hit = 1.f;
+        uint32_t shadow_hit = 1;
         optixTrace(launch_params.scene, hit_p, light_dir, EPSILON, light_dist, 0.f,
                 0xff, occlusion_flags, PRIMARY_RAY, 1, OCCLUSION_RAY,
-                payload_ptr.x, payload_ptr.y);
+                shadow_hit);
 #ifdef REPORT_RAY_STATS
         ++ray_count;
 #endif
-        if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_payload.t_hit <= 0.f) {
+        if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && !shadow_hit) {
             float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
             float w = power_heuristic(1.f, light_pdf, 1.f, bsdf_pdf);
             illum = bsdf * light.emission * fabs(dot(light_dir, n)) * w / light_pdf;
@@ -113,14 +109,14 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
             float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
             if (light_pdf >= EPSILON) {
                 float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
-                shadow_payload.t_hit = 1.f;
+                uint32_t shadow_hit = 1;
                 optixTrace(launch_params.scene, hit_p, w_i, EPSILON, light_dist, 0.f,
                         0xff, occlusion_flags, PRIMARY_RAY, 1, OCCLUSION_RAY,
-                        payload_ptr.x, payload_ptr.y);
+                        shadow_hit);
 #ifdef REPORT_RAY_STATS
                 ++ray_count;
 #endif
-                if (shadow_payload.t_hit <= 0.f) {
+                if (!shadow_hit) {
                     illum = illum + bsdf * light.emission * fabs(dot(w_i, n)) * w / bsdf_pdf;
                 }
             }
@@ -232,8 +228,7 @@ extern "C" __global__ void __miss__miss() {
 }
 
 extern "C" __global__ void __miss__occlusion_miss() {
-    RayPayload &payload = get_payload<RayPayload>();
-    payload.t_hit = -1.f;
+    optixSetPayload_0(0);
 }
 
 extern "C" __global__ void __closesthit__closest_hit() {
