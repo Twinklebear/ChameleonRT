@@ -84,7 +84,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
         float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, v_x, v_y);
 
         uint32_t shadow_hit = 1;
-        optixTrace(launch_params.scene, hit_p, light_dir, EPSILON, light_dist, 0,
+        optixTrace(launch_params.scene, hit_p, light_dir, EPSILON, light_dist, 0.f,
                 0xff, occlusion_flags, PRIMARY_RAY, 1, OCCLUSION_RAY,
                 shadow_hit);
 #ifdef REPORT_RAY_STATS
@@ -110,7 +110,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
             if (light_pdf >= EPSILON) {
                 float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
                 uint32_t shadow_hit = 1;
-                optixTrace(launch_params.scene, hit_p, w_i, EPSILON, light_dist, 0,
+                optixTrace(launch_params.scene, hit_p, w_i, EPSILON, light_dist, 0.f,
                         0xff, occlusion_flags, PRIMARY_RAY, 1, OCCLUSION_RAY,
                         shadow_hit);
 #ifdef REPORT_RAY_STATS

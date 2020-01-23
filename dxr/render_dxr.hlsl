@@ -171,7 +171,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 void RayGen() {
     const uint2 pixel = DispatchRaysIndex().xy;
     const float2 dims = float2(DispatchRaysDimensions().xy);
-    PCGRand rng = get_rng(frame_id * 16);
+    PCGRand rng = get_rng(frame_id * spp);
 
     DisneyMaterial mat;
 
