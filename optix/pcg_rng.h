@@ -21,7 +21,7 @@ __device__ float pcg32_randomf(PCGRand &rng) {
 	return ldexp((float)pcg32_random(rng), -32);
 }
 
-__device__ PCGRand get_rng(uint32_t frame_id) {
+__device__ PCGRand get_rng(int frame_id) {
     const uint2 pixel = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 	uint32_t seed = (pixel.x + pixel.y * optixGetLaunchDimensions().x) * (frame_id + 1);
 
