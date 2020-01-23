@@ -3,9 +3,9 @@
 #include <embree3/rtcore.isph>
 #include "float3.ih"
 
-#define M_PI 3.14159265358979323846
-#define M_1_PI 0.318309886183790671538
-#define EPSILON 0.0001
+#define M_PI 3.14159265358979323846f
+#define M_1_PI 0.318309886183790671538f
+#define EPSILON 0.0001f
 
 #define MAX_PATH_DEPTH 5
 

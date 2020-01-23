@@ -88,7 +88,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
         float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, v_x, v_y);
 
         shadow_payload.t_hit = 1.f;
-        optixTrace(launch_params.scene, hit_p, light_dir, EPSILON, light_dist, 0,
+        optixTrace(launch_params.scene, hit_p, light_dir, EPSILON, light_dist, 0.f,
                 0xff, occlusion_flags, PRIMARY_RAY, 1, OCCLUSION_RAY,
                 payload_ptr.x, payload_ptr.y);
 #ifdef REPORT_RAY_STATS
@@ -97,7 +97,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
         if (light_pdf >= EPSILON && bsdf_pdf >= EPSILON && shadow_payload.t_hit <= 0.f) {
             float3 bsdf = disney_brdf(mat, n, w_o, light_dir, v_x, v_y);
             float w = power_heuristic(1.f, light_pdf, 1.f, bsdf_pdf);
-            illum = bsdf * light.emission * abs(dot(light_dir, n)) * w / light_pdf;
+            illum = bsdf * light.emission * fabs(dot(light_dir, n)) * w / light_pdf;
         }
     }
 
@@ -114,14 +114,14 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
             if (light_pdf >= EPSILON) {
                 float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
                 shadow_payload.t_hit = 1.f;
-                optixTrace(launch_params.scene, hit_p, w_i, EPSILON, light_dist, 0,
+                optixTrace(launch_params.scene, hit_p, w_i, EPSILON, light_dist, 0.f,
                         0xff, occlusion_flags, PRIMARY_RAY, 1, OCCLUSION_RAY,
                         payload_ptr.x, payload_ptr.y);
 #ifdef REPORT_RAY_STATS
                 ++ray_count;
 #endif
                 if (shadow_payload.t_hit <= 0.f) {
-                    illum = illum + bsdf * light.emission * abs(dot(w_i, n)) * w / bsdf_pdf;
+                    illum = illum + bsdf * light.emission * fabs(dot(w_i, n)) * w / bsdf_pdf;
                 }
             }
         }
@@ -146,16 +146,16 @@ extern "C" __global__ void __raygen__perspective_camera() {
     DisneyMaterial mat;
 
     uint16_t ray_count = 0;
-    const float3 light_emission = make_float3(1.0);
+    const float3 light_emission = make_float3(1.f);
     int bounce = 0;
-    float3 illum = make_float3(0.0);
-    float3 path_throughput = make_float3(1.0);
+    float3 illum = make_float3(0.f);
+    float3 path_throughput = make_float3(1.f);
     do {
         RayPayload payload = make_ray_payload();
         uint2 payload_ptr;
         pack_ptr(&payload, payload_ptr.x, payload_ptr.y);
 
-        optixTrace(launch_params.scene, ray_origin, ray_dir, EPSILON, 1e20f, 0,
+        optixTrace(launch_params.scene, ray_origin, ray_dir, EPSILON, 1e20f, 0.f,
                 0xff, OPTIX_RAY_FLAG_DISABLE_ANYHIT, PRIMARY_RAY, 1, PRIMARY_RAY,
                 payload_ptr.x, payload_ptr.y);
 #ifdef REPORT_RAY_STATS
@@ -173,7 +173,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
         const float3 hit_p = ray_origin + payload.t_hit * ray_dir;
         float3 v_x, v_y;
         float3 v_z = payload.normal;
-        if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
+        if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.f) {
             v_z = -v_z;
         }
         ortho_basis(v_x, v_y, v_z);
@@ -187,7 +187,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
         if (pdf < EPSILON || all_zero(bsdf)) {
             break;
         }
-        path_throughput = path_throughput * bsdf * abs(dot(w_i, v_z)) / pdf;
+        path_throughput = path_throughput * bsdf * fabs(dot(w_i, v_z)) / pdf;
 
         if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
             break;
@@ -224,7 +224,7 @@ extern "C" __global__ void __miss__miss() {
     int check_x = u * 10.f;
     int check_y = v * 10.f;
 
-    if (dir.y > -0.1 && (check_x + check_y) % 2 == 0) {
+    if (dir.y > -0.1f && (check_x + check_y) % 2 == 0) {
         payload.normal = make_float3(0.5f);
     } else {
         payload.normal = make_float3(0.1f);

@@ -52,7 +52,7 @@ __device__ bool quad_intersect(const QuadLight &light, const float3 &orig, const
 		// It's a finite plane so now see if the hit point is actually inside the plane
 		light_pos = orig + dir * t;
 		float3 hit_v = light_pos - light.position;
-		if (abs(dot(hit_v, light.v_x)) < light.width && abs(dot(hit_v, light.v_y)) < light.height) {
+		if (fabs(dot(hit_v, light.v_x)) < light.width && fabs(dot(hit_v, light.v_y)) < light.height) {
 			return true;
 		}
 	}

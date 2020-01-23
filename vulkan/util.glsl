@@ -6,9 +6,9 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_ARB_gpu_shader_int64 : enable
 
-#define M_PI 3.14159265358979323846
-#define M_1_PI 0.318309886183790671538
-#define EPSILON 0.0001
+#define M_PI 3.14159265358979323846f
+#define M_1_PI 0.318309886183790671538f
+#define EPSILON 0.0001f
 #define uint32_t uint
 
 #define PRIMARY_RAY 0

@@ -32,8 +32,8 @@ __device__ float length(const float3 &v) {
 
 __device__ float3 normalize(const float3 &v) {
 	float l = length(v);
-	if (l < 0.0) {
-		l = 0.0001;
+	if (l < 0.f) {
+		l = 0.0001f;
 	}
 	const float c = 1.f / length(v);
 	return make_float3(v.x * c, v.y * c, v.z * c);
