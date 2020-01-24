@@ -18,7 +18,7 @@ __device__ uint32_t pcg32_random(PCGRand &rng) {
 }
 
 __device__ float pcg32_randomf(PCGRand &rng) {
-    return ldexp((float)pcg32_random(rng), -32);
+    return ldexpf((float)pcg32_random(rng), -32);
 }
 
 __device__ PCGRand get_rng(int frame_id) {
