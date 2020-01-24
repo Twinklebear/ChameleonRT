@@ -75,7 +75,8 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
 
     // Sample the light to compute an incident light ray to this point
     {
-        float3 light_pos = sample_quad_light_position(light, make_float2(pcg32_randomf(rng), pcg32_randomf(rng)));
+        float3 light_pos = sample_quad_light_position(light,
+                make_float2(pcg32_randomf(rng), pcg32_randomf(rng)));
         float3 light_dir = light_pos - hit_p;
         float light_dist = length(light_dir);
         light_dir = normalize(light_dir);
@@ -132,7 +133,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
     const uint2 screen = make_uint2(optixGetLaunchDimensions().x, optixGetLaunchDimensions().y);
     const uint32_t pixel_idx = pixel.x + pixel.y * screen.x;
 
-    PCGRand rng = get_rng(launch_params.frame_id + 1);
+    PCGRand rng = get_rng(launch_params.frame_id);
     const float2 d = make_float2(pixel.x + pcg32_randomf(rng), pixel.y + pcg32_randomf(rng)) / make_float2(screen);
     float3 ray_dir = normalize(d.x * make_float3(launch_params.cam_du)
             + d.y * make_float3(launch_params.cam_dv) + make_float3(launch_params.cam_dir_top_left));

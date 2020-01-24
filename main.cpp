@@ -177,6 +177,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
     glm::vec3 up(0, 1, 0);
     float fov_y = 65.f;
     size_t camera_id = 0;
+    std::string backend_arg;
+    std::string validation_img_prefix;
     for (size_t i = 1; i < args.size(); ++i) {
         if (args[i] == "-eye") {
             eye.x = std::stof(args[++i]);
@@ -198,30 +200,37 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
             got_camera_args = true;
         } else if (args[i] == "-camera") {
             camera_id = std::stol(args[++i]);
+        } else if (args[i] == "-validation") {
+            validation_img_prefix = args[++i];
         }
 #if ENABLE_OSPRAY
         else if (args[i] == "-ospray") {
             renderer = std::make_unique<RenderOSPRay>();
+            backend_arg = args[i];
         }
 #endif
 #if ENABLE_OPTIX
         else if (args[i] == "-optix") {
             renderer = std::make_unique<RenderOptiX>();
+            backend_arg = args[i];
         }
 #endif
 #if ENABLE_EMBREE
         else if (args[i] == "-embree") {
             renderer = std::make_unique<RenderEmbree>();
+            backend_arg = args[i];
         }
 #endif
 #if ENABLE_DXR
         else if (args[i] == "-dxr") {
             renderer = std::make_unique<RenderDXR>();
+            backend_arg = args[i];
         }
 #endif
 #if ENABLE_VULKAN
         else if (args[i] == "-vulkan") {
             renderer = std::make_unique<RenderVulkan>();
+            backend_arg = args[i];
         }
 #endif
         else {
@@ -416,6 +425,16 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
         if (ImGui::Button("Save Image")) {
             std::cout << "Image saved to " << image_output << "\n";
             stbi_write_png(image_output.c_str(),
+                           win_width,
+                           win_height,
+                           4,
+                           renderer->img.data(),
+                           4 * win_width);
+        }
+        if (!validation_img_prefix.empty()) {
+            const std::string img_name =
+                validation_img_prefix + backend_arg + "-f" + std::to_string(frame_id) + ".png";
+            stbi_write_png(img_name.c_str(),
                            win_width,
                            win_height,
                            4,
