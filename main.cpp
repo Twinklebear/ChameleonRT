@@ -60,6 +60,8 @@ const std::string USAGE =
     "\t                       should be used. Defaults to the first camera\n"
     "\t-no-textures           Specify to skip loading textures\n"
     "\t-spp                   Specify the number of samples to take per-pixel each frame\n"
+    "\t-validation <prefix>   Save the image every frame for validation purposes. Images are\n"
+    "\t                       named <prefix>-<backend>-<frame>\n"
     "\n";
 
 const std::string fullscreen_quad_vs = R"(
@@ -181,6 +183,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
     size_t camera_id = 0;
     bool use_textures = true;
     uint32_t spp = 1;
+    std::string validation = "";
     for (size_t i = 1; i < args.size(); ++i) {
         if (args[i] == "-eye") {
             eye.x = std::stof(args[++i]);
@@ -206,6 +209,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
             use_textures = false;
         } else if (args[i] == "-spp") {
             spp = std::stoi(args[++i]);
+        } else if (args[i] == "-validation") {
+            validation = args[++i];
         }
 #if ENABLE_OSPRAY
         else if (args[i] == "-ospray") {
@@ -303,6 +308,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
     const std::string image_output = "chameleonrt.png";
     stbi_flip_vertically_on_write(true);
 
+    size_t accum_id = 0;
     size_t frame_id = 0;
     float render_time = 0.f;
     float rays_per_second = 0.f;
@@ -385,11 +391,13 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
 
         if (camera_changed) {
             frame_id = 0;
+            accum_id = 0;
         }
 
         RenderStats stats =
             renderer->render(camera.eye(), camera.dir(), camera.up(), fov_y, camera_changed);
         ++frame_id;
+        ++accum_id;
 
         // If we're running slow, just show the last time instead of averaging together
         if (stats.render_time > 100) {
@@ -424,13 +432,23 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
         ImGui::Text("RT Backend: %s", rt_backend.c_str());
         ImGui::Text("CPU: %s", cpu_brand.c_str());
         ImGui::Text("GPU: %s", gpu_brand.c_str());
-        ImGui::Text("Accumulated Frames: %llu", frame_id);
+        ImGui::Text("Accumulated Frames: %llu", accum_id);
         ImGui::Text("Samples per-pixel: %u", spp);
         ImGui::Text("%s", scene_info.c_str());
 
         if (ImGui::Button("Save Image")) {
             std::cout << "Image saved to " << image_output << "\n";
             stbi_write_png(image_output.c_str(),
+                           win_width,
+                           win_height,
+                           4,
+                           renderer->img.data(),
+                           4 * win_width);
+        }
+        if (!validation.empty()) {
+            std::string validation_img_name =
+                validation + "_" + rt_backend + "_accum" + std::to_string(accum_id) + ".png";
+            stbi_write_png(validation_img_name.c_str(),
                            win_width,
                            win_height,
                            4,
