@@ -899,7 +899,6 @@ void RenderVulkan::build_shader_binding_table()
     {
         uint32_t *params = reinterpret_cast<uint32_t *>(shader_table.sbt_params("raygen"));
         *params = light_params->size() / sizeof(QuadLight);
-        std::cout << "# of lights: " << *params << "\n";
     }
 
     for (size_t i = 0; i < scene_bvh->num_instances(); ++i) {
