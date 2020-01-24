@@ -18,7 +18,7 @@ uint32_t pcg32_random(inout PCGRand rng) {
 }
 
 float pcg32_randomf(inout PCGRand rng) {
-	return ldexp((double)pcg32_random(rng), -32);
+	return ldexp((float)pcg32_random(rng), -32);
 }
 
 PCGRand get_rng(int frame_id) {
