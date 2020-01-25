@@ -16,7 +16,11 @@ add_dxil_embed_library(dxr_shaders render_dxr.hlsl util.hlsl
         ${CMAKE_CURRENT_LIST_DIR}
         ${PROJECT_SOURCE_DIR})
 
-add_library(render_dxr render_dxr.cpp dx12_utils.cpp dxr_utils.cpp)
+add_library(render_dxr
+    render_dxr.cpp
+    dxdisplay.cpp
+    dx12_utils.cpp
+    dxr_utils.cpp)
 
 set_target_properties(render_dxr PROPERTIES
 	CXX_STANDARD 14

@@ -7,9 +7,9 @@
 #include <vector>
 #include <SDL.h>
 #include "arcball_camera.h"
-#include "display/display.h"
-#include "display/gl/gldisplay.h"
-#include "display/imgui_impl_sdl.h"
+#include "util/display/display.h"
+#include "util/display/gldisplay.h"
+#include "util/display/imgui_impl_sdl.h"
 #include "imgui.h"
 #include "scene.h"
 #include "stb_image_write.h"

@@ -16,7 +16,6 @@ find_package(SDL2 REQUIRED)
 
 add_subdirectory(imgui)
 add_subdirectory(util)
-add_subdirectory(display)
 
 option(ENABLE_OSPRAY "Build the OSPRay rendering backend. Requires OSPRay" OFF)
 option(ENABLE_EMBREE "Build the Embree + TBB + ISPC rendering backend. Requires Embree, TBB and ISPC" OFF)
@@ -67,7 +66,7 @@ set_target_properties(chameleonrt PROPERTIES
 
 target_link_libraries(chameleonrt PUBLIC
     util
-    gldisplay)
+    display)
 
 if (ENABLE_OSPRAY)
 	target_link_libraries(chameleonrt PUBLIC render_ospray)
