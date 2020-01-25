@@ -13,7 +13,7 @@ struct GLDisplay : Display {
     GLuint render_texture;
     GLuint vao;
     std::unique_ptr<Shader> display_render;
-    glm::ivec2 fb_dims;
+    glm::uvec2 fb_dims;
 
     GLDisplay(SDL_Window *window);
 

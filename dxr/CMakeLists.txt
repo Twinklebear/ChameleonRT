@@ -21,6 +21,7 @@ add_library(render_dxr
     dxdisplay.cpp
     dx12_utils.cpp
     dxr_utils.cpp)
+    #imgui_impl_dx12.cpp)
 
 set_target_properties(render_dxr PROPERTIES
 	CXX_STANDARD 14

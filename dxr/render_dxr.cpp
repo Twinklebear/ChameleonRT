@@ -29,7 +29,7 @@ RenderDXR::RenderDXR()
         debug_controller->EnableDebugLayer();
     }
 #endif
-
+    // TODO: we should enumerate the devices and find the first one supporting RTX
     auto err = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&device));
     if (FAILED(err)) {
         std::cout << "Failed to make D3D12 device\n";

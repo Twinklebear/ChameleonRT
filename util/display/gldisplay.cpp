@@ -67,7 +67,7 @@ std::string GLDisplay::gpu_brand()
 
 void GLDisplay::resize(const int fb_width, const int fb_height)
 {
-    fb_dims = glm::ivec2(fb_width, fb_height);
+    fb_dims = glm::uvec2(fb_width, fb_height);
     if (render_texture != -1) {
         glDeleteTextures(1, &render_texture);
     }

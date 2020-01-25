@@ -7,14 +7,14 @@
 #include <vector>
 #include <SDL.h>
 #include "arcball_camera.h"
-#include "util/display/display.h"
-#include "util/display/gldisplay.h"
-#include "util/display/imgui_impl_sdl.h"
 #include "imgui.h"
 #include "scene.h"
 #include "stb_image_write.h"
 #include "tiny_obj_loader.h"
 #include "util.h"
+#include "util/display/display.h"
+#include "util/display/gldisplay.h"
+#include "util/display/imgui_impl_sdl.h"
 
 #if ENABLE_OSPRAY
 #include "ospray/render_ospray.h"
@@ -26,6 +26,7 @@
 #include "embree/render_embree.h"
 #endif
 #if ENABLE_DXR
+#include "dxr/dxdisplay.h"
 #include "dxr/render_dxr.h"
 #endif
 #if ENABLE_VULKAN
@@ -86,6 +87,7 @@ int main(int argc, const char **argv)
         return -1;
     }
 
+    /*
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -96,18 +98,19 @@ int main(int argc, const char **argv)
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-
+    */
     SDL_Window *window = SDL_CreateWindow("ChameleonRT",
                                           SDL_WINDOWPOS_CENTERED,
                                           SDL_WINDOWPOS_CENTERED,
                                           win_width,
                                           win_height,
-                                          SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+                                          /*SDL_WINDOW_OPENGL | */ SDL_WINDOW_RESIZABLE);
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
     {
-        GLDisplay display(window);
+        // GLDisplay display(window);
+        DXDisplay display(window);
 
         run_app(args, window, &display);
     }
@@ -330,6 +333,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         }
 
         display->new_frame();
+        /*
         ImGui_ImplSDL2_NewFrame(window);
         ImGui::NewFrame();
 
@@ -361,6 +365,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
                            renderer->img.data(),
                            4 * win_width);
         }
+        */
         if (!validation_img_prefix.empty()) {
             const std::string img_name =
                 validation_img_prefix + backend_arg + "-f" + std::to_string(frame_id) + ".png";
@@ -371,10 +376,10 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
                            renderer->img.data(),
                            4 * win_width);
         }
-
+        /*
         ImGui::End();
         ImGui::Render();
-
+        */
         display->display(renderer->img);
         camera_changed = false;
     }
