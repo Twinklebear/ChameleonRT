@@ -3,8 +3,8 @@
 #include <memory>
 #include <SDL.h>
 #include "display.h"
-#include "gl/gl_core_4_5.h"
-#include "gl/shader.h"
+#include "gl_core_4_5.h"
+#include "shader.h"
 #include <glm/glm.hpp>
 
 struct GLDisplay : Display {

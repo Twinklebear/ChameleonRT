@@ -1,4 +1,4 @@
-#include "gl/gldisplay.h"
+#include "gldisplay.h"
 #include <iostream>
 #include <stdexcept>
 #include <string>

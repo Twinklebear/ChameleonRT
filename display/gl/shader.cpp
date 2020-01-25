@@ -1,4 +1,4 @@
-#include "gl/shader.h"
+#include "shader.h"
 #include <algorithm>
 #include <fstream>
 #include <iostream>

@@ -1,7 +1,7 @@
 add_subdirectory(gl)
 #add_subdirectory(vk)
 if (WIN32)
-    #    add_subdirectory(dx)
+    add_subdirectory(dx)
 endif()
 
 add_library(display imgui_impl_sdl.cpp)
