@@ -87,7 +87,6 @@ int main(int argc, const char **argv)
         return -1;
     }
 
-    /*
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -98,19 +97,19 @@ int main(int argc, const char **argv)
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    */
+
     SDL_Window *window = SDL_CreateWindow("ChameleonRT",
                                           SDL_WINDOWPOS_CENTERED,
                                           SDL_WINDOWPOS_CENTERED,
                                           win_width,
                                           win_height,
-                                          /*SDL_WINDOW_OPENGL | */ SDL_WINDOW_RESIZABLE);
+                                          SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
     {
-        // GLDisplay display(window);
-        DXDisplay display(window);
+        GLDisplay display(window);
+        // DXDisplay display(window);
 
         run_app(args, window, &display);
     }
@@ -333,7 +332,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         }
 
         display->new_frame();
-        /*
         ImGui_ImplSDL2_NewFrame(window);
         ImGui::NewFrame();
 
@@ -365,7 +363,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
                            renderer->img.data(),
                            4 * win_width);
         }
-        */
         if (!validation_img_prefix.empty()) {
             const std::string img_name =
                 validation_img_prefix + backend_arg + "-f" + std::to_string(frame_id) + ".png";
@@ -376,12 +373,10 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
                            renderer->img.data(),
                            4 * win_width);
         }
-        /*
+
         ImGui::End();
         ImGui::Render();
-        */
         display->display(renderer->img);
         camera_changed = false;
     }
 }
-
