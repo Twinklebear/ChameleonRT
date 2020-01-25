@@ -1,8 +1,5 @@
 add_library(util
     arcball_camera.cpp
-    imgui_impl_sdl.cpp
-    imgui_impl_opengl3.cpp
-    shader.cpp
     util.cpp
     material.cpp
     mesh.cpp
@@ -10,8 +7,7 @@ add_library(util
     buffer_view.cpp
     gltf_types.cpp
     flatten_gltf.cpp
-    file_mapping.cpp
-    gl_core_4_5.c)
+    file_mapping.cpp)
 
 set_target_properties(util PROPERTIES
     CXX_STANDARD 14
@@ -20,13 +16,11 @@ set_target_properties(util PROPERTIES
 target_include_directories(util PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
     $<BUILD_INTERFACE:${SDL2_INCLUDE_DIR}>
-    $<BUILD_INTERFACE:${OPENGL_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${GLM_INCLUDE_DIRS}>)
 
 target_link_libraries(util PUBLIC
     imgui
-    ${SDL2_LIBRARY}
-    ${OPENGL_LIBRARIES})
+    ${SDL2_LIBRARY})
 
 find_package(pbrtParser)
 if (${pbrtParser_FOUND})

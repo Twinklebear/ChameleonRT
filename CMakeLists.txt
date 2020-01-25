@@ -13,10 +13,10 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 find_package(Threads REQUIRED)
 find_package(glm REQUIRED)
 find_package(SDL2 REQUIRED)
-find_package(OpenGL REQUIRED)
 
 add_subdirectory(imgui)
 add_subdirectory(util)
+add_subdirectory(display)
 
 option(ENABLE_OSPRAY "Build the OSPRay rendering backend. Requires OSPRay" OFF)
 option(ENABLE_EMBREE "Build the Embree + TBB + ISPC rendering backend. Requires Embree, TBB and ISPC" OFF)
@@ -65,7 +65,9 @@ set_target_properties(chameleonrt PROPERTIES
 	CXX_STANDARD 14
 	CXX_STANDARD_REQUIRED ON)
 
-target_link_libraries(chameleonrt PUBLIC util)
+target_link_libraries(chameleonrt PUBLIC
+    util
+    gldisplay)
 
 if (ENABLE_OSPRAY)
 	target_link_libraries(chameleonrt PUBLIC render_ospray)

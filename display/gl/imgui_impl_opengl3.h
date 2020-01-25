@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include "imgui.h"
+
 #define IMGUI_IMPL_OPENGL_LOADER_CUSTOM "gl_core_4_5.h"
 
 // Set default OpenGL loader to be gl3w

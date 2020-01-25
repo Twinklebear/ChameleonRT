@@ -7,12 +7,11 @@
 #include <vector>
 #include <SDL.h>
 #include "arcball_camera.h"
-#include "gl_core_4_5.h"
+#include "display/display.h"
+#include "display/gl/gldisplay.h"
+#include "display/imgui_impl_sdl.h"
 #include "imgui.h"
-#include "imgui_impl_opengl3.h"
-#include "imgui_impl_sdl.h"
 #include "scene.h"
-#include "shader.h"
 #include "stb_image_write.h"
 #include "tiny_obj_loader.h"
 #include "util.h"
@@ -60,37 +59,10 @@ const std::string USAGE =
     "\t                       should be used. Defaults to the first camera\n"
     "\n";
 
-const std::string fullscreen_quad_vs = R"(
-#version 450 core
-
-const vec4 pos[4] = vec4[4](
-	vec4(-1, 1, 0.5, 1),
-	vec4(-1, -1, 0.5, 1),
-	vec4(1, 1, 0.5, 1),
-	vec4(1, -1, 0.5, 1)
-);
-
-void main(void){
-	gl_Position = pos[gl_VertexID];
-}
-)";
-
-const std::string display_texture_fs = R"(
-#version 450 core
-
-layout(binding=0) uniform sampler2D img;
-
-out vec4 color;
-
-void main(void){ 
-	ivec2 uv = ivec2(gl_FragCoord.xy);
-	color = texelFetch(img, uv, 0);
-})";
-
 int win_width = 1280;
 int win_height = 720;
 
-void run_app(const std::vector<std::string> &args, SDL_Window *window);
+void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *display);
 
 glm::vec2 transform_mouse(glm::vec2 in)
 {
@@ -114,7 +86,6 @@ int main(int argc, const char **argv)
         return -1;
     }
 
-    const char *glsl_version = "#version 450 core";
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -132,40 +103,25 @@ int main(int argc, const char **argv)
                                           win_width,
                                           win_height,
                                           SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-
-    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
-    SDL_GL_SetSwapInterval(1);
-    SDL_GL_MakeCurrent(window, gl_context);
-
-    if (ogl_LoadFunctions() == ogl_LOAD_FAILED) {
-        std::cerr << "Failed to initialize OpenGL\n";
-        return 1;
-    }
-
-    // Setup Dear ImGui context
     ImGui::CreateContext();
-
-    // Setup Dear ImGui style
     ImGui::StyleColorsDark();
 
-    // Setup Platform/Renderer bindings
-    ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
-    ImGui_ImplOpenGL3_Init(glsl_version);
+    {
+        GLDisplay display(window);
 
-    run_app(args, window);
+        run_app(args, window, &display);
+    }
 
-    ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
 
-    SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
     SDL_Quit();
 
     return 0;
 }
 
-void run_app(const std::vector<std::string> &args, SDL_Window *window)
+void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *display)
 {
     ImGuiIO &io = ImGui::GetIO();
 
@@ -247,6 +203,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
         std::exit(1);
     }
 
+    display->resize(win_width, win_height);
     renderer->initialize(win_width, win_height);
 
     std::string scene_info;
@@ -279,28 +236,10 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
     }
 
     ArcballCamera camera(eye, center, up);
-    Shader display_render(fullscreen_quad_vs, display_texture_fs);
-
-    GLuint render_texture;
-    glGenTextures(1, &render_texture);
-    glBindTexture(GL_TEXTURE_2D, render_texture);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, win_width, win_height);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    GLuint vao;
-    glCreateVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-
-    glClearColor(0.0, 0.0, 0.0, 0.0);
-    glDisable(GL_DEPTH_TEST);
 
     const std::string rt_backend = renderer->name();
     const std::string cpu_brand = get_cpu_brand();
-    const std::string gpu_brand = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
+    const std::string gpu_brand = display->gpu_brand();
     const std::string image_output = "chameleonrt.png";
     stbi_flip_vertically_on_write(true);
 
@@ -368,18 +307,9 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
                 win_height = event.window.data2;
                 io.DisplaySize.x = win_width;
                 io.DisplaySize.y = win_height;
+
+                display->resize(win_width, win_height);
                 renderer->initialize(win_width, win_height);
-
-                glDeleteTextures(1, &render_texture);
-                glGenTextures(1, &render_texture);
-                // Setup the render textures for color and normals
-                glBindTexture(GL_TEXTURE_2D, render_texture);
-                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, win_width, win_height);
-
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             }
         }
 
@@ -399,7 +329,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
             rays_per_second += stats.rays_per_second;
         }
 
-        ImGui_ImplOpenGL3_NewFrame();
+        display->new_frame();
         ImGui_ImplSDL2_NewFrame(window);
         ImGui::NewFrame();
 
@@ -443,29 +373,10 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window)
         }
 
         ImGui::End();
-
-        // Rendering
         ImGui::Render();
-        glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
 
-        glTexSubImage2D(GL_TEXTURE_2D,
-                        0,
-                        0,
-                        0,
-                        win_width,
-                        win_height,
-                        GL_RGBA,
-                        GL_UNSIGNED_BYTE,
-                        renderer->img.data());
-
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glUseProgram(display_render.program);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-        SDL_GL_SwapWindow(window);
-
+        display->display(renderer->img);
         camera_changed = false;
     }
 }
+

@@ -12,6 +12,8 @@ struct RenderStats {
 struct RenderBackend {
     std::vector<uint32_t> img;
 
+    virtual ~RenderBackend() {}
+
     virtual std::string name() = 0;
 
     virtual void initialize(const int fb_width, const int fb_height) = 0;
