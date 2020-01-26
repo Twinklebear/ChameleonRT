@@ -8,7 +8,7 @@
 
 using Microsoft::WRL::ComPtr;
 
-DXDisplay::DXDisplay(SDL_Window *win) : window(win)
+DXDisplay::DXDisplay(SDL_Window *window)
 {
     SDL_SysWMinfo wm_info;
     SDL_VERSION(&wm_info.version);

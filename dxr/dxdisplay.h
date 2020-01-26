@@ -11,8 +11,7 @@
 #include "dx12_utils.h"
 #include <glm/glm.hpp>
 
-struct DXDisplay : public Display {
-    SDL_Window *window;
+struct DXDisplay : Display {
     HWND win_handle;
 
     Microsoft::WRL::ComPtr<ID3D12Device5> device;
