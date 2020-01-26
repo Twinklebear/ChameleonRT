@@ -1,30 +1,52 @@
 #include "vkdisplay.h"
-#include <SDL_syswm.h>
-// TODO need to include and do setup for different OS
-#include <vulkan/vulkan_win32.h>
+#include <SDL_vulkan.h>
+#include <vulkan/vulkan.h>
 #include "display/imgui_impl_sdl.h"
 #include "imgui_impl_vulkan.h"
+#include "vulkan_utils.h"
 
-const static std::vector<std::string> instance_extensions = {
-    VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+#if !SDL_VERSION_ATLEAST(2, 0, 8)
+#error \
+    "SDL 2.0.8 or higher is required for the Vulkan display frontend""
+#endif
 
 const static std::vector<std::string> logical_device_extensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-VKDisplay::VKDisplay(SDL_Window *window)
-    : device(instance_extensions, logical_device_extensions)
+std::vector<std::string> get_instance_extensions(SDL_Window *window)
 {
-    {
-        SDL_SysWMinfo wm_info;
-        SDL_VERSION(&wm_info.version);
-        SDL_GetWindowWMInfo(window, &wm_info);
-        // TODO: Linux surface support
-        VkWin32SurfaceCreateInfoKHR create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-        create_info.hwnd = wm_info.info.win.window;
-        create_info.hinstance = wm_info.info.win.hinstance;
-        CHECK_VULKAN(
-            vkCreateWin32SurfaceKHR(device.instance(), &create_info, nullptr, &surface));
+    uint32_t sdl_extension_count = 0;
+    if (!SDL_Vulkan_GetInstanceExtensions(window, &sdl_extension_count, nullptr)) {
+        throw std::runtime_error("Failed to get SDL vulkan extension count");
+    }
+
+    std::vector<const char *> sdl_extensions(sdl_extension_count, nullptr);
+    if (!SDL_Vulkan_GetInstanceExtensions(
+            window, &sdl_extension_count, sdl_extensions.data())) {
+        throw std::runtime_error("Failed to get SDL vulkan extension list");
+    }
+
+    std::vector<std::string> instance_extensions;
+    std::transform(sdl_extensions.begin(),
+                   sdl_extensions.end(),
+                   std::back_inserter(instance_extensions),
+                   [](const char *str) { return std::string(str); });
+    return instance_extensions;
+}
+
+VKDisplay::VKDisplay(SDL_Window *window)
+    : device(get_instance_extensions(window), logical_device_extensions)
+{
+    SDL_version ver;
+    SDL_GetVersion(&ver);
+    if (ver.major == 2 && ver.minor == 0 && ver.patch < 8) {
+        std::cout << "SDL 2.0.8 or higher is required for the Vulkan display frontend\n";
+        throw std::runtime_error(
+            "SDL 2.0.8 or higher is required for the Vulkan display frontend");
+    }
+
+    if (!SDL_Vulkan_CreateSurface(window, device.instance(), &surface)) {
+        throw std::runtime_error("Failed to create Vulkan surface using SDL");
     }
 
     command_pool = device.make_command_pool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
