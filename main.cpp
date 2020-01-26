@@ -59,6 +59,7 @@ const std::string USAGE =
     "\t-fov <fovy>            Specify the camera field of view (in degrees)\n"
     "\t-camera <n>            If the scene contains multiple cameras, specify which\n"
     "\t                       should be used. Defaults to the first camera\n"
+    "\t-img <x> <y>           Specify the window dimensions. Defaults to 1280x720\n"
     "\n";
 
 int win_width = 1280;
@@ -91,16 +92,23 @@ int main(int argc, const char **argv)
     // Determine which display frontend we should use
     std::string display_frontend = "gl";
     uint32_t window_flags = SDL_WINDOW_RESIZABLE;
-    for (const auto &arg : args) {
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "-img") {
+            win_width = std::stoi(args[++i]);
+            win_height = std::stoi(args[++i]);
+            continue;
+        }
 #if ENABLE_DXR
-        if (arg == "-dxr") {
+        if (args[i] == "-dxr") {
             display_frontend = "dx";
+            continue;
         }
 #endif
 #if ENABLE_VULKAN
-        if (arg == "-vulkan") {
+        if (args[i] == "-vulkan") {
             display_frontend = "vk";
             window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN;
+            continue;
         }
 #endif
     }
@@ -225,7 +233,9 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             backend_arg = args[i];
         }
 #endif
-        else {
+        else if (args[i] == "-img") {
+            i += 2;
+        } else {
             scene_file = args[i];
             canonicalize_path(scene_file);
         }
