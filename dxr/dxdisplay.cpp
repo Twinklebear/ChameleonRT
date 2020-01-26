@@ -103,6 +103,11 @@ std::string DXDisplay::gpu_brand()
     return conv.to_bytes(desc.Description);
 }
 
+std::string DXDisplay::name()
+{
+    return "DirectX 12";
+}
+
 void DXDisplay::resize(const int fb_width, const int fb_height)
 {
     fb_dims = glm::uvec2(fb_width, fb_height);
@@ -131,7 +136,6 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
         CHECK_ERR(
             swap_chain->ResizeBuffers(2, fb_dims.x, fb_dims.y, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
     }
-    
 
     const uint32_t rtv_descriptor_size =
         device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);

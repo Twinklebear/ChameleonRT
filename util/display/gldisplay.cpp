@@ -65,6 +65,11 @@ std::string GLDisplay::gpu_brand()
     return reinterpret_cast<const char *>(glGetString(GL_RENDERER));
 }
 
+std::string GLDisplay::name()
+{
+    return "OpenGL";
+}
+
 void GLDisplay::resize(const int fb_width, const int fb_height)
 {
     fb_dims = glm::uvec2(fb_width, fb_height);
@@ -102,4 +107,3 @@ void GLDisplay::display(const std::vector<uint32_t> &img)
 
     SDL_GL_SwapWindow(window);
 }
-

@@ -21,6 +21,8 @@ struct GLDisplay : Display {
 
     std::string gpu_brand() override;
 
+    std::string name() override;
+
     void resize(const int fb_width, const int fb_height) override;
 
     void new_frame() override;

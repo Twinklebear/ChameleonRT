@@ -277,6 +277,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
     const std::string cpu_brand = get_cpu_brand();
     const std::string gpu_brand = display->gpu_brand();
     const std::string image_output = "chameleonrt.png";
+    const std::string display_frontend = display->name();
     stbi_flip_vertically_on_write(true);
 
     size_t frame_id = 0;
@@ -366,7 +367,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         }
 
         display->new_frame();
-        /*
+
         ImGui_ImplSDL2_NewFrame(window);
         ImGui::NewFrame();
 
@@ -387,6 +388,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         ImGui::Text("CPU: %s", cpu_brand.c_str());
         ImGui::Text("GPU: %s", gpu_brand.c_str());
         ImGui::Text("Accumulated Frames: %llu", frame_id);
+        ImGui::Text("Display Frontend: %s", display_frontend.c_str());
         ImGui::Text("%s", scene_info.c_str());
 
         if (ImGui::Button("Save Image")) {
@@ -411,7 +413,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 
         ImGui::End();
         ImGui::Render();
-        */
+
         display->display(renderer->img);
         camera_changed = false;
     }
