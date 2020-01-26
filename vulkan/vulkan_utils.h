@@ -1,6 +1,9 @@
 #pragma once
 
+#include <iostream>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -22,7 +25,8 @@ extern PFN_vkGetAccelerationStructureMemoryRequirementsNV
     vkGetAccelerationStructureMemoryRequirements;
 extern PFN_vkCmdBuildAccelerationStructureNV vkCmdBuildAccelerationStructure;
 extern PFN_vkCmdCopyAccelerationStructureNV vkCmdCopyAccelerationStructure;
-extern PFN_vkCmdWriteAccelerationStructuresPropertiesNV vkCmdWriteAccelerationStructuresProperties;
+extern PFN_vkCmdWriteAccelerationStructuresPropertiesNV
+    vkCmdWriteAccelerationStructuresProperties;
 extern PFN_vkCreateRayTracingPipelinesNV vkCreateRayTracingPipelines;
 extern PFN_vkGetRayTracingShaderGroupHandlesNV vkGetRayTracingShaderGroupHandles;
 extern PFN_vkCmdTraceRaysNV vkCmdTraceRays;
@@ -30,8 +34,8 @@ extern PFN_vkCmdTraceRaysNV vkCmdTraceRays;
 namespace vkrt {
 
 class Device {
-    VkInstance instance = VK_NULL_HANDLE;
-    VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+    VkInstance vk_instance = VK_NULL_HANDLE;
+    VkPhysicalDevice vk_physical_device = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     VkQueue queue = VK_NULL_HANDLE;
 
@@ -41,7 +45,9 @@ class Device {
     VkPhysicalDeviceRayTracingPropertiesNV rt_props = {};
 
 public:
-    Device();
+    Device(const std::vector<std::string> &instance_extensions = std::vector<std::string>{},
+           const std::vector<std::string> &logical_device_extensions =
+               std::vector<std::string>{});
     ~Device();
 
     Device(Device &&d);
@@ -51,6 +57,10 @@ public:
     Device &operator=(const Device &) = delete;
 
     VkDevice logical_device();
+
+    VkPhysicalDevice physical_device();
+
+    VkInstance instance();
 
     VkQueue graphics_queue();
     uint32_t queue_index() const;
@@ -65,9 +75,9 @@ public:
     const VkPhysicalDeviceRayTracingPropertiesNV &raytracing_properties() const;
 
 private:
-    void make_instance();
+    void make_instance(const std::vector<std::string> &extensions);
     void select_physical_device();
-    void make_logical_device();
+    void make_logical_device(const std::vector<std::string> &extensions);
 };
 
 // TODO: Maybe a base resource class which tracks the queue and access flags
@@ -196,7 +206,7 @@ struct CombinedImageSampler {
     const std::shared_ptr<Texture2D> texture;
     VkSampler sampler;
 
-	CombinedImageSampler(const std::shared_ptr<Texture2D> &t, VkSampler sampler);
+    CombinedImageSampler(const std::shared_ptr<Texture2D> &t, VkSampler sampler);
 };
 
 class DescriptorSetUpdater {
@@ -206,9 +216,8 @@ class DescriptorSetUpdater {
     std::vector<VkDescriptorBufferInfo> buffers;
 
 public:
-    DescriptorSetUpdater &write_acceleration_structure(VkDescriptorSet set,
-                                                       uint32_t binding,
-                                                       const std::unique_ptr<TopLevelBVH> &bvh);
+    DescriptorSetUpdater &write_acceleration_structure(
+        VkDescriptorSet set, uint32_t binding, const std::unique_ptr<TopLevelBVH> &bvh);
 
     DescriptorSetUpdater &write_storage_image(VkDescriptorSet set,
                                               uint32_t binding,

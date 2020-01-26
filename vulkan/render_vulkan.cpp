@@ -49,10 +49,16 @@ RenderVulkan::RenderVulkan()
 
 RenderVulkan::~RenderVulkan()
 {
-    vkDestroyFence(device.logical_device(), fence, nullptr);
+    vkDestroySampler(device.logical_device(), sampler, nullptr);
     vkDestroyCommandPool(device.logical_device(), command_pool, nullptr);
-    vkDestroyPipeline(device.logical_device(), rt_pipeline.handle(), nullptr);
+    vkDestroyCommandPool(device.logical_device(), render_cmd_pool, nullptr);
+    vkDestroyPipelineLayout(device.logical_device(), pipeline_layout, nullptr);
+    vkDestroyDescriptorSetLayout(device.logical_device(), desc_layout, nullptr);
+    vkDestroyDescriptorSetLayout(device.logical_device(), buffer_desc_layout, nullptr);
+    vkDestroyDescriptorSetLayout(device.logical_device(), textures_desc_layout, nullptr);
     vkDestroyDescriptorPool(device.logical_device(), desc_pool, nullptr);
+    vkDestroyFence(device.logical_device(), fence, nullptr);
+    vkDestroyPipeline(device.logical_device(), rt_pipeline.handle(), nullptr);
 }
 
 std::string RenderVulkan::name()
