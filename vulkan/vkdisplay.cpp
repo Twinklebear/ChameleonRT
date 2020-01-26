@@ -83,23 +83,7 @@ void VKDisplay::resize(const int fb_width, const int fb_height)
     }
 
     fb_dims = glm::uvec2(fb_width, fb_height);
-    /*
-    {
-        uint32_t num_formats = 0;
-        CHECK_VULKAN(vkGetPhysicalDeviceSurfaceFormatsKHR(
-            device.physical_device(), surface, &num_formats, nullptr));
-        std::cout << "num formats: " << num_formats << "\n";
-        std::vector<VkSurfaceFormatKHR> formats;
-        formats.resize(num_formats);
-        CHECK_VULKAN(vkGetPhysicalDeviceSurfaceFormatsKHR(
-            device.physical_device(), surface, &num_formats, formats.data()));
 
-        for (const auto &fmt : formats) {
-            std::cout << "Format: " << fmt.format << ", color space: " << fmt.colorSpace
-                      << "\n";
-        }
-    }
-    */
     VkExtent2D swapchain_extent = {};
     swapchain_extent.width = fb_dims.x;
     swapchain_extent.height = fb_dims.y;
@@ -108,8 +92,7 @@ void VKDisplay::resize(const int fb_width, const int fb_height)
     create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     create_info.surface = surface;
     create_info.minImageCount = 2;
-    // TODO: The RTX 2070 on Windows says it only supports BGRA through Vulkan, but it seems to
-    // work just fine with an RGBA image format. So can I just ignore this?
+    // TODO: Need to find what extension to enable for the RGBA swap chain format
     create_info.imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
     create_info.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     create_info.imageExtent = swapchain_extent;
