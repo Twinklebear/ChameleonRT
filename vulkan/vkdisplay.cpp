@@ -1,4 +1,6 @@
 #include "vkdisplay.h"
+#include <algorithm>
+#include <cstring>
 #include <SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 #include "display/imgui_impl_sdl.h"
@@ -6,8 +8,7 @@
 #include "vulkan_utils.h"
 
 #if !SDL_VERSION_ATLEAST(2, 0, 8)
-#error \
-    "SDL 2.0.8 or higher is required for the Vulkan display frontend""
+#error "SDL 2.0.8 or higher is required for the Vulkan display frontend"
 #endif
 
 const static std::vector<std::string> logical_device_extensions = {
