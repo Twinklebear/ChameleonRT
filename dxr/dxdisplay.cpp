@@ -2,6 +2,8 @@
 #include <codecvt>
 #include <locale>
 #include <SDL_syswm.h>
+#include "display/imgui_impl_sdl.h"
+#include "imgui_impl_dx12.h"
 #include "util.h"
 
 using Microsoft::WRL::ComPtr;
@@ -62,9 +64,34 @@ DXDisplay::DXDisplay(SDL_Window *win) : window(win)
 
     device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
     fence_evt = CreateEvent(nullptr, false, false, nullptr);
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC desc = {0};
+        desc.NumDescriptors = render_targets.size();
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        CHECK_ERR(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&render_target_desc_heap)));
+    }
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC desc = {0};
+        desc.NumDescriptors = 1;
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        CHECK_ERR(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&imgui_desc_heap)));
+    }
+
+    ImGui_ImplSDL2_InitForD3D(window);
+    ImGui_ImplDX12_Init(device.Get(),
+                        1,
+                        DXGI_FORMAT_R8G8B8A8_UNORM,
+                        imgui_desc_heap.Get(),
+                        imgui_desc_heap->GetCPUDescriptorHandleForHeapStart(),
+                        imgui_desc_heap->GetGPUDescriptorHandleForHeapStart());
 }
 
-DXDisplay::~DXDisplay() {}
+DXDisplay::~DXDisplay()
+{
+    ImGui_ImplDX12_Shutdown();
+}
 
 std::string DXDisplay::gpu_brand()
 {
@@ -100,15 +127,30 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
 
         CHECK_ERR(sc.As(&swap_chain));
     } else {
+        ImGui_ImplDX12_InvalidateDeviceObjects();
         // If the swap chain already exists, resize it
         CHECK_ERR(
             swap_chain->ResizeBuffers(2, fb_dims.x, fb_dims.y, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
+    }
+    ImGui_ImplDX12_CreateDeviceObjects();
+
+    const uint32_t rtv_descriptor_size =
+        device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+    for (size_t i = 0; i < render_targets.size(); ++i) {
+        std::memset(&render_targets[i], 0, sizeof(D3D12_CPU_DESCRIPTOR_HANDLE));
+        render_targets[i] = render_target_desc_heap->GetCPUDescriptorHandleForHeapStart();
+        render_targets[i].ptr += i * rtv_descriptor_size;
+
+        ComPtr<ID3D12Resource> target;
+        CHECK_ERR(swap_chain->GetBuffer(i, IID_PPV_ARGS(&target)));
+        device->CreateRenderTargetView(target.Get(), nullptr, render_targets[i]);
     }
 }
 
 void DXDisplay::new_frame()
 {
-    // TODO
+    ImGui_ImplDX12_NewFrame();
 }
 
 void DXDisplay::display(const std::vector<uint32_t> &img)
@@ -129,9 +171,9 @@ void DXDisplay::display(const std::vector<uint32_t> &img)
     CHECK_ERR(cmd_allocator->Reset());
     CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 
+    const uint32_t back_buffer_idx = swap_chain->GetCurrentBackBufferIndex();
     ComPtr<ID3D12Resource> back_buffer;
-    CHECK_ERR(swap_chain->GetBuffer(swap_chain->GetCurrentBackBufferIndex(),
-                                    IID_PPV_ARGS(&back_buffer)));
+    CHECK_ERR(swap_chain->GetBuffer(back_buffer_idx, IID_PPV_ARGS(&back_buffer)));
 
     auto b = dxr::barrier_transition(
         back_buffer.Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -162,14 +204,24 @@ void DXDisplay::display(const std::vector<uint32_t> &img)
     cmd_list->CopyTextureRegion(&dst_desc, 0, 0, 0, &src_desc, &region);
 
     b = dxr::barrier_transition(
-        back_buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+        back_buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    cmd_list->ResourceBarrier(1, &b);
+
+    // Render ImGui to the framebuffer
+    cmd_list->OMSetRenderTargets(1, &render_targets[back_buffer_idx], false, nullptr);
+    ID3D12DescriptorHeap *desc_heap = imgui_desc_heap.Get();
+    cmd_list->SetDescriptorHeaps(1, &desc_heap);
+    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd_list.Get());
+
+    b = dxr::barrier_transition(
+        back_buffer.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
     cmd_list->ResourceBarrier(1, &b);
 
     CHECK_ERR(cmd_list->Close());
 
     // Execute the command list and present
-    std::array<ID3D12CommandList *, 1> cmd_lists = {cmd_list.Get()};
-    cmd_queue->ExecuteCommandLists(cmd_lists.size(), cmd_lists.data());
+    ID3D12CommandList *cmd_lists = cmd_list.Get();
+    cmd_queue->ExecuteCommandLists(1, &cmd_lists);
     CHECK_ERR(swap_chain->Present(1, 0));
 
     // Sync with the fence to wait for the frame to be presented

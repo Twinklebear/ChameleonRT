@@ -21,9 +21,11 @@ struct DXDisplay : public Display {
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmd_allocator;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
 
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> render_target_desc_heap, imgui_desc_heap;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 2> render_targets;
+
     glm::uvec2 fb_dims;
     dxr::Buffer upload_texture;
-    std::array<dxr::Texture2D, 2> swap_chain_textures;
     Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain;
 
     uint64_t fence_value = 1;

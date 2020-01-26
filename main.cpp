@@ -87,31 +87,58 @@ int main(int argc, const char **argv)
         return -1;
     }
 
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 5);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
+    // Determine which display frontend we should use
+    std::string display_frontend = "gl";
+    uint32_t window_flags = SDL_WINDOW_RESIZABLE;
+    for (const auto &arg : args) {
+#if ENABLE_DXR
+        if (arg == "-dxr") {
+            display_frontend = "dx";
+        }
+#endif
+#if ENABLE_VULKAN
+        if (arg == "-vulkan") {
+            // display_frontend = "vk";
+            // window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN;
+            // VK TODO
+            display_frontend = "gl";
+        }
+#endif
+    }
 
-    // Create window with graphics context
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+    if (display_frontend == "gl") {
+        window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
+
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 5);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
+
+        // Create window with graphics context
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+    }
 
     SDL_Window *window = SDL_CreateWindow("ChameleonRT",
                                           SDL_WINDOWPOS_CENTERED,
                                           SDL_WINDOWPOS_CENTERED,
                                           win_width,
                                           win_height,
-                                          SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+                                          window_flags);
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
     {
-        GLDisplay display(window);
-        // DXDisplay display(window);
+        std::unique_ptr<Display> display;
+        if (display_frontend == "gl") {
+            display = std::make_unique<GLDisplay>(window);
+        } else if (display_frontend == "dx") {
+            display = std::make_unique<DXDisplay>(window);
+        }
 
-        run_app(args, window, &display);
+        run_app(args, window, display.get());
     }
 
     ImGui_ImplSDL2_Shutdown();
