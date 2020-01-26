@@ -31,6 +31,7 @@
 #endif
 #if ENABLE_VULKAN
 #include "vulkan/render_vulkan.h"
+#include "vulkan/vkdisplay.h"
 #endif
 
 const std::string USAGE =
@@ -98,10 +99,8 @@ int main(int argc, const char **argv)
 #endif
 #if ENABLE_VULKAN
         if (arg == "-vulkan") {
-            // display_frontend = "vk";
-            // window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN;
-            // VK TODO
-            display_frontend = "gl";
+            display_frontend = "vk";
+            window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN;
         }
 #endif
     }
@@ -134,9 +133,17 @@ int main(int argc, const char **argv)
         std::unique_ptr<Display> display;
         if (display_frontend == "gl") {
             display = std::make_unique<GLDisplay>(window);
-        } else if (display_frontend == "dx") {
+        }
+#ifdef ENABLE_DXR
+        else if (display_frontend == "dx") {
             display = std::make_unique<DXDisplay>(window);
         }
+#endif
+#ifdef ENABLE_VULKAN
+        else if (display_frontend == "vk") {
+            display = std::make_unique<VKDisplay>(window);
+        }
+#endif
 
         run_app(args, window, display.get());
     }
@@ -359,6 +366,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         }
 
         display->new_frame();
+        /*
         ImGui_ImplSDL2_NewFrame(window);
         ImGui::NewFrame();
 
@@ -403,6 +411,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 
         ImGui::End();
         ImGui::Render();
+        */
         display->display(renderer->img);
         camera_changed = false;
     }

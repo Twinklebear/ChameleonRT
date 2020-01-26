@@ -15,7 +15,12 @@ add_spirv_embed_library(spv_shaders raygen.rgen miss.rmiss hit.rchit
     COMPILE_DEFINITIONS
         ${GLSL_COMPILE_DEFNS})
 
-add_library(render_vulkan render_vulkan.cpp vulkan_utils.cpp vulkanrt_utils.cpp)
+add_library(render_vulkan
+    render_vulkan.cpp
+    vulkan_utils.cpp
+    vulkanrt_utils.cpp
+    vkdisplay.cpp
+    imgui_impl_vulkan.cpp)
 
 set_target_properties(render_vulkan PROPERTIES
 	CXX_STANDARD 14
