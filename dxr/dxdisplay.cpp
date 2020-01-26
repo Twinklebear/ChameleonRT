@@ -127,12 +127,11 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
 
         CHECK_ERR(sc.As(&swap_chain));
     } else {
-        ImGui_ImplDX12_InvalidateDeviceObjects();
         // If the swap chain already exists, resize it
         CHECK_ERR(
             swap_chain->ResizeBuffers(2, fb_dims.x, fb_dims.y, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
     }
-    ImGui_ImplDX12_CreateDeviceObjects();
+    
 
     const uint32_t rtv_descriptor_size =
         device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
