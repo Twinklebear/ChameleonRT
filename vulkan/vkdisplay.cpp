@@ -6,9 +6,7 @@
 #include "imgui_impl_vulkan.h"
 
 const static std::vector<std::string> instance_extensions = {
-    VK_KHR_SURFACE_EXTENSION_NAME,
-    VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
-};
+    VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
 
 const static std::vector<std::string> logical_device_extensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
