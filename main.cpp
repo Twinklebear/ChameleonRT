@@ -92,7 +92,6 @@ int main(int argc, const char **argv)
     // Determine which display frontend we should use
     std::string display_frontend = "gl";
     uint32_t window_flags = SDL_WINDOW_RESIZABLE;
-
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "-img") {
             win_width = std::stoi(args[++i]);
