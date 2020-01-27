@@ -169,8 +169,12 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 {
     ImGuiIO &io = ImGui::GetIO();
 
+#ifdef ENABLE_DXR
     DXDisplay *dx_display = dynamic_cast<DXDisplay *>(display);
+#endif
+#ifdef ENABLE_VULKAN
     VKDisplay *vk_display = dynamic_cast<VKDisplay *>(display);
+#endif
     GLDisplay *gl_display = dynamic_cast<GLDisplay *>(display);
     bool display_is_native = false;
 
@@ -450,13 +454,19 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 
         if (display_is_native) {
             // We know what the renderer must be, so skip dynamic cast check
+#ifdef ENABLE_DXR
             if (dx_display) {
                 RenderDXR *render_dx = reinterpret_cast<RenderDXR *>(renderer.get());
                 dx_display->display_native(render_dx->render_target);
-            } else if (vk_display) {
+            }
+#endif
+#ifdef ENABLE_VULKAN
+            if (vk_display) {
                 RenderVulkan *render_vk = reinterpret_cast<RenderVulkan *>(renderer.get());
                 vk_display->display_native(render_vk->render_target);
-            } else if (gl_display) {
+            }
+#endif
+            if (gl_display) {
                 throw std::runtime_error("OptiX-GL interop todo!");
             }
         } else {
