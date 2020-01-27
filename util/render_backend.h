@@ -26,5 +26,6 @@ struct RenderBackend {
                                const glm::vec3 &dir,
                                const glm::vec3 &up,
                                const float fovy,
-                               const bool camera_changed) = 0;
+                               const bool camera_changed,
+                               const bool readback_framebuffer) = 0;
 };

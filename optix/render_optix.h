@@ -35,7 +35,8 @@ struct RenderOptiX : RenderBackend {
                        const glm::vec3 &dir,
                        const glm::vec3 &up,
                        const float fovy,
-                       const bool camera_changed) override;
+                       const bool camera_changed,
+                       const bool readback_framebuffer) override;
 
 private:
     void build_raytracing_pipeline();

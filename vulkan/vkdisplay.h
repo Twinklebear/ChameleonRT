@@ -10,7 +10,7 @@
 #include <glm/glm.hpp>
 
 struct VKDisplay : Display {
-    vkrt::Device device;
+    std::shared_ptr<vkrt::Device> device;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
 
     VkCommandPool command_pool = VK_NULL_HANDLE;
@@ -43,4 +43,6 @@ struct VKDisplay : Display {
     void new_frame() override;
 
     void display(const std::vector<uint32_t> &img) override;
+
+    void display_native(std::shared_ptr<vkrt::Texture2D> &img);
 };

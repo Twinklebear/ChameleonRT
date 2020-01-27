@@ -120,7 +120,8 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
                                  const glm::vec3 &dir,
                                  const glm::vec3 &up,
                                  const float fovy,
-                                 const bool camera_changed)
+                                 const bool camera_changed,
+                                 const bool readback_framebuffer)
 {
     using namespace std::chrono;
     RenderStats stats;
@@ -137,7 +138,7 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
     view_params.pos = pos;
     view_params.dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
     view_params.dir_dv =
-        glm::normalize(glm::cross(view_params.dir_du, dir)) * img_plane_size.y;
+        -glm::normalize(glm::cross(view_params.dir_du, dir)) * img_plane_size.y;
     view_params.dir_top_left = dir - 0.5f * view_params.dir_du - 0.5f * view_params.dir_dv;
     view_params.frame_id = frame_id;
 

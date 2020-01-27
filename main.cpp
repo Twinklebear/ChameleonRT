@@ -92,6 +92,7 @@ int main(int argc, const char **argv)
     // Determine which display frontend we should use
     std::string display_frontend = "gl";
     uint32_t window_flags = SDL_WINDOW_RESIZABLE;
+
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "-img") {
             win_width = std::stoi(args[++i]);
@@ -169,6 +170,11 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 {
     ImGuiIO &io = ImGui::GetIO();
 
+    DXDisplay *dx_display = dynamic_cast<DXDisplay *>(display);
+    VKDisplay *vk_display = dynamic_cast<VKDisplay *>(display);
+    GLDisplay *gl_display = dynamic_cast<GLDisplay *>(display);
+    bool display_is_native = false;
+
     std::string scene_file;
     std::unique_ptr<RenderBackend> renderer = nullptr;
     bool got_camera_args = false;
@@ -223,13 +229,24 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #endif
 #if ENABLE_DXR
         else if (args[i] == "-dxr") {
-            renderer = std::make_unique<RenderDXR>();
+            if (dx_display) {
+                display_is_native = true;
+                renderer = std::make_unique<RenderDXR>(dx_display->device, display_is_native);
+            } else {
+                renderer = std::make_unique<RenderDXR>();
+            }
             backend_arg = args[i];
         }
 #endif
 #if ENABLE_VULKAN
         else if (args[i] == "-vulkan") {
-            renderer = std::make_unique<RenderVulkan>();
+            if (vk_display) {
+                display_is_native = true;
+                renderer =
+                    std::make_unique<RenderVulkan>(vk_display->device, display_is_native);
+            } else {
+                renderer = std::make_unique<RenderVulkan>();
+            }
             backend_arg = args[i];
         }
 #endif
@@ -288,7 +305,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
     const std::string gpu_brand = display->gpu_brand();
     const std::string image_output = "chameleonrt.png";
     const std::string display_frontend = display->name();
-    stbi_flip_vertically_on_write(true);
 
     size_t frame_id = 0;
     float render_time = 0.f;
@@ -296,6 +312,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
     glm::vec2 prev_mouse(-2.f);
     bool done = false;
     bool camera_changed = true;
+    bool save_image = false;
     while (!done) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -364,9 +381,33 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             frame_id = 0;
         }
 
-        RenderStats stats =
-            renderer->render(camera.eye(), camera.dir(), camera.up(), fov_y, camera_changed);
+        const bool need_readback = save_image || !validation_img_prefix.empty();
+        RenderStats stats = renderer->render(
+            camera.eye(), camera.dir(), camera.up(), fov_y, camera_changed, need_readback);
+
         ++frame_id;
+        camera_changed = false;
+
+        if (save_image) {
+            save_image = false;
+            std::cout << "Image saved to " << image_output << "\n";
+            stbi_write_png(image_output.c_str(),
+                           win_width,
+                           win_height,
+                           4,
+                           renderer->img.data(),
+                           4 * win_width);
+        }
+        if (!validation_img_prefix.empty()) {
+            const std::string img_name =
+                validation_img_prefix + backend_arg + "-f" + std::to_string(frame_id) + ".png";
+            stbi_write_png(img_name.c_str(),
+                           win_width,
+                           win_height,
+                           4,
+                           renderer->img.data(),
+                           4 * win_width);
+        }
 
         if (frame_id == 1) {
             render_time = stats.render_time;
@@ -402,29 +443,25 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         ImGui::Text("%s", scene_info.c_str());
 
         if (ImGui::Button("Save Image")) {
-            std::cout << "Image saved to " << image_output << "\n";
-            stbi_write_png(image_output.c_str(),
-                           win_width,
-                           win_height,
-                           4,
-                           renderer->img.data(),
-                           4 * win_width);
-        }
-        if (!validation_img_prefix.empty()) {
-            const std::string img_name =
-                validation_img_prefix + backend_arg + "-f" + std::to_string(frame_id) + ".png";
-            stbi_write_png(img_name.c_str(),
-                           win_width,
-                           win_height,
-                           4,
-                           renderer->img.data(),
-                           4 * win_width);
+            save_image = true;
         }
 
         ImGui::End();
         ImGui::Render();
 
-        display->display(renderer->img);
-        camera_changed = false;
+        if (display_is_native) {
+            // We know what the renderer must be, so skip dynamic cast check
+            if (dx_display) {
+                RenderDXR *render_dx = reinterpret_cast<RenderDXR *>(renderer.get());
+                dx_display->display_native(render_dx->render_target);
+            } else if (vk_display) {
+                RenderVulkan *render_vk = reinterpret_cast<RenderVulkan *>(renderer.get());
+                vk_display->display_native(render_vk->render_target);
+            } else if (gl_display) {
+                throw std::runtime_error("OptiX-GL interop todo!");
+            }
+        } else {
+            display->display(renderer->img);
+        }
     }
 }

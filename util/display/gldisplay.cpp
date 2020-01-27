@@ -28,7 +28,7 @@ layout(binding=0) uniform sampler2D img;
 out vec4 color;
 
 void main(void){ 
-	ivec2 uv = ivec2(gl_FragCoord.xy);
+	ivec2 uv = ivec2(gl_FragCoord.x, textureSize(img, 0).y - gl_FragCoord.y);
 	color = texelFetch(img, uv, 0);
 })";
 

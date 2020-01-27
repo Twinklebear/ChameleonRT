@@ -15,6 +15,12 @@
 
 using Microsoft::WRL::ComPtr;
 
+RenderDXR::RenderDXR(Microsoft::WRL::ComPtr<ID3D12Device5> device, bool native_display)
+    : device(device), native_display(native_display)
+{
+    create_device_objects();
+}
+
 RenderDXR::RenderDXR()
 {
     // Enable debugging for D3D12
@@ -36,58 +42,7 @@ RenderDXR::RenderDXR()
         throw std::runtime_error("failed to make d3d12 device\n");
     }
 
-    if (!dxr::dxr_available(device)) {
-        throw std::runtime_error("DXR is required but not available!");
-    }
-
-    device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-    fence_evt = CreateEvent(nullptr, false, false, nullptr);
-
-    // Create the command queue and command allocator
-    D3D12_COMMAND_QUEUE_DESC queue_desc = {0};
-    queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-    queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-    CHECK_ERR(device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&cmd_queue)));
-    CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                             IID_PPV_ARGS(&cmd_allocator)));
-
-    CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                             IID_PPV_ARGS(&render_cmd_allocator)));
-
-    // Make the command lists
-    CHECK_ERR(device->CreateCommandList(0,
-                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                        cmd_allocator.Get(),
-                                        nullptr,
-                                        IID_PPV_ARGS(&cmd_list)));
-    CHECK_ERR(cmd_list->Close());
-
-    CHECK_ERR(device->CreateCommandList(0,
-                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                        cmd_allocator.Get(),
-                                        nullptr,
-                                        IID_PPV_ARGS(&render_cmd_list)));
-    CHECK_ERR(render_cmd_list->Close());
-
-    CHECK_ERR(device->CreateCommandList(0,
-                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                        cmd_allocator.Get(),
-                                        nullptr,
-                                        IID_PPV_ARGS(&readback_cmd_list)));
-    CHECK_ERR(readback_cmd_list->Close());
-
-    // Allocate a constants buffer for the view parameters.
-    // These are write once, read once (assumed to change each frame).
-    // The params will be:
-    // vec4 cam_pos
-    // vec4 cam_du
-    // vec4 cam_dv
-    // vec4 cam_dir_top_left
-    // uint32_t frame_id
-    view_param_buf = dxr::Buffer::upload(
-        device.Get(),
-        align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
-        D3D12_RESOURCE_STATE_GENERIC_READ);
+    create_device_objects();
 }
 
 RenderDXR::~RenderDXR()
@@ -413,7 +368,8 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
                               const glm::vec3 &dir,
                               const glm::vec3 &up,
                               const float fovy,
-                              const bool camera_changed)
+                              const bool camera_changed,
+                              const bool readback_framebuffer)
 {
     using namespace std::chrono;
     RenderStats stats;
@@ -434,8 +390,16 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     const uint64_t render_signal_val = fence_value++;
     CHECK_ERR(cmd_queue->Signal(fence.Get(), render_signal_val));
 
-    ID3D12CommandList *readback_cmds = readback_cmd_list.Get();
-    cmd_queue->ExecuteCommandLists(1, &readback_cmds);
+#ifdef REPORT_RAY_STATS
+    const bool need_readback = true;
+#else
+    const bool need_readback = !native_display || readback_framebuffer;
+#endif
+
+    if (need_readback) {
+        ID3D12CommandList *readback_cmds = readback_cmd_list.Get();
+        cmd_queue->ExecuteCommandLists(1, &readback_cmds);
+    }
 
     if (fence->GetCompletedValue() < render_signal_val) {
         CHECK_ERR(fence->SetEventOnCompletion(render_signal_val, fence_evt));
@@ -447,21 +411,23 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     // Wait for the image readback commands to complete as well
     sync_gpu();
 
-    // Map the readback buf and copy out the rendered image
-    // We may have needed some padding for the readback buffer, so we might have to read
-    // row by row.
-    if (render_target.linear_row_pitch() ==
-        render_target.dims().x * render_target.pixel_size()) {
-        std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
-    } else {
-        uint8_t *buf = static_cast<uint8_t *>(img_readback_buf.map());
-        for (uint32_t y = 0; y < render_target.dims().y; ++y) {
-            std::memcpy(img.data() + y * render_target.dims().x,
-                        buf + y * render_target.linear_row_pitch(),
-                        render_target.dims().x * render_target.pixel_size());
+    if (need_readback) {
+        // Map the readback buf and copy out the rendered image
+        // We may have needed some padding for the readback buffer, so we might have to read
+        // row by row.
+        if (render_target.linear_row_pitch() ==
+            render_target.dims().x * render_target.pixel_size()) {
+            std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
+        } else {
+            uint8_t *buf = static_cast<uint8_t *>(img_readback_buf.map());
+            for (uint32_t y = 0; y < render_target.dims().y; ++y) {
+                std::memcpy(img.data() + y * render_target.dims().x,
+                            buf + y * render_target.linear_row_pitch(),
+                            render_target.dims().x * render_target.pixel_size());
+            }
         }
+        img_readback_buf.unmap();
     }
-    img_readback_buf.unmap();
 
 #ifdef REPORT_RAY_STATS
     std::vector<uint16_t> ray_counts(ray_stats.dims().x * ray_stats.dims().y, 0);
@@ -488,6 +454,62 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
 
     ++frame_id;
     return stats;
+}
+
+void RenderDXR::create_device_objects()
+{
+    if (!dxr::dxr_available(device)) {
+        throw std::runtime_error("DXR is required but not available!");
+    }
+
+    device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+    fence_evt = CreateEvent(nullptr, false, false, nullptr);
+
+    // Create the command queue and command allocator
+    D3D12_COMMAND_QUEUE_DESC queue_desc = {0};
+    queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+    queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    CHECK_ERR(device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&cmd_queue)));
+    CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                             IID_PPV_ARGS(&cmd_allocator)));
+
+    CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                             IID_PPV_ARGS(&render_cmd_allocator)));
+
+    // Make the command lists
+    CHECK_ERR(device->CreateCommandList(0,
+                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                        cmd_allocator.Get(),
+                                        nullptr,
+                                        IID_PPV_ARGS(&cmd_list)));
+    CHECK_ERR(cmd_list->Close());
+
+    CHECK_ERR(device->CreateCommandList(0,
+                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                        cmd_allocator.Get(),
+                                        nullptr,
+                                        IID_PPV_ARGS(&render_cmd_list)));
+    CHECK_ERR(render_cmd_list->Close());
+
+    CHECK_ERR(device->CreateCommandList(0,
+                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                        cmd_allocator.Get(),
+                                        nullptr,
+                                        IID_PPV_ARGS(&readback_cmd_list)));
+    CHECK_ERR(readback_cmd_list->Close());
+
+    // Allocate a constants buffer for the view parameters.
+    // These are write once, read once (assumed to change each frame).
+    // The params will be:
+    // vec4 cam_pos
+    // vec4 cam_du
+    // vec4 cam_dv
+    // vec4 cam_dir_top_left
+    // uint32_t frame_id
+    view_param_buf = dxr::Buffer::upload(
+        device.Get(),
+        align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+        D3D12_RESOURCE_STATE_GENERIC_READ);
 }
 
 void RenderDXR::build_raytracing_pipeline()
@@ -649,7 +671,7 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos,
         img_plane_size.y * static_cast<float>(render_target.dims().x) / render_target.dims().y;
 
     const glm::vec3 dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
-    const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
+    const glm::vec3 dir_dv = -glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
     const glm::vec3 dir_top_left = dir - 0.5f * dir_du - 0.5f * dir_dv;
 
     uint8_t *buf = static_cast<uint8_t *>(view_param_buf.map());

@@ -33,6 +33,9 @@ struct RenderDXR : RenderBackend {
     HANDLE fence_evt;
 
     uint32_t frame_id = 0;
+    bool native_display = false;
+
+    RenderDXR(Microsoft::WRL::ComPtr<ID3D12Device5> device, bool native_display);
 
     RenderDXR();
 
@@ -48,9 +51,12 @@ struct RenderDXR : RenderBackend {
                        const glm::vec3 &dir,
                        const glm::vec3 &up,
                        const float fovy,
-                       const bool camera_changed) override;
+                       const bool camera_changed,
+                       const bool readback_framebuffer) override;
 
 private:
+    void create_device_objects();
+
     void build_raytracing_pipeline();
 
     void build_shader_resource_heap();

@@ -23,7 +23,7 @@ struct GeomBufIndices {
 };
 
 struct RenderVulkan : RenderBackend {
-    vkrt::Device device;
+    std::shared_ptr<vkrt::Device> device;
 
     std::shared_ptr<vkrt::Buffer> view_param_buf, img_readback_buf, mat_params, light_params;
 
@@ -70,6 +70,9 @@ struct RenderVulkan : RenderBackend {
     VkFence fence = VK_NULL_HANDLE;
 
     size_t frame_id = 0;
+    bool native_display = false;
+
+    RenderVulkan(std::shared_ptr<vkrt::Device> device, bool native_display);
 
     RenderVulkan();
 
@@ -85,7 +88,8 @@ struct RenderVulkan : RenderBackend {
                        const glm::vec3 &dir,
                        const glm::vec3 &up,
                        const float fovy,
-                       const bool camera_changed) override;
+                       const bool camera_changed,
+                       const bool readback_framebuffer) override;
 
 private:
     void build_raytracing_pipeline();

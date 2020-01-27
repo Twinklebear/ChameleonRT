@@ -340,7 +340,8 @@ RenderStats RenderOptiX::render(const glm::vec3 &pos,
                                 const glm::vec3 &dir,
                                 const glm::vec3 &up,
                                 const float fovy,
-                                const bool camera_changed)
+                                const bool camera_changed,
+                                const bool readback_framebuffer)
 {
     using namespace std::chrono;
     RenderStats stats;
@@ -395,7 +396,7 @@ void RenderOptiX::update_view_parameters(const glm::vec3 &pos,
     img_plane_size.x = img_plane_size.y * static_cast<float>(width) / height;
 
     const glm::vec3 dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
-    const glm::vec3 dir_dv = glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
+    const glm::vec3 dir_dv = -glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
     const glm::vec3 dir_top_left = dir - 0.5f * dir_du - 0.5f * dir_dv;
 
     params.cam_pos = glm::vec4(pos, 0);

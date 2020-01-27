@@ -45,6 +45,8 @@ struct DXDisplay : Display {
 
     void display(const std::vector<uint32_t> &img) override;
 
+    void display_native(dxr::Texture2D &img);
+
 private:
     size_t fb_linear_row_pitch() const;
 };

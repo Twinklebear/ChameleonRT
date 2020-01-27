@@ -29,4 +29,3 @@ struct GLDisplay : Display {
 
     void display(const std::vector<uint32_t> &img) override;
 };
-

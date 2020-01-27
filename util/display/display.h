@@ -16,4 +16,3 @@ struct Display {
 
     virtual void display(const std::vector<uint32_t> &img) = 0;
 };
-
