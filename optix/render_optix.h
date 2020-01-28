@@ -30,6 +30,10 @@ struct RenderOptiX : RenderBackend {
     GLuint display_texture = -1;
     cudaGraphicsResource_t cu_display_texture;
 
+#ifdef REPORT_RAY_STATS
+    std::vector<uint16_t> ray_counts;
+#endif
+
     RenderOptiX(bool native_display);
     ~RenderOptiX();
 

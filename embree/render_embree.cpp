@@ -42,6 +42,10 @@ void RenderEmbree::initialize(const int fb_width, const int fb_height)
         tiles[i].resize(tile_size.x * tile_size.y * 3, 0.f);
         ray_stats[i].resize(tile_size.x * tile_size.y, 0);
     }
+
+#ifdef REPORT_RAY_STATS
+    num_rays.resize(tiles.size(), 0);
+#endif
 }
 
 void RenderEmbree::set_scene(const Scene &scene)
@@ -155,9 +159,6 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
     const glm::uvec2 ntiles(fb_dims.x / tile_size.x + (fb_dims.x % tile_size.x != 0 ? 1 : 0),
                             fb_dims.y / tile_size.y + (fb_dims.y % tile_size.y != 0 ? 1 : 0));
 
-#ifdef REPORT_RAY_STATS
-    std::vector<uint64_t> num_rays(tiles.size(), 0);
-#endif
     uint8_t *color = reinterpret_cast<uint8_t *>(img.data());
 
     auto start = high_resolution_clock::now();

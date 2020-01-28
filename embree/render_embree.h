@@ -23,6 +23,9 @@ struct RenderEmbree : RenderBackend {
     glm::uvec2 tile_size = glm::uvec2(64);
     std::vector<std::vector<float>> tiles;
     std::vector<std::vector<uint16_t>> ray_stats;
+#ifdef REPORT_RAY_STATS
+    std::vector<uint64_t> num_rays;
+#endif
 
     RenderEmbree();
     ~RenderEmbree();

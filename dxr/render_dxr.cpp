@@ -87,6 +87,7 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
     ray_stats_readback_buf = dxr::Buffer::readback(device.Get(),
                                                    ray_stats.linear_row_pitch() * fb_height,
                                                    D3D12_RESOURCE_STATE_COPY_DEST);
+    ray_counts.resize(ray_stats.dims().x * ray_stats.dims().y, 0);
 #endif
 
     if (rt_pipeline.get()) {
@@ -430,7 +431,6 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     }
 
 #ifdef REPORT_RAY_STATS
-    std::vector<uint16_t> ray_counts(ray_stats.dims().x * ray_stats.dims().y, 0);
     if (ray_stats.linear_row_pitch() == ray_stats.dims().x * ray_stats.pixel_size()) {
         std::memcpy(
             ray_counts.data(), ray_stats_readback_buf.map(), ray_stats_readback_buf.size());

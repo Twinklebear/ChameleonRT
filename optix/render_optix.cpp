@@ -89,8 +89,10 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height)
     framebuffer = optix::Buffer(img.size() * sizeof(uint32_t));
     accum_buffer = optix::Buffer(img.size() * sizeof(glm::vec4));
     accum_buffer.clear();
+
 #ifdef REPORT_RAY_STATS
     ray_stats_buffer = optix::Buffer(img.size() * sizeof(uint16_t));
+    ray_counts.resize(ray_stats_buffer.size() / sizeof(uint16_t), 0);
 #endif
 
     if (native_display) {
@@ -419,7 +421,7 @@ RenderStats RenderOptiX::render(const glm::vec3 &pos,
     }
 
 #ifdef REPORT_RAY_STATS
-    std::vector<uint16_t> ray_counts(ray_stats_buffer.size() / sizeof(uint16_t), 0);
+
     ray_stats_buffer.download(ray_counts);
     const uint64_t total_rays =
         std::accumulate(ray_counts.begin(),

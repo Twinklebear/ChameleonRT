@@ -90,12 +90,12 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
 
 #ifdef REPORT_RAY_STATS
     ray_stats =
-        vkrt::Texture2D::device(device,
+        vkrt::Texture2D::device(*device,
                                 glm::uvec2(fb_width, fb_height),
                                 VK_FORMAT_R16_UINT,
                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT);
     ray_stats_readback_buf = vkrt::Buffer::host(
-        device, img.size() * ray_stats->pixel_size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        *device, img.size() * ray_stats->pixel_size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     ray_counts.resize(img.size(), 0);
 #endif
 
