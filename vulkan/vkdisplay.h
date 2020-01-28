@@ -21,7 +21,8 @@ struct VKDisplay : Display {
     std::vector<VkImage> swap_chain_images;
     std::vector<VkImageView> swap_chain_image_views;
     std::vector<VkFramebuffer> framebuffers;
-    std::shared_ptr<vkrt::Buffer> upload_texture;
+    std::shared_ptr<vkrt::Buffer> upload_buffer;
+    std::shared_ptr<vkrt::Texture2D> upload_texture;
 
     VkRenderPass imgui_render_pass = VK_NULL_HANDLE;
     VkDescriptorPool imgui_desc_pool = VK_NULL_HANDLE;

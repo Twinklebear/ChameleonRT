@@ -165,7 +165,7 @@ void DXDisplay::display(const std::vector<uint32_t> &img)
         uint8_t *buf = static_cast<uint8_t *>(upload_texture.map());
         for (uint32_t y = 0; y < fb_dims.y; ++y) {
             std::memcpy(buf + y * fb_linear_row_pitch(),
-                        img.data() + (fb_dims.y - y - 1) * fb_dims.x,
+                        img.data() + y * fb_dims.x,
                         fb_dims.x * sizeof(uint32_t));
         }
     }

@@ -226,7 +226,15 @@ void VKDisplay::resize(const int fb_width, const int fb_height)
     }
 
     fb_dims = glm::uvec2(fb_width, fb_height);
-    upload_texture = vkrt::Buffer::host(
+
+    upload_texture = vkrt::Texture2D::device(*device,
+                                             fb_dims,
+                                             VK_FORMAT_R8G8B8A8_UNORM,
+                                             VK_FORMAT_FEATURE_BLIT_SRC_BIT |
+                                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                                 VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+
+    upload_buffer = vkrt::Buffer::host(
         *device, sizeof(uint32_t) * fb_dims.x * fb_dims.y, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
     VkExtent2D swapchain_extent = {};
@@ -237,8 +245,7 @@ void VKDisplay::resize(const int fb_width, const int fb_height)
     create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     create_info.surface = surface;
     create_info.minImageCount = 2;
-    // TODO: Need to find what extension to enable for the RGBA swap chain format
-    create_info.imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    create_info.imageFormat = VK_FORMAT_B8G8R8A8_UNORM;
     create_info.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     create_info.imageExtent = swapchain_extent;
     create_info.imageArrayLayers = 1;
@@ -268,7 +275,7 @@ void VKDisplay::resize(const int fb_width, const int fb_height)
         view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         view_create_info.image = swap_chain_images[i];
         view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+        view_create_info.format = VK_FORMAT_B8G8R8A8_UNORM;
 
         view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
         view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -310,20 +317,8 @@ void VKDisplay::new_frame()
 
 void VKDisplay::display(const std::vector<uint32_t> &img)
 {
-    uint32_t back_buffer_idx = 0;
-    CHECK_VULKAN(vkAcquireNextImageKHR(device->logical_device(),
-                                       swap_chain,
-                                       std::numeric_limits<uint64_t>::max(),
-                                       img_avail_semaphore,
-                                       VK_NULL_HANDLE,
-                                       &back_buffer_idx));
-    uint32_t *upload = reinterpret_cast<uint32_t *>(upload_texture->map());
-    for (size_t i = 0; i < fb_dims.y; ++i) {
-        std::memcpy(upload + i * fb_dims.x,
-                    img.data() + (fb_dims.y - i - 1) * fb_dims.x,
-                    fb_dims.x * sizeof(uint32_t));
-    }
-    upload_texture->unmap();
+    std::memcpy(upload_buffer->map(), img.data(), upload_buffer->size());
+    upload_buffer->unmap();
 
     vkResetCommandPool(
         device->logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
@@ -333,10 +328,9 @@ void VKDisplay::display(const std::vector<uint32_t> &img)
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
 
-    // Transition image to the general layout
     VkImageMemoryBarrier img_mem_barrier = {};
     img_mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    img_mem_barrier.image = swap_chain_images[back_buffer_idx];
+    img_mem_barrier.image = upload_texture->image_handle();
     img_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
     img_mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -375,68 +369,22 @@ void VKDisplay::display(const std::vector<uint32_t> &img)
     img_copy.imageExtent.depth = 1;
 
     vkCmdCopyBufferToImage(command_buffer,
-                           upload_texture->handle(),
-                           swap_chain_images[back_buffer_idx],
+                           upload_buffer->handle(),
+                           upload_texture->image_handle(),
                            VK_IMAGE_LAYOUT_GENERAL,
                            1,
                            &img_copy);
 
-    // TODO transition backbuffer to color attachment for imgui render pass
-    img_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    vkCmdPipelineBarrier(command_buffer,
-                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                         0,
-                         0,
-                         nullptr,
-                         0,
-                         nullptr,
-                         1,
-                         &img_mem_barrier);
-
-    VkRenderPassBeginInfo render_pass_info = {};
-    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = imgui_render_pass;
-    render_pass_info.framebuffer = framebuffers[back_buffer_idx];
-    render_pass_info.renderArea.extent.width = fb_dims.x;
-    render_pass_info.renderArea.extent.height = fb_dims.y;
-    render_pass_info.clearValueCount = 0;
-    vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
-    vkCmdEndRenderPass(command_buffer);
-
     CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
-
-    const std::array<VkPipelineStageFlags, 1> wait_stages = {
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
-
-    CHECK_VULKAN(vkResetFences(device->logical_device(), 1, &fence));
 
     VkSubmitInfo submit_info = {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = &img_avail_semaphore;
-    submit_info.pWaitDstStageMask = wait_stages.data();
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffer;
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &present_ready_semaphore;
-    CHECK_VULKAN(vkQueueSubmit(device->graphics_queue(), 1, &submit_info, fence));
+    CHECK_VULKAN(vkQueueSubmit(device->graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+    vkQueueWaitIdle(device->graphics_queue());
 
-    // Finally, present the updated image in the swap chain
-    VkPresentInfoKHR present_info = {};
-    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &present_ready_semaphore;
-    present_info.swapchainCount = 1;
-    present_info.pSwapchains = &swap_chain;
-    present_info.pImageIndices = &back_buffer_idx;
-    CHECK_VULKAN(vkQueuePresentKHR(device->graphics_queue(), &present_info));
-
-    // Wait for the present to finish
-    CHECK_VULKAN(vkWaitForFences(
-        device->logical_device(), 1, &fence, true, std::numeric_limits<uint64_t>::max()));
+    display_native(upload_texture);
 }
 
 void VKDisplay::display_native(std::shared_ptr<vkrt::Texture2D> &img)
@@ -457,12 +405,12 @@ void VKDisplay::display_native(std::shared_ptr<vkrt::Texture2D> &img)
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
 
-    // Transition image to the general layout
+    // Transition image to the present src layout
     VkImageMemoryBarrier img_mem_barrier = {};
     img_mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     img_mem_barrier.image = swap_chain_images[back_buffer_idx];
     img_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     img_mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     img_mem_barrier.subresourceRange.baseMipLevel = 0;
     img_mem_barrier.subresourceRange.levelCount = 1;
@@ -486,33 +434,30 @@ void VKDisplay::display_native(std::shared_ptr<vkrt::Texture2D> &img)
     copy_subresource.baseArrayLayer = 0;
     copy_subresource.layerCount = 1;
 
-    VkImageCopy img_copy = {0};
-    img_copy.srcSubresource = copy_subresource;
-    img_copy.dstSubresource = copy_subresource;
-    img_copy.extent.width = fb_dims.x;
-    img_copy.extent.height = fb_dims.y;
-    img_copy.extent.depth = 1;
+    VkImageBlit blit = {};
+    blit.srcSubresource = copy_subresource;
+    blit.srcOffsets[0].x = 0;
+    blit.srcOffsets[0].y = 0;
+    blit.srcOffsets[0].z = 0;
+    blit.srcOffsets[1].x = fb_dims.x;
+    blit.srcOffsets[1].y = fb_dims.y;
+    blit.srcOffsets[1].z = 1;
+    blit.dstSubresource = copy_subresource;
+    blit.dstOffsets[0].x = 0;
+    blit.dstOffsets[0].y = 0;
+    blit.dstOffsets[0].z = 0;
+    blit.dstOffsets[1].x = fb_dims.x;
+    blit.dstOffsets[1].y = fb_dims.y;
+    blit.dstOffsets[1].z = 1;
 
-    vkCmdCopyImage(command_buffer,
+    vkCmdBlitImage(command_buffer,
                    img->image_handle(),
                    VK_IMAGE_LAYOUT_GENERAL,
                    swap_chain_images[back_buffer_idx],
-                   VK_IMAGE_LAYOUT_GENERAL,
+                   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                    1,
-                   &img_copy);
-
-    img_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    vkCmdPipelineBarrier(command_buffer,
-                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                         0,
-                         0,
-                         nullptr,
-                         0,
-                         nullptr,
-                         1,
-                         &img_mem_barrier);
+                   &blit,
+                   VK_FILTER_NEAREST);
 
     VkRenderPassBeginInfo render_pass_info = {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -551,7 +496,19 @@ void VKDisplay::display_native(std::shared_ptr<vkrt::Texture2D> &img)
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &swap_chain;
     present_info.pImageIndices = &back_buffer_idx;
-    CHECK_VULKAN(vkQueuePresentKHR(device->graphics_queue(), &present_info));
+    auto err = vkQueuePresentKHR(device->graphics_queue(), &present_info);
+    switch (err) {
+    case VK_SUCCESS:
+    case VK_SUBOPTIMAL_KHR:
+        // On Linux it seems we get the error failing to present before we get the window
+        // resized event from SDL to update the swap chain, so filter out these errors
+    case VK_ERROR_OUT_OF_DATE_KHR:
+        break;
+    default:
+        // Other errors are actual problems
+        CHECK_VULKAN(err);
+        break;
+    }
 
     // Wait for the present to finish
     CHECK_VULKAN(vkWaitForFences(
