@@ -6,6 +6,7 @@
 #include <iostream>
 #include <numeric>
 #include <cuda.h>
+#include <cuda_gl_interop.h>
 #include <cuda_runtime_api.h>
 #include <optix.h>
 #include <optix_function_table_definition.h>
@@ -35,7 +36,7 @@ std::ostream &operator<<(std::ostream &os, const OptixStackSizes &s)
     return os;
 }
 
-RenderOptiX::RenderOptiX()
+RenderOptiX::RenderOptiX(bool native_display) : native_display(native_display)
 {
     // Init CUDA and OptiX
     cudaFree(0);
@@ -46,7 +47,6 @@ RenderOptiX::RenderOptiX()
     }
 
     CHECK_OPTIX(optixInit());
-
     CHECK_CUDA(cudaSetDevice(0));
     CHECK_CUDA(cudaStreamCreate(&cuda_stream));
 
@@ -65,6 +65,10 @@ RenderOptiX::RenderOptiX()
 
 RenderOptiX::~RenderOptiX()
 {
+    if (native_display) {
+        cudaGraphicsUnregisterResource(cu_display_texture);
+        glDeleteTextures(1, &display_texture);
+    }
     optixPipelineDestroy(pipeline);
     optixDeviceContextDestroy(device);
     cudaStreamDestroy(cuda_stream);
@@ -88,6 +92,24 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height)
 #ifdef REPORT_RAY_STATS
     ray_stats_buffer = optix::Buffer(img.size() * sizeof(uint16_t));
 #endif
+
+    if (native_display) {
+        if (display_texture != -1) {
+            cudaGraphicsUnregisterResource(cu_display_texture);
+            glDeleteTextures(1, &display_texture);
+        }
+        glGenTextures(1, &display_texture);
+        glBindTexture(GL_TEXTURE_2D, display_texture);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, width, height);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        CHECK_CUDA(cudaGraphicsGLRegisterImage(
+            &cu_display_texture, display_texture, GL_TEXTURE_2D, 0));
+    }
 }
 
 void RenderOptiX::set_scene(const Scene &scene)
@@ -368,7 +390,34 @@ RenderStats RenderOptiX::render(const glm::vec3 &pos,
     auto end = high_resolution_clock::now();
     stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
-    framebuffer.download(img);
+#ifdef REPORT_RAY_STATS
+    const bool need_readback = true;
+#else
+    const bool need_readback = !native_display || readback_framebuffer;
+#endif
+
+    if (native_display) {
+        CHECK_CUDA(cudaGraphicsMapResources(1, &cu_display_texture));
+
+        cudaArray_t array;
+        CHECK_CUDA(cudaGraphicsSubResourceGetMappedArray(&array, cu_display_texture, 0, 0));
+        CHECK_CUDA(
+            cudaMemcpy2DToArray(array,
+                                0,
+                                0,
+                                reinterpret_cast<const void *>(framebuffer.device_ptr()),
+                                width * sizeof(uint32_t),
+                                width * sizeof(uint32_t),
+                                height,
+                                cudaMemcpyDeviceToDevice));
+
+        CHECK_CUDA(cudaGraphicsUnmapResources(1, &cu_display_texture));
+    }
+
+    if (need_readback) {
+        framebuffer.download(img);
+    }
+
 #ifdef REPORT_RAY_STATS
     std::vector<uint16_t> ray_counts(ray_stats_buffer.size() / sizeof(uint16_t), 0);
     ray_stats_buffer.download(ray_counts);

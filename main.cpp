@@ -220,7 +220,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #endif
 #if ENABLE_OPTIX
         else if (args[i] == "-optix") {
-            renderer = std::make_unique<RenderOptiX>();
+            display_is_native = gl_display != nullptr;
+            renderer = std::make_unique<RenderOptiX>(display_is_native);
             backend_arg = args[i];
         }
 #endif
@@ -466,9 +467,12 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
                 vk_display->display_native(render_vk->render_target);
             }
 #endif
+#ifdef ENABLE_OPTIX
             if (gl_display) {
-                throw std::runtime_error("OptiX-GL interop todo!");
+                RenderOptiX *render_ox = reinterpret_cast<RenderOptiX *>(renderer.get());
+                gl_display->display_native(render_ox->display_texture);
             }
+#endif
         } else {
             display->display(renderer->img);
         }

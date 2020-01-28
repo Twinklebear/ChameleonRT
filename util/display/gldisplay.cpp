@@ -93,14 +93,21 @@ void GLDisplay::new_frame()
 
 void GLDisplay::display(const std::vector<uint32_t> &img)
 {
-    // TODO: Display may be an issue with imgui if we're using static libs
-    glViewport(0, 0, fb_dims.x, fb_dims.y);
-
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, render_texture);
     glTexSubImage2D(
         GL_TEXTURE_2D, 0, 0, 0, fb_dims.x, fb_dims.y, GL_RGBA, GL_UNSIGNED_BYTE, img.data());
 
+    display_native(render_texture);
+}
+
+void GLDisplay::display_native(const GLuint img)
+{
+    glViewport(0, 0, fb_dims.x, fb_dims.y);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glUseProgram(display_render->program);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, img);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

@@ -28,4 +28,6 @@ struct GLDisplay : Display {
     void new_frame() override;
 
     void display(const std::vector<uint32_t> &img) override;
+
+    void display_native(const GLuint img);
 };
