@@ -395,8 +395,11 @@ std::shared_ptr<Buffer> Buffer::host(Device &device,
                                      VkBufferUsageFlags usage,
                                      VkMemoryPropertyFlagBits extra_mem_props)
 {
-    return make_buffer(
-        device, nbytes, usage, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | extra_mem_props);
+    return make_buffer(device,
+                       nbytes,
+                       usage,
+                       VK_MEMORY_PROPERTY_HOST_CACHED_BIT |
+                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | extra_mem_props);
 }
 
 std::shared_ptr<Buffer> Buffer::device(Device &device,
@@ -817,5 +820,4 @@ void DescriptorSetUpdater::update(Device &device)
     vkUpdateDescriptorSets(
         device.logical_device(), desc_writes.size(), desc_writes.data(), 0, nullptr);
 }
-
 }
