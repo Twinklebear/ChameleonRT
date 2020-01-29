@@ -169,6 +169,9 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 {
     ImGuiIO &io = ImGui::GetIO();
 
+#ifdef ENABLE_OPEN_IMAGE_DENOISE
+    oidn_init();
+#endif
 #ifdef ENABLE_DXR
     DXDisplay *dx_display = dynamic_cast<DXDisplay *>(display);
 #endif
@@ -221,6 +224,10 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #if ENABLE_OPTIX
         else if (args[i] == "-optix") {
             display_is_native = gl_display != nullptr;
+            #ifdef ENABLE_OPEN_IMAGE_DENOISE
+            // Want to force framebuffer download/upload so we can denoise on CPU through OIDN
+            display_is_native = false;
+            #endif
             renderer = std::make_unique<RenderOptiX>(display_is_native);
             backend_arg = args[i];
         }
@@ -474,6 +481,9 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             }
 #endif
         } else {
+            #if ENABLE_OPEN_IMAGE_DENOISE
+            oidn_denoise(renderer->img, win_width, win_height, renderer->img);
+            #endif
             display->display(renderer->img);
         }
     }

@@ -1,5 +1,7 @@
+#include <iostream>
 #include <algorithm>
 #include <array>
+#include <signal.h>
 #ifdef _WIN32
 #include <intrin.h>
 #else
@@ -7,7 +9,6 @@
 #endif
 #include "util.h"
 #include <glm/ext.hpp>
-
 #define TINYGLTF_IMPLEMENTATION
 #include "tiny_gltf.h"
 
@@ -19,6 +20,107 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+
+#ifdef ENABLE_OPEN_IMAGE_DENOISE
+#include <OpenImageDenoise/oidn.hpp>
+
+void oidn_error_callback(void* userPtr, oidn::Error error, const char* message)
+{
+    throw std::runtime_error(message);
+}
+
+volatile bool oidn_is_cancelled = false;
+static oidn::DeviceRef device;
+
+void oidn_signal_handler(int signal)
+{
+  oidn_is_cancelled = true;
+}
+
+bool oidn_progress_callback(void* userPtr, double n)
+{
+  if (oidn_is_cancelled)
+    return false;
+  std::cout << "\rDenoising " << int(n * 100.) << "%" << std::flush;
+  return true;
+}
+
+void oidn_init()
+{
+    bool hdr = false;
+    bool srgb = false;
+    int numThreads = -1;
+    int setAffinity = -1;
+    int verbose = -1;
+    
+    device = oidn::newDevice();
+
+    const char* errorMessage;
+    if (device.getError(errorMessage) != oidn::Error::None)
+      throw std::runtime_error(errorMessage);
+
+    device.setErrorFunction(oidn_error_callback);
+
+    if (numThreads > 0)
+      device.set("numThreads", numThreads);
+    if (setAffinity >= 0)
+      device.set("setAffinity", bool(setAffinity));
+    if (verbose >= 0)
+      device.set("verbose", verbose);
+    device.commit();    
+}
+
+// Note, input and output must be float3
+void oidn_denoise(std::vector<float> &input, uint32_t width, uint32_t height, std::vector<float> &output) {
+    int maxMemoryMB = -1;
+    std::string filterType = "RT";
+    oidn::FilterRef filter = device.newFilter(filterType.c_str());
+    auto format = oidn::Format::Float3;
+    
+    filter.setImage("color", input.data(), format, width, height);
+    // if (albedo)
+    //     filter.setImage("albedo", albedo.getData(), format, width, height);
+    // if (normal)
+    //     filter.setImage("normal", normal.getData(), format, width, height);
+    filter.setImage("output", output.data(), format, width, height);
+
+    if (maxMemoryMB >= 0)
+        filter.set("maxMemoryMB", maxMemoryMB);
+
+    // Might want to change SIGINT behavior...
+    filter.setProgressMonitorFunction(oidn_progress_callback);
+    signal(SIGINT, oidn_signal_handler);
+
+    filter.commit();
+
+    // Start denoising
+    filter.execute();
+
+    filter.setProgressMonitorFunction(nullptr);
+    signal(SIGINT, SIG_DFL);
+}
+
+void oidn_denoise(std::vector<uint32_t> &input, uint32_t width, uint32_t height, std::vector<uint32_t> &output) {
+    assert(input.size() == (width * height));
+    std::vector<float> float_in(input.size() * 3);
+    std::vector<float> float_out(input.size() * 3);
+
+    for (uint32_t i = 0; i < (width * height); ++i) {
+        for (uint32_t c = 0; c < 3; ++c) {
+            float_in[i * 3 + c] = ((uint8_t*) output.data())[i * 4 + c] / 255.f;
+        }
+    }
+    
+    oidn_denoise(float_in, width, height, float_out);
+
+    for (uint32_t i = 0; i < (width * height); ++i) {
+        for (uint32_t c = 0; c < 3; ++c) {
+            ((uint8_t*) output.data())[i * 4 + c] = uint8_t(float_out[i * 3 + c] * 255.f);
+        }
+    }
+}
+
+#endif
 
 std::string pretty_print_count(const double count)
 {

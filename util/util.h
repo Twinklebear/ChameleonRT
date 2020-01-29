@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <stdint.h>
 #include <glm/glm.hpp>
 
 // Format the count as #G, #M, #K, depending on its magnitude
@@ -19,3 +21,9 @@ std::string get_cpu_brand();
 float srgb_to_linear(const float x);
 
 float linear_to_srgb(const float x);
+
+#ifdef ENABLE_OPEN_IMAGE_DENOISE
+void oidn_init();
+void oidn_denoise(std::vector<float> &input, uint32_t width, uint32_t height, std::vector<float> &output);
+void oidn_denoise(std::vector<uint32_t> &input, uint32_t width, uint32_t height, std::vector<uint32_t> &output);
+#endif

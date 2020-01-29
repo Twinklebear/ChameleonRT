@@ -10,18 +10,24 @@ add_definitions(-DNOMINMAX -DGLM_ENABLE_EXPERIMENTAL -DSDL_MAIN_HANDLED
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-find_package(Threads REQUIRED)
-find_package(glm REQUIRED)
-find_package(SDL2 REQUIRED)
-
-add_subdirectory(imgui)
-add_subdirectory(util)
-
 option(ENABLE_OSPRAY "Build the OSPRay rendering backend. Requires OSPRay" OFF)
 option(ENABLE_EMBREE "Build the Embree + TBB + ISPC rendering backend. Requires Embree, TBB and ISPC" OFF)
 option(ENABLE_OPTIX "Build the OptiX rendering backend. Requires OptiX and CUDA" OFF)
 option(ENABLE_VULKAN "Build the Vulkan rendering backend. Requires Vulkan" OFF)
 option(REPORT_RAY_STATS "Track and report rays/second. May incur a slight rendering performance penalty" OFF)
+option(ENABLE_OPEN_IMAGE_DENOISE "Feeds rendered output from all backends into Intel's Open Image Denoiser." OFF)
+
+find_package(Threads REQUIRED)
+find_package(glm REQUIRED)
+find_package(SDL2 REQUIRED)
+
+if (ENABLE_OPEN_IMAGE_DENOISE)
+	find_package(OpenImageDenoise REQUIRED)
+	add_definitions(-DENABLE_OPEN_IMAGE_DENOISE)
+endif()
+
+add_subdirectory(imgui)
+add_subdirectory(util)
 
 if (ENABLE_OSPRAY)
 	add_definitions(-DENABLE_OSPRAY)
@@ -87,4 +93,3 @@ endif()
 if (ENABLE_VULKAN)
 	target_link_libraries(chameleonrt PUBLIC render_vulkan)
 endif()
-

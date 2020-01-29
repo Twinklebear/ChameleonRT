@@ -24,6 +24,11 @@ target_link_libraries(util PUBLIC
     imgui
     ${SDL2_LIBRARY})
 
+if (ENABLE_OPEN_IMAGE_DENOISE)
+    target_include_directories(util PUBLIC OpenImageDenoise)
+    target_link_libraries(util PUBLIC OpenImageDenoise)
+endif()
+
 find_package(pbrtParser)
 if (${pbrtParser_FOUND})
     target_link_libraries(util PUBLIC pbrtParser)
