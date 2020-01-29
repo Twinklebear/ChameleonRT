@@ -23,7 +23,12 @@ float srgb_to_linear(const float x);
 float linear_to_srgb(const float x);
 
 #ifdef ENABLE_OPEN_IMAGE_DENOISE
+struct DenoiseStats {
+    float frame_buffer_conversion_time;
+    float filter_creation_time;
+    float denoise_time;
+};
 void oidn_init();
-void oidn_denoise(std::vector<float> &input, uint32_t width, uint32_t height, std::vector<float> &output);
-void oidn_denoise(std::vector<uint32_t> &input, uint32_t width, uint32_t height, std::vector<uint32_t> &output);
+DenoiseStats oidn_denoise(std::vector<float> &input, uint32_t width, uint32_t height, std::vector<float> &output);
+DenoiseStats oidn_denoise(std::vector<uint32_t> &input, uint32_t width, uint32_t height, std::vector<uint32_t> &output);
 #endif

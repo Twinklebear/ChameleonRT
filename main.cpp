@@ -5,6 +5,7 @@
 #include <numeric>
 #include <sstream>
 #include <vector>
+#include <chrono>
 #include <SDL.h>
 #include "arcball_camera.h"
 #include "imgui.h"
@@ -167,6 +168,7 @@ int main(int argc, const char **argv)
 
 void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *display)
 {
+    using namespace std::chrono;
     ImGuiIO &io = ImGui::GetIO();
 
 #ifdef ENABLE_OPEN_IMAGE_DENOISE
@@ -320,6 +322,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
     size_t frame_id = 0;
     float render_time = 0.f;
     float rays_per_second = 0.f;
+    float denoise_framebuffer_conversion_time = 0.f;
+    float denoise_time = 0.f;
     glm::vec2 prev_mouse(-2.f);
     bool done = false;
     bool camera_changed = true;
@@ -396,6 +400,19 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         RenderStats stats = renderer->render(
             camera.eye(), camera.dir(), camera.up(), fov_y, camera_changed, need_readback);
 
+        #if ENABLE_OPEN_IMAGE_DENOISE
+        if (!display_is_native) {
+            if (frame_id > 8) {
+                auto stats = oidn_denoise(renderer->img, win_width, win_height, renderer->img);
+                denoise_time = stats.denoise_time;
+                denoise_framebuffer_conversion_time = stats.frame_buffer_conversion_time;
+            }
+        }
+        else {
+            throw std::runtime_error("Error, open image denoise not currently compatible with native display mode.");
+        }
+        #endif
+        
         ++frame_id;
         camera_changed = false;
 
@@ -437,6 +454,12 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         ImGui::Text("Render Time: %.3f ms/frame (%.1f FPS)",
                     render_time / frame_id,
                     1000.f / (render_time / frame_id));
+        #ifdef ENABLE_OPEN_IMAGE_DENOISE
+        ImGui::Text("Denoise Time: %.3f ms/frame",
+                    denoise_time / frame_id);        
+        ImGui::Text("Denoise (FB conversion) Time: %.3f ms/frame",
+                    denoise_framebuffer_conversion_time / frame_id);
+        #endif
 
         if (stats.rays_per_second > 0) {
             const std::string rays_per_sec = pretty_print_count(rays_per_second / frame_id);
@@ -481,9 +504,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             }
 #endif
         } else {
-            #if ENABLE_OPEN_IMAGE_DENOISE
-            oidn_denoise(renderer->img, win_width, win_height, renderer->img);
-            #endif
             display->display(renderer->img);
         }
     }

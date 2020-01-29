@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <signal.h>
+#include <chrono>
 #ifdef _WIN32
 #include <intrin.h>
 #else
@@ -23,7 +24,6 @@
 
 #ifdef ENABLE_OPEN_IMAGE_DENOISE
 #include <OpenImageDenoise/oidn.hpp>
-
 void oidn_error_callback(void* userPtr, oidn::Error error, const char* message)
 {
     throw std::runtime_error(message);
@@ -31,6 +31,7 @@ void oidn_error_callback(void* userPtr, oidn::Error error, const char* message)
 
 volatile bool oidn_is_cancelled = false;
 static oidn::DeviceRef device;
+static oidn::FilterRef filter;
 
 void oidn_signal_handler(int signal)
 {
@@ -67,57 +68,86 @@ void oidn_init()
       device.set("setAffinity", bool(setAffinity));
     if (verbose >= 0)
       device.set("verbose", verbose);
-    device.commit();    
+    device.commit();  
+
+
+    int maxMemoryMB = -1;
+    std::string filterType = "RT";
+    filter = device.newFilter(filterType.c_str());
+    
+    if (maxMemoryMB >= 0)
+        filter.set("maxMemoryMB", maxMemoryMB);
 }
 
 // Note, input and output must be float3
-void oidn_denoise(std::vector<float> &input, uint32_t width, uint32_t height, std::vector<float> &output) {
-    int maxMemoryMB = -1;
-    std::string filterType = "RT";
-    oidn::FilterRef filter = device.newFilter(filterType.c_str());
-    auto format = oidn::Format::Float3;
-    
-    filter.setImage("color", input.data(), format, width, height);
-    // if (albedo)
-    //     filter.setImage("albedo", albedo.getData(), format, width, height);
-    // if (normal)
-    //     filter.setImage("normal", normal.getData(), format, width, height);
-    filter.setImage("output", output.data(), format, width, height);
+DenoiseStats oidn_denoise(std::vector<float> &input, uint32_t width, uint32_t height, std::vector<float> &output) {
+    DenoiseStats stats;
+    using namespace std::chrono;
 
-    if (maxMemoryMB >= 0)
-        filter.set("maxMemoryMB", maxMemoryMB);
+    filter.setImage("color", input.data(), oidn::Format::Float3, width, height);
+    // if (albedo)
+    //     filter.setImage("albedo", albedo.getData(), oidn::Format::Float3, width, height);
+    // if (normal)
+    //     filter.setImage("normal", normal.getData(), oidn::Format::Float3, width, height);
+    filter.setImage("output", output.data(), oidn::Format::Float3, width, height);
+
+    
 
     // Might want to change SIGINT behavior...
-    filter.setProgressMonitorFunction(oidn_progress_callback);
+    // filter.setProgressMonitorFunction(oidn_progress_callback);
     signal(SIGINT, oidn_signal_handler);
-
     filter.commit();
 
+    auto start = high_resolution_clock::now();
     // Start denoising
     filter.execute();
+    auto end = high_resolution_clock::now();
+    stats.denoise_time = (float)duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
-    filter.setProgressMonitorFunction(nullptr);
+    // filter.setProgressMonitorFunction(nullptr);
     signal(SIGINT, SIG_DFL);
+
+    return stats;
 }
 
-void oidn_denoise(std::vector<uint32_t> &input, uint32_t width, uint32_t height, std::vector<uint32_t> &output) {
+DenoiseStats oidn_denoise(std::vector<uint32_t> &input, uint32_t width, uint32_t height, std::vector<uint32_t> &output) {
+    DenoiseStats stats;
+    using namespace std::chrono;
+
+    // denoise_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
+
     assert(input.size() == (width * height));
     std::vector<float> float_in(input.size() * 3);
     std::vector<float> float_out(input.size() * 3);
 
-    for (uint32_t i = 0; i < (width * height); ++i) {
-        for (uint32_t c = 0; c < 3; ++c) {
-            float_in[i * 3 + c] = ((uint8_t*) output.data())[i * 4 + c] / 255.f;
+    {
+        auto start = high_resolution_clock::now();
+        for (uint32_t i = 0; i < (width * height); ++i) {
+            for (uint32_t c = 0; c < 3; ++c) {
+                float_in[i * 3 + c] = ((uint8_t*) output.data())[i * 4 + c] / 255.f;
+            }
         }
+        auto end = high_resolution_clock::now();
+        stats.frame_buffer_conversion_time = (float)duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
     }
-    
-    oidn_denoise(float_in, width, height, float_out);
 
-    for (uint32_t i = 0; i < (width * height); ++i) {
-        for (uint32_t c = 0; c < 3; ++c) {
-            ((uint8_t*) output.data())[i * 4 + c] = uint8_t(float_out[i * 3 + c] * 255.f);
-        }
+    {
+        auto denoise_stats = oidn_denoise(float_in, width, height, float_out);
+        stats.denoise_time = denoise_stats.denoise_time;
     }
+
+    {
+        auto start = high_resolution_clock::now();
+        for (uint32_t i = 0; i < (width * height); ++i) {
+            for (uint32_t c = 0; c < 3; ++c) {
+                ((uint8_t*) output.data())[i * 4 + c] = uint8_t(float_out[i * 3 + c] * 255.f);
+            }
+        }
+        auto end = high_resolution_clock::now();
+        stats.frame_buffer_conversion_time += (float)duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
+    }
+
+    return stats;
 }
 
 #endif
