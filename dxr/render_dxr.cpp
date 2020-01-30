@@ -597,12 +597,16 @@ void RenderDXR::build_shader_binding_table()
 
         // Is writing the descriptor heap handle actually needed? It seems to not matter
         // if this is written or not
-        // TODO: Maybe this is the index in the list of heaps we bind at render time to use?
-        // Will it find the sampler heap properly if we just have nothing bound here?
-        // D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle =
-        //	raygen_desc_heap->GetGPUDescriptorHandleForHeapStart();
-        // std::memcpy(map + sig->descriptor_table_offset(), &desc_heap_handle,
-        //	sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+        D3D12_GPU_DESCRIPTOR_HANDLE desc_heap_handle =
+            raygen_desc_heap->GetGPUDescriptorHandleForHeapStart();
+        std::memcpy(map + sig->offset("cbv_srv_uav_heap"),
+                    &desc_heap_handle,
+                    sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+
+        desc_heap_handle = raygen_sampler_heap->GetGPUDescriptorHandleForHeapStart();
+        std::memcpy(map + sig->offset("sampler_heap"),
+                    &desc_heap_handle,
+                    sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
     }
     for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {
         const auto &inst = scene_bvh.instances[i];
