@@ -128,7 +128,9 @@ void RenderOSPRay::set_scene(const Scene &in_scene)
         }
 
         set_material_param(m, "metallic", mat.metallic);
-        set_material_param(m, "specular", mat.specular);
+        // TODO: Seems like "specular" here means something really different and weird or is
+        // buggy
+        // set_material_param(m, "specular", mat.specular);
         set_material_param(m, "roughness", mat.roughness);
         // TODO: name for "specularTint" in OSPRay's model?
         set_material_param(m, "anisotropy", mat.anisotropy);
@@ -291,7 +293,7 @@ RenderStats RenderOSPRay::render(const glm::vec3 &pos,
     return stats;
 }
 
-void RenderOSPRay::set_material_param(OSPMaterial mat,
+void RenderOSPRay::set_material_param(OSPMaterial &mat,
                                       const std::string &name,
                                       const float val) const
 {

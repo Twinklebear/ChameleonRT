@@ -30,5 +30,5 @@ struct RenderOSPRay : RenderBackend {
                        const bool need_readback) override;
 
 private:
-    void set_material_param(OSPMaterial mat, const std::string &name, const float val) const;
+    void set_material_param(OSPMaterial &mat, const std::string &name, const float val) const;
 };
