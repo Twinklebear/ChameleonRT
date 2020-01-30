@@ -75,7 +75,7 @@ void unpack_material(inout DisneyMaterial mat, uint id, float2 uv) {
     if (IS_TEXTURED_PARAM(mask)) {
         const uint32_t tex_id = GET_TEXTURE_ID(mask);
         mat.base_color = textures[NonUniformResourceIndex(tex_id)]
-            .SampleLevel(tex_sampler, uv, 0);
+            .SampleLevel(tex_sampler, uv, 0).xyz;
     } else {
         mat.base_color = p.base_color;
     }
