@@ -100,9 +100,7 @@ If CMake doesn't find your install of Vulkan you can tell it where it's
 installed with `-DVULKAN_SDK`. This path should be to the specific version
 of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.1.114.0/`
 
-### OSPRay [STALE]
-
-The OSPRay backend is stale until I get it updated for the official 2.0 release of OSPRay.
+### OSPRay
 
 Dependencies: [OSPRay 2.0](http://www.ospray.org/).
 
@@ -111,6 +109,10 @@ To build the OSPRay backend run CMake with:
 ```
 cmake .. -DENABLE_OSPRAY=ON -Dospray_DIR=<path to osprayConfig.cmake>
 ```
+
+You may also need to specify OSPRay's dependencies,
+[ospcommon](https://github.com/ospray/ospcommon) and [OpenVKL](https://github.com/openvkl/openvkl),
+depending on how you got or built the OSPRay binaries.
 
 You can then pass `-ospray` to use the OSPRay backend.
 

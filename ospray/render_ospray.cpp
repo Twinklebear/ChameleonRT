@@ -5,7 +5,8 @@
 #include <limits>
 #include <numeric>
 #include <tbb/parallel_for.h>
-#include <util.h>
+#include "texture_channel_mask.h"
+#include "util.h"
 #include <glm/ext.hpp>
 
 RenderOSPRay::RenderOSPRay() : fb(0)
@@ -18,8 +19,37 @@ RenderOSPRay::RenderOSPRay() : fb(0)
     }
 
     camera = ospNewCamera("perspective");
+    // Apply a y-flip to the image to match the other backends which render
+    // in the DirectX/Vulkan image coordinate system
+    const glm::vec2 img_start(0.f, 1.f);
+    const glm::vec2 img_end(1.f, 0.f);
+    ospSetParam(camera, "imageStart", OSP_VEC2F, &img_start.x);
+    ospSetParam(camera, "imageEnd", OSP_VEC2F, &img_end.x);
+
     renderer = ospNewRenderer("pathtracer");
     ospCommit(renderer);
+
+    world = ospNewWorld();
+}
+
+RenderOSPRay::~RenderOSPRay()
+{
+    for (auto &t : textures) {
+        ospRelease(t);
+    }
+    for (auto &m : materials) {
+        ospRelease(m);
+    }
+    for (auto &i : instances) {
+        ospRelease(i);
+    }
+    for (auto &l : lights) {
+        ospRelease(l);
+    }
+    ospRelease(camera);
+    ospRelease(renderer);
+    ospRelease(fb);
+    ospRelease(world);
 }
 
 std::string RenderOSPRay::name()
@@ -46,8 +76,8 @@ void RenderOSPRay::set_scene(const Scene &in_scene)
 
     scene = in_scene;
 
-    // Linearize any sRGB textures beforehand, since we don't have fancy sRGB texture interpolation
-    // support in hardware
+    // Linearize any sRGB textures beforehand, since we don't have fancy sRGB texture
+    // interpolation support in hardware
     tbb::parallel_for(size_t(0), scene.textures.size(), [&](size_t i) {
         auto &img = scene.textures[i];
         if (img.color_space == LINEAR) {
@@ -64,13 +94,17 @@ void RenderOSPRay::set_scene(const Scene &in_scene)
         });
     });
 
+    for (auto &t : textures) {
+        ospRelease(t);
+    }
     textures.clear();
     for (const auto &tex : scene.textures) {
         const OSPDataType data_type = tex.channels == 3 ? OSP_VEC3UC : OSP_VEC4UC;
         const int format = tex.channels == 3 ? OSP_TEXTURE_RGB8 : OSP_TEXTURE_RGBA8;
         const int filter = OSP_TEXTURE_FILTER_BILINEAR;
 
-        OSPData tex_data = ospNewSharedData(tex.img.data(), data_type, tex.width, 0, tex.height, 0);
+        OSPData tex_data =
+            ospNewSharedData(tex.img.data(), data_type, tex.width, 0, tex.height, 0);
         OSPTexture t = ospNewTexture("texture2d");
         ospSetParam(t, "format", OSP_INT, &format);
         ospSetParam(t, "filter", OSP_INT, &filter);
@@ -79,95 +113,128 @@ void RenderOSPRay::set_scene(const Scene &in_scene)
         textures.push_back(t);
     }
 
+    for (auto &m : materials) {
+        ospRelease(m);
+    }
     materials.clear();
     for (const auto &mat : scene.materials) {
-        OSPMaterial m = ospNewMaterial("pathtracer", "Principled");
-        ospSetParam(m, "baseColor", OSP_VEC3F, &mat.base_color.x);
-        if (mat.color_tex_id != -1) {
-            ospSetParam(m, "map_baseColor", OSP_TEXTURE, &textures[mat.color_tex_id]);
+        OSPMaterial m = ospNewMaterial("pathtracer", "principled");
+        const int tex_handle = *reinterpret_cast<const int *>(&mat.base_color.x);
+        if (IS_TEXTURED_PARAM(tex_handle)) {
+            ospSetParam(
+                m, "map_baseColor", OSP_TEXTURE, &textures[GET_TEXTURE_ID(tex_handle)]);
+        } else {
+            ospSetParam(m, "baseColor", OSP_VEC3F, &mat.base_color.x);
         }
 
-        ospSetParam(m, "metallic", OSP_FLOAT, &mat.metallic);
-        // TODO: Seems like "specular" here doesn't mean quite what I expect for the Disney BRDF
-        // ospSetParam(m, "specular", OSP_FLOAT, &mat.specular);
-        ospSetParam(m, "roughness", OSP_FLOAT, &mat.roughness);
+        set_material_param(m, "metallic", mat.metallic);
+        set_material_param(m, "specular", mat.specular);
+        set_material_param(m, "roughness", mat.roughness);
         // TODO: name for "specularTint" in OSPRay's model?
-        ospSetParam(m, "anisotropy", OSP_FLOAT, &mat.anisotropy);
-        ospSetParam(m, "sheen", OSP_FLOAT, &mat.sheen);
-        ospSetParam(m, "sheenTint", OSP_FLOAT, &mat.sheen_tint);
-        ospSetParam(m, "coat", OSP_FLOAT, &mat.clearcoat);
-        // TODO: need to mape clearcoat gloss to ospray
-        ospSetParam(m, "ior", OSP_FLOAT, &mat.ior);
-        ospSetParam(m, "transmission", OSP_FLOAT, &mat.specular_transmission);
+        set_material_param(m, "anisotropy", mat.anisotropy);
+        set_material_param(m, "sheen", mat.sheen);
+        set_material_param(m, "sheenTint", mat.sheen_tint);
+        set_material_param(m, "coat", mat.clearcoat);
+        // TODO: need to map clearcoat gloss to ospray
+        set_material_param(m, "ior", mat.ior);
+        set_material_param(m, "transmission", mat.specular_transmission);
 
         ospCommit(m);
         materials.push_back(m);
     }
+    {
+        OSPData material_list =
+            ospNewSharedData(materials.data(), OSP_MATERIAL, materials.size());
+        ospSetParam(renderer, "material", OSP_DATA, &material_list);
+        ospCommit(renderer);
+    }
 
-    // TODO: We don't ever have a geometry w/o a material tied to it for now b/c of
-    // how the geometry is setup (pairing a mesh w/ a material). This pairing should be split later
-    meshes.clear();
+    std::vector<std::vector<OSPGeometry>> meshes;
     for (const auto &mesh : scene.meshes) {
-        std::vector<OSPGeometricModel> geometries;
+        std::vector<OSPGeometry> mesh_geometries;
         for (const auto &geom : mesh.geometries) {
             OSPData verts_data =
                 ospNewSharedData(geom.vertices.data(), OSP_VEC3F, geom.vertices.size());
             OSPData indices_data =
                 ospNewSharedData(geom.indices.data(), OSP_VEC3UI, geom.indices.size());
 
-            OSPGeometry g = ospNewGeometry("triangles");
+            OSPGeometry g = ospNewGeometry("mesh");
             ospSetParam(g, "vertex.position", OSP_DATA, &verts_data);
             ospSetParam(g, "index", OSP_DATA, &indices_data);
 
             if (!geom.uvs.empty()) {
-                OSPData uv_data = ospNewSharedData(geom.uvs.data(), OSP_VEC2F, geom.uvs.size());
+                OSPData uv_data =
+                    ospNewSharedData(geom.uvs.data(), OSP_VEC2F, geom.uvs.size());
                 ospSetParam(g, "vertex.texcoord", OSP_DATA, &uv_data);
             }
-
             ospCommit(g);
-
-            OSPData mat_list = ospNewSharedData(&materials[geom.material_id], OSP_MATERIAL, 1);
-
-            OSPGeometricModel geom_model = ospNewGeometricModel(g);
-            ospSetParam(geom_model, "material", OSP_DATA, &mat_list);
-            ospCommit(geom_model);
-            geometries.push_back(geom_model);
-            ospRelease(g);
+            mesh_geometries.push_back(g);
         }
-        OSPData stage_geoms_data =
-            ospNewSharedData(geometries.data(), OSP_GEOMETRIC_MODEL, geometries.size());
-        OSPData geoms_data = ospNewData(OSP_GEOMETRIC_MODEL, geometries.size());
-        ospCopyData(stage_geoms_data, geoms_data);
-
-        OSPGroup group = ospNewGroup();
-        ospSetParam(group, "geometry", OSP_DATA, &geoms_data);
-        ospCommit(group);
-
-        meshes.push_back(group);
+        meshes.push_back(mesh_geometries);
     }
 
+    for (auto &i : instances) {
+        ospRelease(i);
+    }
     instances.clear();
     for (const auto &inst : scene.instances) {
-        OSPInstance osp_instance = ospNewInstance(meshes[inst.mesh_id]);
+        // Make models for each geometry in the instance's mesh to set the material
+        std::vector<OSPGeometricModel> geom_models;
+        for (size_t i = 0; i < meshes[inst.mesh_id].size(); ++i) {
+            OSPGeometricModel gm = ospNewGeometricModel(meshes[inst.mesh_id][i]);
+            ospSetParam(gm, "material", OSP_UINT, &inst.material_ids[i]);
+            ospCommit(gm);
+            geom_models.push_back(gm);
+        }
+
+        OSPGroup group = ospNewGroup();
+        OSPData stage =
+            ospNewSharedData(geom_models.data(), OSP_GEOMETRIC_MODEL, geom_models.size());
+        OSPData geom_list = ospNewData(OSP_GEOMETRIC_MODEL, geom_models.size());
+        ospCopyData(stage, geom_list);
+        ospSetParam(group, "geometry", OSP_DATA, &geom_list);
+        ospCommit(group);
+
+        OSPInstance osp_instance = ospNewInstance(group);
         const glm::mat4x3 m(inst.transform);
         ospSetParam(osp_instance, "xfm", OSP_AFFINE3F, glm::value_ptr(m));
         ospCommit(osp_instance);
         instances.push_back(osp_instance);
+
+        // Ref-counted internally by OSPRay, we no longer need these handles
+        for (auto &gm : geom_models) {
+            ospRelease(gm);
+        }
+        ospRelease(group);
+    }
+    // Ref-counted internally by OSPRay, we no longer need these handles
+    for (auto &m : meshes) {
+        for (auto &g : m) {
+            ospRelease(g);
+        }
     }
 
+    for (auto &l : lights) {
+        ospRelease(l);
+    }
     lights.clear();
     for (const auto &light : scene.lights) {
         OSPLight l = ospNewLight("quad");
 
         const glm::vec3 color = glm::normalize(glm::vec3(light.emission));
         const float intensity = glm::length(glm::vec3(light.emission));
-        const bool visible = false;
+        const bool visible = true;
         ospSetParam(l, "color", OSP_VEC3F, &color.x);
         ospSetParam(l, "intensity", OSP_FLOAT, &intensity);
         ospSetParam(l, "visible", OSP_BOOL, &visible);
 
-        const glm::vec3 edgex = light.v_x * light.width;
-        const glm::vec3 edgey = light.v_y * light.height;
+        glm::vec3 edgex = light.v_x * light.width;
+        glm::vec3 edgey = light.v_y * light.height;
+        // Make sure the light is oriented facing the direction we want. OSPRay determines this
+        // by the cross produce of the two edges
+        if (glm::dot(glm::cross(edgex, edgey), glm::vec3(light.normal)) < 0.f) {
+            std::swap(edgex, edgey);
+        }
         ospSetParam(l, "position", OSP_VEC3F, &light.position);
         ospSetParam(l, "edge1", OSP_VEC3F, &edgex.x);
         ospSetParam(l, "edge2", OSP_VEC3F, &edgey.x);
@@ -183,10 +250,10 @@ void RenderOSPRay::set_scene(const Scene &in_scene)
         lights.push_back(ambient);
     }
 
-    OSPData instances_list = ospNewSharedData(instances.data(), OSP_INSTANCE, instances.size());
+    OSPData instances_list =
+        ospNewSharedData(instances.data(), OSP_INSTANCE, instances.size());
     OSPData lights_list = ospNewSharedData(lights.data(), OSP_LIGHT, lights.size());
 
-    world = ospNewWorld();
     ospSetParam(world, "instance", OSP_DATA, &instances_list);
     ospSetParam(world, "light", OSP_DATA, &lights_list);
     ospCommit(world);
@@ -196,7 +263,8 @@ RenderStats RenderOSPRay::render(const glm::vec3 &pos,
                                  const glm::vec3 &dir,
                                  const glm::vec3 &up,
                                  const float fovy,
-                                 const bool camera_changed)
+                                 const bool camera_changed,
+                                 const bool need_readback)
 {
     using namespace std::chrono;
     if (camera_changed) {
@@ -215,10 +283,24 @@ RenderStats RenderOSPRay::render(const glm::vec3 &pos,
     auto end = high_resolution_clock::now();
     stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
-    const uint32_t *mapped = static_cast<const uint32_t *>(ospMapFrameBuffer(fb, OSP_FB_COLOR));
+    const uint32_t *mapped =
+        static_cast<const uint32_t *>(ospMapFrameBuffer(fb, OSP_FB_COLOR));
     std::memcpy(img.data(), mapped, sizeof(uint32_t) * img.size());
     ospUnmapFrameBuffer(mapped, fb);
 
     return stats;
+}
+
+void RenderOSPRay::set_material_param(OSPMaterial mat,
+                                      const std::string &name,
+                                      const float val) const
+{
+    const uint32_t handle = *reinterpret_cast<const uint32_t *>(&val);
+    if (IS_TEXTURED_PARAM(handle)) {
+        const std::string map_name = "map_" + name;
+        ospSetParam(mat, map_name.c_str(), OSP_TEXTURE, &textures[GET_TEXTURE_ID(handle)]);
+    } else {
+        ospSetParam(mat, name.c_str(), OSP_FLOAT, &val);
+    }
 }
 
