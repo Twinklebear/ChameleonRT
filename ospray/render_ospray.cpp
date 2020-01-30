@@ -1,5 +1,6 @@
 #include "render_ospray.h"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <iostream>
 #include <limits>
@@ -11,11 +12,15 @@
 
 RenderOSPRay::RenderOSPRay() : fb(0)
 {
-    const char *argv[] = {"render_ospray_backend"};
-    int argc = 1;
-    if (ospInit(&argc, argv) != OSP_NO_ERROR) {
+    std::vector<const char *> argv = {
+        "render_ospray_backend", "--osp:log-output=cout", "--osp:error-output=cout"};
+    int argc = argv.size();
+    if (ospInit(&argc, argv.data()) != OSP_NO_ERROR) {
         std::cout << "Failed to init OSPRay\n";
         throw std::runtime_error("Failed to init OSPRay");
+    }
+    if (ospLoadModule("chameleon") != OSP_NO_ERROR) {
+        std::cout << "could not load chameleon module\n";
     }
 
     camera = ospNewCamera("perspective");
