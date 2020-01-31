@@ -20,6 +20,8 @@ set_target_properties(ospray_module_chameleon PROPERTIES
     CXX_STANDARD 14
     CXX_STANDARD_REQUIRED ON)
 
+target_include_directories(ospray_module_chameleon PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 target_link_libraries(ospray_module_chameleon PRIVATE
     util
     ospray::ospray
