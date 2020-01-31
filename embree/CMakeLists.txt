@@ -20,7 +20,8 @@ add_library(render_embree render_embree.cpp embree_utils.cpp)
 
 set_target_properties(render_embree PROPERTIES
 	CXX_STANDARD 14
-	CXX_STANDARD_REQUIRED ON)
+	CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE TRUE)
 
 if (REPORT_RAY_STATS)
 	target_compile_options(render_embree PUBLIC

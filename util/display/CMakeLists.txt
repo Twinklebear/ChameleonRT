@@ -8,7 +8,8 @@ add_library(display imgui_impl_sdl.cpp
 
 set_target_properties(display PROPERTIES
     CXX_STANDARD 14
-    CXX_STANDARD_REQUIRED ON)
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE TRUE)
 
 target_include_directories(display PUBLIC
     $<BUILD_INTERFACE:${OPENGL_INCLUDE_DIR}>)

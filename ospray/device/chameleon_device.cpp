@@ -3,11 +3,24 @@
 #include <stdexcept>
 #include <ospcommon/utility/ParameterizedObject.h>
 
+#if ENABLE_OPTIX
+#include "optix/render_optix.h"
+#endif
+#if ENABLE_EMBREE
+#include "embree/render_embree.h"
+#endif
+#if ENABLE_DXR
+#include "dxr/render_dxr.h"
+#endif
+#if ENABLE_VULKAN
+#include "vulkan/render_vulkan.h"
+#endif
+
 using namespace ospcommon::math;
 
 namespace device {
 
-int ChameleonDevice::loadModule(const char *name)
+int ChameleonDevice::loadModule(const char *)
 {
     std::cout << "ChameleonDevice cannot be used with other modules\n";
     return OSP_INVALID_OPERATION;
@@ -43,37 +56,30 @@ void ChameleonDevice::copyData(const OSPData source,
     if (dest_index != vec3ul(0)) {
         throw std::runtime_error("ChameleonRT device only supports memcpy copies");
     }
-    Data *src = dynamic_cast<Data *>(reinterpret_cast<APIObject *>(source));
-    OwnedData *dst = dynamic_cast<OwnedData *>(reinterpret_cast<APIObject *>(dst));
-    if (!src) {
-        throw std::runtime_error("Copy source must be a Data");
-    }
-    if (!dst) {
-        throw std::runtime_error("Copy destination must be a device-owned Data (ospNewData)");
-    }
-
+    Data *src = reinterpret_cast<Data *>(source);
+    OwnedData *dst = reinterpret_cast<OwnedData *>(destination);
     std::memcpy(dst->data(), src->data(), src->size_bytes());
 }
 
-OSPLight ChameleonDevice::newLight(const char *type)
+OSPLight ChameleonDevice::newLight(const char *)
 {
     Light *obj = new Light();
     return reinterpret_cast<OSPLight>(obj);
 }
 
-OSPCamera ChameleonDevice::newCamera(const char *type)
+OSPCamera ChameleonDevice::newCamera(const char *)
 {
     Camera *obj = new Camera();
     return reinterpret_cast<OSPCamera>(obj);
 }
 
-OSPGeometry ChameleonDevice::newGeometry(const char *type)
+OSPGeometry ChameleonDevice::newGeometry(const char *)
 {
     Geometry *obj = new Geometry();
     return reinterpret_cast<OSPGeometry>(obj);
 }
 
-OSPVolume ChameleonDevice::newVolume(const char *type)
+OSPVolume ChameleonDevice::newVolume(const char *)
 {
     throw std::runtime_error("Volumes are not supported by ChameleonRT");
     return 0;
@@ -85,25 +91,25 @@ OSPGeometricModel ChameleonDevice::newGeometricModel(OSPGeometry geom)
     return reinterpret_cast<OSPGeometricModel>(obj);
 }
 
-OSPVolumetricModel ChameleonDevice::newVolumetricModel(OSPVolume volume)
+OSPVolumetricModel ChameleonDevice::newVolumetricModel(OSPVolume)
 {
     throw std::runtime_error("Volumes are not supported by ChameleonRT");
     return 0;
 }
 
-OSPMaterial ChameleonDevice::newMaterial(const char *renderer_type, const char *material_type)
+OSPMaterial ChameleonDevice::newMaterial(const char *, const char *)
 {
     Material *obj = new Material();
     return reinterpret_cast<OSPMaterial>(obj);
 }
 
-OSPTransferFunction ChameleonDevice::newTransferFunction(const char *type)
+OSPTransferFunction ChameleonDevice::newTransferFunction(const char *)
 {
     throw std::runtime_error("Volumes are not supported by ChameleonRT");
     return 0;
 }
 
-OSPTexture ChameleonDevice::newTexture(const char *type)
+OSPTexture ChameleonDevice::newTexture(const char *)
 {
     Texture *obj = new Texture();
     return reinterpret_cast<OSPTexture>(obj);
@@ -129,6 +135,7 @@ OSPWorld ChameleonDevice::newWorld()
 
 box3f ChameleonDevice::getBounds(OSPObject)
 {
+    throw std::runtime_error("Chameleon Device does not support bounds queries");
     return box3f{};
 }
 
@@ -162,12 +169,12 @@ void ChameleonDevice::setObjectParam(OSPObject handle,
         object->setParam(name, *reinterpret_cast<const affine3f *>(mem));
         break;
     case OSP_DATA: {
-        const Data *data = reinterpret_cast<const Data *>(handle);
+        Data *data = *(Data **)(mem);
         object->setParam(name, data);
         break;
     }
     case OSP_TEXTURE: {
-        const Texture *tex = reinterpret_cast<const Texture *>(handle);
+        Texture *tex = *(Texture **)(mem);
         object->setParam(name, tex);
         break;
     }
@@ -191,44 +198,49 @@ void ChameleonDevice::commit(OSPObject handle)
     obj->commit();
 }
 
-void ChameleonDevice::release(OSPObject obj)
+void ChameleonDevice::release(OSPObject)
 {
     // Note: Intentionally does nothing, since we do need a manual ref counted pointer
     // and extra work in the Data implementation for the retain/release and internal
     // ref count tracking to work
 }
 
-void ChameleonDevice::retain(OSPObject _obj) {}
+void ChameleonDevice::retain(OSPObject) {}
 
 OSPFrameBuffer ChameleonDevice::frameBufferCreate(const vec2i &size,
-                                                  const OSPFrameBufferFormat mode,
-                                                  const uint32_t channels)
+                                                  const OSPFrameBufferFormat,
+                                                  const uint32_t)
 {
     Framebuffer *obj = new Framebuffer(size);
     return reinterpret_cast<OSPFrameBuffer>(obj);
 }
 
-OSPImageOperation ChameleonDevice::newImageOp(const char *type)
+OSPImageOperation ChameleonDevice::newImageOp(const char *)
 {
     throw std::runtime_error("ImageOps are not supported by ChameleonRT");
     return 0;
 }
 
-const void *ChameleonDevice::frameBufferMap(OSPFrameBuffer fb, const OSPFrameBufferChannel)
+const void *ChameleonDevice::frameBufferMap(OSPFrameBuffer handle, const OSPFrameBufferChannel)
 {
-    return nullptr;
+    Framebuffer *fb = reinterpret_cast<Framebuffer *>(handle);
+    return fb->img.data();
 }
 
-void ChameleonDevice::frameBufferUnmap(const void *mapped, OSPFrameBuffer fb) {}
+void ChameleonDevice::frameBufferUnmap(const void *, OSPFrameBuffer) {}
 
 float ChameleonDevice::getVariance(OSPFrameBuffer)
 {
     return 0.f;
 }
 
-void ChameleonDevice::resetAccumulation(OSPFrameBuffer _fb) {}
+void ChameleonDevice::resetAccumulation(OSPFrameBuffer handle)
+{
+    Framebuffer *fb = reinterpret_cast<Framebuffer *>(handle);
+    fb->accum_id = 0;
+}
 
-OSPRenderer ChameleonDevice::newRenderer(const char *type)
+OSPRenderer ChameleonDevice::newRenderer(const char *)
 {
     Renderer *obj = new Renderer();
     return reinterpret_cast<OSPRenderer>(obj);
@@ -239,7 +251,34 @@ OSPFuture ChameleonDevice::renderFrame(OSPFrameBuffer fb_handle,
                                        OSPCamera camera_handle,
                                        OSPWorld world_handle)
 {
-    return 0;
+    Framebuffer *fb = reinterpret_cast<Framebuffer *>(fb_handle);
+    Renderer *renderer = reinterpret_cast<Renderer *>(renderer_handle);
+    Camera *camera = reinterpret_cast<Camera *>(camera_handle);
+    World *world = reinterpret_cast<World *>(world_handle);
+
+    if (renderer->last_framebuffer != fb) {
+        render_backend->initialize(fb->size.x, fb->size.y);
+        renderer->last_framebuffer = fb;
+    }
+    if (renderer->last_world != world) {
+        world->scene.materials = renderer->materials;
+        world->scene.textures = renderer->images;
+        render_backend->set_scene(world->scene);
+        renderer->last_world = world;
+    }
+
+    render_backend->render(camera->camera.position,
+                           glm::normalize(camera->camera.center - camera->camera.position),
+                           camera->camera.up,
+                           camera->camera.fov_y,
+                           fb->accum_id == 0,
+                           true);
+
+    std::memcpy(fb->img.data(), render_backend->img.data(), sizeof(uint32_t) * fb->img.size());
+
+    fb->accum_id++;
+
+    return reinterpret_cast<OSPFuture>(1);
 }
 
 int ChameleonDevice::isReady(OSPFuture, OSPSyncEvent)
@@ -256,12 +295,40 @@ float ChameleonDevice::getProgress(OSPFuture)
     return 1.f;
 }
 
-void ChameleonDevice::commit() {}
-
-extern "C" OSPError OSPRAY_MODULE_CHAMELEON_EXPORT ospray_module_init_chameleon(
-    int16_t version_major, int16_t version_minor, int16_t version_patch)
+void ChameleonDevice::commit()
 {
-    std::cout << "ChameleonRT module loaded\n";
+    Device::commit();
+    const std::string backend = getParam<std::string>("backend", "embree");
+    std::cout << "Selecting backend: " << backend << "\n";
+
+#if ENABLE_OPTIX
+    if (backend == "optix") {
+        render_backend = std::make_unique<RenderOptiX>(false);
+    }
+#endif
+#if ENABLE_EMBREE
+    if (backend == "embree") {
+        render_backend = std::make_unique<RenderEmbree>();
+    }
+#endif
+#if ENABLE_DXR
+    if (backend == "dxr") {
+        render_backend = std::make_unique<RenderDXR>();
+    }
+#endif
+#if ENABLE_VULKAN
+    if (backend == "vulkan") {
+        render_backend = std::make_unique<RenderVulkan>();
+    }
+#endif
+    if (!render_backend) {
+        throw std::runtime_error("Request for unsupported renderer backend " + backend);
+    }
+}
+
+extern "C" OSPError OSPRAY_MODULE_CHAMELEON_EXPORT
+ospray_module_init_chameleon(int16_t version_major, int16_t version_minor, int16_t)
+{
     return ospray::moduleVersionCheck(version_major, version_minor);
 }
 }

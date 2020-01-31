@@ -10,7 +10,9 @@
 #include "util.h"
 #include <glm/ext.hpp>
 
-RenderOSPRay::RenderOSPRay() : fb(0)
+RenderOSPRay::RenderOSPRay(const std::string &chameleon_device_backend)
+    : fb(0), chameleon_device_backend(chameleon_device_backend)
+
 {
     std::vector<const char *> argv = {
         "render_ospray_backend", "--osp:log-output=cout", "--osp:error-output=cout"};
@@ -23,16 +25,22 @@ RenderOSPRay::RenderOSPRay() : fb(0)
         std::cout << "could not load chameleon module\n";
     }
 
+    OSPDevice chameleon_device = ospNewDevice("chameleon");
+    ospDeviceSetParam(
+        chameleon_device, "backend", OSP_STRING, chameleon_device_backend.c_str());
+    ospDeviceCommit(chameleon_device);
+    ospSetCurrentDevice(chameleon_device);
+
     camera = ospNewCamera("perspective");
     // Apply a y-flip to the image to match the other backends which render
     // in the DirectX/Vulkan image coordinate system
+    // The Chameleon Device already flips, and ignores these parameters
     const glm::vec2 img_start(0.f, 1.f);
     const glm::vec2 img_end(1.f, 0.f);
     ospSetParam(camera, "imageStart", OSP_VEC2F, &img_start.x);
     ospSetParam(camera, "imageEnd", OSP_VEC2F, &img_end.x);
 
     renderer = ospNewRenderer("pathtracer");
-    ospCommit(renderer);
 
     world = ospNewWorld();
 }
@@ -59,7 +67,7 @@ RenderOSPRay::~RenderOSPRay()
 
 std::string RenderOSPRay::name()
 {
-    return "OSPRay";
+    return "OSPRay Chameleon Device (" + chameleon_device_backend + ")";
 }
 
 void RenderOSPRay::initialize(const int fb_width, const int fb_height)
@@ -247,14 +255,6 @@ void RenderOSPRay::set_scene(const Scene &in_scene)
         ospSetParam(l, "edge2", OSP_VEC3F, &edgey.x);
         ospCommit(l);
         lights.push_back(l);
-    }
-
-    {
-        OSPLight ambient = ospNewLight("ambient");
-        float ambient_intensity = 0.2f;
-        ospSetParam(ambient, "intensity", OSP_FLOAT, &ambient_intensity);
-        ospCommit(ambient);
-        lights.push_back(ambient);
     }
 
     OSPData instances_list =

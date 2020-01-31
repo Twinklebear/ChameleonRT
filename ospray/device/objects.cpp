@@ -1,7 +1,7 @@
 #include "objects.h"
 #include <unordered_map>
 #include "texture_channel_mask.h"
-#include <glm/gtc/type_ptr.hpp>
+#include <glm/ext.hpp>
 
 using namespace ospcommon::math;
 
@@ -23,7 +23,7 @@ void Light::commit()
     edge1 = normalize(edge1);
     edge2 = normalize(edge2);
     light.v_x = glm::vec3(edge1.x, edge1.y, edge1.z);
-    light.v_x = glm::vec3(edge2.x, edge2.y, edge2.z);
+    light.v_y = glm::vec3(edge2.x, edge2.y, edge2.z);
 
     auto normal = cross(edge1, edge2);
     light.normal = glm::vec4(normal.x, normal.y, normal.z, 1.f);
@@ -122,29 +122,29 @@ void World::commit()
     }
 
     scene.lights.clear();
-    std::transform(reinterpret_cast<Light *>(lights->begin()),
-                   reinterpret_cast<Light *>(lights->end()),
+    std::transform(reinterpret_cast<Light **>(lights->begin()),
+                   reinterpret_cast<Light **>(lights->end()),
                    std::back_inserter(scene.lights),
-                   [](const Light &l) { return l.light; });
+                   [](Light *l) { return l->light; });
 
     scene.meshes.clear();
     scene.instances.clear();
-    Instance *instances = reinterpret_cast<Instance *>(instance_data->data());
+    Instance **instances = reinterpret_cast<Instance **>(instance_data->data());
     std::unordered_map<Group *, uint32_t> mesh_ids;
     for (size_t i = 0; i < instance_data->size().x; ++i) {
         ::Instance inst;
-        inst.transform = instances[i].transform;
-        Group *g = instances[i].group;
+        inst.transform = instances[i]->transform;
+        Group *g = instances[i]->group;
         auto fnd = mesh_ids.find(g);
         if (fnd == mesh_ids.end()) {
             inst.mesh_id = scene.meshes.size();
             mesh_ids[g] = inst.mesh_id;
 
             Mesh mesh;
-            GeometricModel *geom_models =
-                reinterpret_cast<GeometricModel *>(g->geometry->data());
+            GeometricModel **geom_models =
+                reinterpret_cast<GeometricModel **>(g->geometry->data());
             for (size_t j = 0; j < g->geometry->size().x; ++j) {
-                Geometry *g = geom_models[j].geometry;
+                Geometry *g = geom_models[j]->geometry;
                 ::Geometry mesh_g;
                 mesh_g.vertices =
                     std::vector<glm::vec3>(reinterpret_cast<glm::vec3 *>(g->vertices->begin()),
@@ -164,19 +164,23 @@ void World::commit()
                         reinterpret_cast<glm::vec3 *>(g->normals->begin()),
                         reinterpret_cast<glm::vec3 *>(g->normals->end()));
                 }
+                mesh.geometries.push_back(mesh_g);
             }
             scene.meshes.push_back(mesh);
         } else {
             inst.mesh_id = fnd->second;
         }
 
-        GeometricModel *geom_models = reinterpret_cast<GeometricModel *>(g->geometry->data());
+        GeometricModel **geom_models =
+            reinterpret_cast<GeometricModel **>(g->geometry->data());
         for (size_t j = 0; j < g->geometry->size().x; ++j) {
-            inst.material_ids.push_back(geom_models[j].material_id);
+            inst.material_ids.push_back(geom_models[j]->material_id);
         }
         scene.instances.push_back(inst);
     }
 }
+
+Framebuffer::Framebuffer(const vec2i &size) : size(size.x, size.y), img(size.x * size.y, 0) {}
 
 void Renderer::commit()
 {
@@ -188,13 +192,13 @@ void Renderer::commit()
     images.clear();
     materials.clear();
 
-    Material *mats = reinterpret_cast<Material *>(mat_data->data());
+    Material **mats = reinterpret_cast<Material **>(mat_data->data());
     std::unordered_map<Texture *, uint32_t> texture_ids;
     for (size_t i = 0; i < mat_data->size().x; ++i) {
         DisneyMaterial m;
-        m.base_color = mats[i].base_color;
-        if (mats[i].tex_base_color) {
-            Texture *tex = mats[i].tex_base_color;
+        m.base_color = mats[i]->base_color;
+        if (mats[i]->tex_base_color) {
+            Texture *tex = mats[i]->tex_base_color;
             auto fnd = texture_ids.find(tex);
             uint32_t tex_id = -1;
             if (fnd == texture_ids.end()) {
@@ -217,20 +221,18 @@ void Renderer::commit()
             m.base_color.r = *reinterpret_cast<float *>(&tex_mask);
         }
 
-        m.metallic = mats[i].metallic;
-        m.specular = mats[i].specular;
-        m.roughness = mats[i].roughness;
-        m.specular_tint = mats[i].specular_tint;
-        m.anisotropy = mats[i].anisotropy;
-        m.sheen = mats[i].sheen;
-        m.sheen_tint = mats[i].sheen_tint;
-        m.clearcoat = mats[i].clearcoat;
-        m.clearcoat_gloss = mats[i].clearcoat_gloss;
-        m.ior = mats[i].ior;
-        m.specular_transmission = mats[i].specular_transmission;
+        m.metallic = mats[i]->metallic;
+        m.specular = mats[i]->specular;
+        m.roughness = mats[i]->roughness;
+        m.specular_tint = mats[i]->specular_tint;
+        m.anisotropy = mats[i]->anisotropy;
+        m.sheen = mats[i]->sheen;
+        m.sheen_tint = mats[i]->sheen_tint;
+        m.clearcoat = mats[i]->clearcoat;
+        m.clearcoat_gloss = mats[i]->clearcoat_gloss;
+        m.ior = mats[i]->ior;
+        m.specular_transmission = mats[i]->specular_transmission;
         materials.push_back(m);
     }
 }
-
-Framebuffer::Framebuffer(const vec2i &size) : size(size.x, size.y), img(size.x * size.y, 0) {}
 }

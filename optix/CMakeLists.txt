@@ -24,7 +24,8 @@ add_library(render_optix render_optix.cpp optix_utils.cpp)
 
 set_target_properties(render_optix PROPERTIES
     CXX_STANDARD 14
-    CXX_STANDARD_REQUIRED ON)
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE TRUE)
 
 if (REPORT_RAY_STATS)
     target_compile_options(render_optix PUBLIC

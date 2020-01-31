@@ -214,8 +214,16 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         }
 #if ENABLE_OSPRAY
         else if (args[i] == "-ospray") {
-            renderer = std::make_unique<RenderOSPRay>();
             backend_arg = args[i];
+#if ENABLE_OSPRAY_DEVICE
+            std::string chameleon_device_backend = "embree";
+            if (args.size() > i + 1 && args[i + 1][0] != '-') {
+                chameleon_device_backend = args[++i];
+            }
+            renderer = std::make_unique<RenderOSPRay>(chameleon_device_backend);
+#else
+            renderer = std::make_unique<RenderOSPRay>();
+#endif
         }
 #endif
 #if ENABLE_OPTIX

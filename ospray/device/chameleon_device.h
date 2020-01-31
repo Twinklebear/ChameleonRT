@@ -13,6 +13,7 @@
 #include "mesh.h"
 #include "objects.h"
 #include "ospray_module_chameleon_export.h"
+#include "render_backend.h"
 #include "scene.h"
 
 namespace device {
@@ -131,6 +132,9 @@ struct OSPRAY_MODULE_CHAMELEON_EXPORT ChameleonDevice : public ospray::api::Devi
     /////////////////////////////////////////////////////////////////////////
 
     void commit() override;
+
+private:
+    std::unique_ptr<RenderBackend> render_backend = nullptr;
 };
 
 OSP_REGISTER_DEVICE(ChameleonDevice, chameleon);

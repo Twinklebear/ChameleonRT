@@ -100,19 +100,12 @@ public:
 };
 
 // TODO: For a more final mapping of RTX/SBT-based backends, the world would
-// store the SBT, and the renderer would be the ray gen and miss programs
+// store the SBT, and the renderer would be the ray gen and miss programs,
+// and the material and image buffers/descriptor heaps. This is a bit of a
+// hack right now to avoid changing a the rest of Chameleon's render backend abstraction
 class World : public APIObject {
 public:
     Scene scene;
-
-    void commit() override;
-};
-
-class Renderer : public APIObject {
-public:
-    World *last_world = nullptr;
-    std::vector<DisneyMaterial> materials;
-    std::vector<Image> images;
 
     void commit() override;
 };
@@ -121,8 +114,19 @@ class Framebuffer : public APIObject {
 public:
     glm::ivec2 size;
     std::vector<uint32_t> img;
+    uint32_t accum_id = 0;
 
     Framebuffer(const ospcommon::math::vec2i &size);
     Framebuffer() = default;
+};
+
+class Renderer : public APIObject {
+public:
+    World *last_world = nullptr;
+    Framebuffer *last_framebuffer = nullptr;
+    std::vector<DisneyMaterial> materials;
+    std::vector<Image> images;
+
+    void commit() override;
 };
 }

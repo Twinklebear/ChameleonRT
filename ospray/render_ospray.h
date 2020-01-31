@@ -16,7 +16,9 @@ struct RenderOSPRay : RenderBackend {
     std::vector<OSPInstance> instances;
     std::vector<OSPLight> lights;
 
-    RenderOSPRay();
+    std::string chameleon_device_backend;
+
+    RenderOSPRay(const std::string &chameleon_device_backend);
     ~RenderOSPRay();
 
     std::string name() override;

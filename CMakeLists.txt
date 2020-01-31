@@ -70,6 +70,10 @@ target_link_libraries(chameleonrt PUBLIC
 
 if (ENABLE_OSPRAY)
 	target_link_libraries(chameleonrt PUBLIC render_ospray)
+
+    if (ENABLE_OSPRAY_DEVICE)
+        target_compile_definitions(chameleonrt PUBLIC -DENABLE_OSPRAY_DEVICE)
+    endif()
 endif()
 
 if (ENABLE_EMBREE)
