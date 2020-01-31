@@ -216,7 +216,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         else if (args[i] == "-ospray") {
             backend_arg = args[i];
 #if ENABLE_OSPRAY_DEVICE
-            std::string chameleon_device_backend = "embree";
+            std::string chameleon_device_backend = "ospray";
             if (args.size() > i + 1 && args[i + 1][0] != '-') {
                 chameleon_device_backend = args[++i];
             }

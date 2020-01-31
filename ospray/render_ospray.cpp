@@ -25,11 +25,13 @@ RenderOSPRay::RenderOSPRay(const std::string &chameleon_device_backend)
         std::cout << "could not load chameleon module\n";
     }
 
-    OSPDevice chameleon_device = ospNewDevice("chameleon");
-    ospDeviceSetParam(
-        chameleon_device, "backend", OSP_STRING, chameleon_device_backend.c_str());
-    ospDeviceCommit(chameleon_device);
-    ospSetCurrentDevice(chameleon_device);
+    if (chameleon_device_backend != "ospray") {
+        OSPDevice chameleon_device = ospNewDevice("chameleon");
+        ospDeviceSetParam(
+            chameleon_device, "backend", OSP_STRING, chameleon_device_backend.c_str());
+        ospDeviceCommit(chameleon_device);
+        ospSetCurrentDevice(chameleon_device);
+    }
 
     camera = ospNewCamera("perspective");
     // Apply a y-flip to the image to match the other backends which render
@@ -67,7 +69,10 @@ RenderOSPRay::~RenderOSPRay()
 
 std::string RenderOSPRay::name()
 {
-    return "OSPRay Chameleon Device (" + chameleon_device_backend + ")";
+    if (chameleon_device_backend != "ospray") {
+        return "OSPRay Chameleon Device (" + chameleon_device_backend + ")";
+    }
+    return "OSPRay";
 }
 
 void RenderOSPRay::initialize(const int fb_width, const int fb_height)
