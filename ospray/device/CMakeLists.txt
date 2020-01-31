@@ -4,7 +4,8 @@
 find_package(ospcommon REQUIRED)
 
 add_library(ospray_module_chameleon SHARED
-  chameleon_device.cpp)
+  chameleon_device.cpp
+  data.cpp)
 
 set_target_properties(ospray_module_chameleon PROPERTIES
   CXX_STANDARD 14
