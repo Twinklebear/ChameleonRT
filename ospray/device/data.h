@@ -4,6 +4,8 @@
 #include <ospcommon/math/vec.h>
 #include <ospray/OSPEnums.h>
 
+namespace device {
+
 class Data {
 protected:
     ospcommon::math::vec3ul dims = ospcommon::math::vec3ul(0);
@@ -57,3 +59,4 @@ public:
 
     const uint8_t *data() const override;
 };
+}

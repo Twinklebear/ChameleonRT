@@ -3,6 +3,8 @@
 
 using namespace ospcommon::math;
 
+namespace device {
+
 Data::Data(const ospcommon::math::vec3ul &dims, OSPDataType type) : dims(dims), type(type) {}
 
 vec3ul Data::size() const
@@ -75,4 +77,5 @@ uint8_t *OwnedData::data()
 const uint8_t *OwnedData::data() const
 {
     return buf.data();
+}
 }

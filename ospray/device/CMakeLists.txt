@@ -4,17 +4,18 @@
 find_package(ospcommon REQUIRED)
 
 add_library(ospray_module_chameleon SHARED
-  chameleon_device.cpp
-  data.cpp)
+    chameleon_device.cpp
+    data.cpp
+    objects.cpp)
 
 set_target_properties(ospray_module_chameleon PROPERTIES
-  CXX_STANDARD 14
-  CXX_STANDARD_REQUIRED ON)
+    CXX_STANDARD 14
+    CXX_STANDARD_REQUIRED ON)
 
 target_link_libraries(ospray_module_chameleon
-  util
-  ospray::ospray
-  ospcommon::ospcommon)
+    util
+    ospray::ospray
+    ospcommon::ospcommon)
 
 include(GenerateExportHeader)
 generate_export_header(ospray_module_chameleon)

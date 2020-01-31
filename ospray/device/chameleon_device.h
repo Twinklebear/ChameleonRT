@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
+#include <utility>
 #include <ospcommon/math/box.h>
 #include <ospcommon/math/vec.h>
 #include <ospray/OSPEnums.h>
@@ -10,9 +11,14 @@
 #include <ospray/SDK/common/OSPCommon.h>
 #include "data.h"
 #include "mesh.h"
+#include "objects.h"
 #include "ospray_module_chameleon_export.h"
 #include "scene.h"
 
+namespace device {
+
+// Note: Device just uses raw pointers throughout and doesn't implement
+// the ref-counting and lifetime management parts of the API
 struct OSPRAY_MODULE_CHAMELEON_EXPORT ChameleonDevice : public ospray::api::Device {
     ChameleonDevice() = default;
     ~ChameleonDevice() override = default;
@@ -125,27 +131,7 @@ struct OSPRAY_MODULE_CHAMELEON_EXPORT ChameleonDevice : public ospray::api::Devi
     /////////////////////////////////////////////////////////////////////////
 
     void commit() override;
-
-private:
-    size_t allocate_handle(OSPDataType type);
-    size_t handle_value(OSPObject obj);
-    OSPDataType handle_type(OSPObject obj);
-
-    size_t next_handle = 1;
-
-    // Maps of handle -> object
-    std::unordered_map<size_t, std::shared_ptr<Data>> data;
-    std::unordered_map<size_t, std::shared_ptr<Geometry>> geometries;
-    std::unordered_map<size_t, std::shared_ptr<Geometry>> geometric_models;
-    // Note: a bit less than ideal b/c each mesh is a copy of the geometries,
-    // not just a reference to it
-    std::unordered_map<size_t, std::shared_ptr<Mesh>> meshes;
-    std::unordered_map<size_t, std::shared_ptr<Instance>> instances;
-    std::unordered_map<size_t, std::shared_ptr<DisneyMaterial>> materials;
-    std::unordered_map<size_t, std::shared_ptr<Image>> textures;
-    std::unordered_map<size_t, std::shared_ptr<QuadLight>> lights;
-    std::unordered_map<size_t, std::shared_ptr<Camera>> cameras;
-    std::unordered_map<size_t, std::shared_ptr<Scene>> scenes;
 };
 
 OSP_REGISTER_DEVICE(ChameleonDevice, chameleon);
+}
