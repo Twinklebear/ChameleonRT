@@ -102,7 +102,7 @@ of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.1.114.0/`
 
 ### OSPRay
 
-Dependencies: [OSPRay 2.0](http://www.ospray.org/).
+Dependencies: [OSPRay 2.0](http://www.ospray.org/), [TBB](https://www.threadingbuildingblocks.org/).
 
 To build the OSPRay backend run CMake with:
 
@@ -113,6 +113,8 @@ cmake .. -DENABLE_OSPRAY=ON -Dospray_DIR=<path to osprayConfig.cmake>
 You may also need to specify OSPRay's dependencies,
 [ospcommon](https://github.com/ospray/ospcommon) and [OpenVKL](https://github.com/openvkl/openvkl),
 depending on how you got or built the OSPRay binaries.
+If you downloaded the OSPRay release binaries, you just need to
+specify that path.
 
 You can then pass `-ospray` to use the OSPRay backend.
 
