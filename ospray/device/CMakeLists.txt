@@ -1,7 +1,5 @@
-# TODO: What about finding ospcommon against an OSPRay install?
-# Right now I have issues with the libimf dependency leaking in the
-# releases so can't test
 find_package(ospcommon REQUIRED)
+find_package(OpenGL REQUIRED)
 
 set(MODULE_SRC
     chameleon_device.cpp
@@ -34,7 +32,13 @@ endif()
 
 if (ENABLE_OPTIX)
     target_compile_definitions(ospray_module_chameleon PRIVATE -DENABLE_OPTIX)
-    target_link_libraries(ospray_module_chameleon PRIVATE render_optix)
+
+    target_include_directories(ospray_module_chameleon PRIVATE
+        $<BUILD_INTERFACE:${OPENGL_INCLUDE_DIR}>)
+
+    target_link_libraries(ospray_module_chameleon PRIVATE
+        render_optix
+        ${OPENGL_LIBRARIES})
 endif()
 
 if (ENABLE_DXR)
