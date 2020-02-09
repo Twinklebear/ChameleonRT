@@ -52,7 +52,6 @@ RenderOptiX::RenderOptiX(bool native_display) : native_display(native_display)
 
     cudaDeviceProp device_props;
     cudaGetDeviceProperties(&device_props, 0);
-    std::cout << "OptiX backend running on " << device_props.name << "\n";
 
     cuCtxGetCurrent(&cuda_context);
 
