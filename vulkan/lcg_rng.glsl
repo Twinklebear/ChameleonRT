@@ -1,7 +1,7 @@
-#ifndef LCG_RNG_HLSL
-#define LCG_RNG_HLSL
+#ifndef LCG_RNG_GLSL
+#define LCG_RNG_GLSL
 
-#include "util.hlsl"
+#include "util.glsl"
 
 // https://github.com/ospray/ospray/blob/master/ospray/math/random.ih
 struct LCGRand {
@@ -48,13 +48,13 @@ uint32_t lcg_random(inout LCGRand rng)
 
 float lcg_randomf(inout LCGRand rng)
 {
-	return ldexp((float)lcg_random(rng), -32);
+	return ldexp(float(lcg_random(rng)), -32);
 }
 
 LCGRand get_rng(int frame_id)
 {
-	const uint2 pixel = DispatchRaysIndex().xy;
-    const uint2 dims = DispatchRaysDimensions().xy;
+	const uvec2 pixel = uvec2(gl_LaunchIDNV.xy);
+    const uvec2 dims = uvec2(gl_LaunchSizeNV.xy);
 
     LCGRand rng;
     rng.state = murmur_hash3_mix(0, pixel.x + pixel.y * dims.x);

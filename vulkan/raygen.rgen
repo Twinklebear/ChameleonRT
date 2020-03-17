@@ -1,7 +1,7 @@
 #version 460
 
 #include "util.glsl"
-#include "pcg_rng.glsl"
+#include "lcg_rng.glsl"
 #include "lights.glsl"
 #include "disney_bsdf.glsl"
 #include "util/texture_channel_mask.h"
@@ -94,11 +94,11 @@ void unpack_material(inout DisneyMaterial mat, uint id, vec2 uv) {
 }
 
 vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in const vec3 n,
-	in const vec3 v_x, in const vec3 v_y, in const vec3 w_o, inout uint ray_count, inout PCGRand rng)
+	in const vec3 v_x, in const vec3 v_y, in const vec3 w_o, inout uint ray_count, inout LCGRand rng)
 {
 	vec3 illum = vec3(0.f);
 
-	uint32_t light_id = uint32_t(pcg32_randomf(rng) * num_lights);
+	uint32_t light_id = uint32_t(lcg_randomf(rng) * num_lights);
 	light_id = min(light_id, num_lights - 1);
 	QuadLight light = lights[nonuniformEXT(light_id)];
 
@@ -109,7 +109,7 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 	// Sample the light to compute an incident light ray to this point
 	{
 		vec3 light_pos = sample_quad_light_position(light,
-                vec2(pcg32_randomf(rng), pcg32_randomf(rng)));
+                vec2(lcg_randomf(rng), lcg_randomf(rng)));
 		vec3 light_dir = light_pos - hit_p;
 		float light_dist = length(light_dir);
 		light_dir = normalize(light_dir);
@@ -162,8 +162,8 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 void main() {
     const ivec2 pixel = ivec2(gl_LaunchIDNV.xy);
     const vec2 dims = vec2(gl_LaunchSizeNV.xy);
-    PCGRand rng = get_rng(frame_id);
-    vec2 d = (pixel + vec2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
+    LCGRand rng = get_rng(frame_id);
+    vec2 d = (pixel + vec2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
 
     vec3 ray_origin = cam_pos.xyz;
     vec3 ray_dir = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
