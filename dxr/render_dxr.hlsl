@@ -1,5 +1,5 @@
 #include "util.hlsl"
-#include "pcg_rng.hlsl"
+#include "lcg_rng.hlsl"
 #include "disney_bsdf.hlsl"
 #include "lights.hlsl"
 #include "util/texture_channel_mask.h"
@@ -94,11 +94,11 @@ void unpack_material(inout DisneyMaterial mat, uint id, float2 uv) {
 }
 
 float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, in const float3 n,
-        in const float3 v_x, in const float3 v_y, in const float3 w_o, inout uint ray_count, inout PCGRand rng)
+        in const float3 v_x, in const float3 v_y, in const float3 w_o, inout uint ray_count, inout LCGRand rng)
 {
     float3 illum = 0.f;
 
-    uint32_t light_id = pcg32_randomf(rng) * num_lights;
+    uint32_t light_id = lcg_randomf(rng) * num_lights;
     light_id = min(light_id, num_lights - 1);
     QuadLight light = lights[NonUniformResourceIndex(light_id)];
 
@@ -114,7 +114,7 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
     // Sample the light to compute an incident light ray to this point
     {
         float3 light_pos = sample_quad_light_position(light,
-                float2(pcg32_randomf(rng), pcg32_randomf(rng)));
+                float2(lcg_randomf(rng), lcg_randomf(rng)));
         float3 light_dir = light_pos - hit_p;
         float light_dist = length(light_dir);
         light_dir = normalize(light_dir);
@@ -170,8 +170,8 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 void RayGen() {
     const uint2 pixel = DispatchRaysIndex().xy;
     const float2 dims = float2(DispatchRaysDimensions().xy);
-    PCGRand rng = get_rng(frame_id);
-    const float2 d = (pixel + float2(pcg32_randomf(rng), pcg32_randomf(rng))) / dims;
+    LCGRand rng = get_rng(frame_id);
+    const float2 d = (pixel + float2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
 
     RayDesc ray;
     ray.Origin = cam_pos.xyz;

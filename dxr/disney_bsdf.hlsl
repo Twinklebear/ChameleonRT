@@ -2,7 +2,7 @@
 #define DISNEY_BSDF_HLSL
 
 #include "util.hlsl"
-#include "pcg_rng.hlsl"
+#include "lcg_rng.hlsl"
 
 /* Disney BSDF functions, for additional details and examples see:
  * - https://blog.selfshadow.com/publications/s2012-shading-course/burley/s2012_pbs_disney_brdf_notes_v3.pdf
@@ -362,19 +362,19 @@ float disney_pdf(in const DisneyMaterial mat, in const float3 n,
  * ray reflection direction (w_i) and sample PDF.
  */
 float3 sample_disney_brdf(in const DisneyMaterial mat, in const float3 n,
-	in const float3 w_o, in const float3 v_x, in const float3 v_y, inout PCGRand rng,
+	in const float3 w_o, in const float3 v_x, in const float3 v_y, inout LCGRand rng,
 	out float3 w_i, out float pdf)
 {
 	int component = 0;
 	if (mat.specular_transmission == 0.f) {
-		component = pcg32_randomf(rng) * 3.f;
+		component = lcg_randomf(rng) * 3.f;
 		component = clamp(component, 0, 2);
 	} else {
-		component = pcg32_randomf(rng) * 4.f;
+		component = lcg_randomf(rng) * 4.f;
 		component = clamp(component, 0, 3);
 	}
 
-	float2 samples = float2(pcg32_randomf(rng), pcg32_randomf(rng));
+	float2 samples = float2(lcg_randomf(rng), lcg_randomf(rng));
 	if (component == 0) {
 		// Sample diffuse component
 		w_i = sample_lambertian_dir(n, v_x, v_y, samples);

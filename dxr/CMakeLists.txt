@@ -8,7 +8,7 @@ if (REPORT_RAY_STATS)
 endif()
 
 add_dxil_embed_library(dxr_shaders render_dxr.hlsl util.hlsl
-	disney_bsdf.hlsl pcg_rng.hlsl
+	disney_bsdf.hlsl lcg_rng.hlsl
 	COMPILE_OPTIONS -O3
 	COMPILE_DEFINITIONS
         ${HLSL_COMPILE_DEFNS}
