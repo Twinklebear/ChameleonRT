@@ -1,5 +1,5 @@
 #include "cuda_utils.h"
-#include "pcg_rng.h"
+#include "lcg_rng.h"
 #include "disney_bsdf.h"
 #include "lights.h"
 #include "optix_params.h"
@@ -61,11 +61,11 @@ __device__ void unpack_material(const MaterialParams &p, float2 uv, DisneyMateri
 
 __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &hit_p,
         const float3 &n, const float3 &v_x, const float3 &v_y, const float3 &w_o,
-        const QuadLight *lights, const uint32_t num_lights, uint16_t &ray_count, PCGRand &rng)
+        const QuadLight *lights, const uint32_t num_lights, uint16_t &ray_count, LCGRand &rng)
 {
     float3 illum = make_float3(0.f);
 
-    uint32_t light_id = pcg32_randomf(rng) * num_lights;
+    uint32_t light_id = lcg_randomf(rng) * num_lights;
     light_id = min(light_id, num_lights - 1);
     QuadLight light = lights[light_id];
 
@@ -76,7 +76,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
     // Sample the light to compute an incident light ray to this point
     {
         float3 light_pos = sample_quad_light_position(light,
-                make_float2(pcg32_randomf(rng), pcg32_randomf(rng)));
+                make_float2(lcg_randomf(rng), lcg_randomf(rng)));
         float3 light_dir = light_pos - hit_p;
         float light_dist = length(light_dir);
         light_dir = normalize(light_dir);
@@ -133,8 +133,8 @@ extern "C" __global__ void __raygen__perspective_camera() {
     const uint2 screen = make_uint2(optixGetLaunchDimensions().x, optixGetLaunchDimensions().y);
     const uint32_t pixel_idx = pixel.x + pixel.y * screen.x;
 
-    PCGRand rng = get_rng(launch_params.frame_id);
-    const float2 d = make_float2(pixel.x + pcg32_randomf(rng), pixel.y + pcg32_randomf(rng)) / make_float2(screen);
+    LCGRand rng = get_rng(launch_params.frame_id);
+    const float2 d = make_float2(pixel.x + lcg_randomf(rng), pixel.y + lcg_randomf(rng)) / make_float2(screen);
     float3 ray_dir = normalize(d.x * make_float3(launch_params.cam_du)
             + d.y * make_float3(launch_params.cam_dv) + make_float3(launch_params.cam_dir_top_left));
 

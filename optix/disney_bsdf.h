@@ -2,7 +2,7 @@
 
 #include "cuda_utils.h"
 #include "float3.h"
-#include "pcg_rng.h"
+#include "lcg_rng.h"
 
 /* Disney BSDF functions, for additional details and examples see:
  * - https://blog.selfshadow.com/publications/s2012-shading-course/burley/s2012_pbs_disney_brdf_notes_v3.pdf
@@ -361,19 +361,19 @@ __device__ float disney_pdf(const DisneyMaterial &mat, const float3 &n,
  * ray reflection direction (w_i) and sample PDF.
  */
 __device__ float3 sample_disney_brdf(const DisneyMaterial &mat, const float3 &n,
-	const float3 &w_o, const float3 &v_x, const float3 &v_y, PCGRand &rng,
+	const float3 &w_o, const float3 &v_x, const float3 &v_y, LCGRand &rng,
 	float3 &w_i, float &pdf)
 {
 	int component = 0;
 	if (mat.specular_transmission == 0.f) {
-		component = pcg32_randomf(rng) * 3.f;
+		component = lcg_randomf(rng) * 3.f;
 		component = clamp(component, 0, 2);
 	} else {
-		component = pcg32_randomf(rng) * 4.f;
+		component = lcg_randomf(rng) * 4.f;
 		component = clamp(component, 0, 3);
 	}
 
-	float2 samples = make_float2(pcg32_randomf(rng), pcg32_randomf(rng));
+	float2 samples = make_float2(lcg_randomf(rng), lcg_randomf(rng));
 	if (component == 0) {
 		// Sample diffuse component
 		w_i = sample_lambertian_dir(n, v_x, v_y, samples);
