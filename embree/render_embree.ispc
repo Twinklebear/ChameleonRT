@@ -1,6 +1,6 @@
 #include <embree3/rtcore.isph>
 #include "util.ih"
-#include "pcg_rng.ih"
+#include "lcg_rng.ih"
 #include "float3.ih"
 #include "mat4.ih"
 #include "lights.ih"
@@ -101,11 +101,11 @@ float3 sample_direct_light(const SceneContext *uniform scene,
         const float3 &v_x, const float3 &v_y, const float3 &w_o,
         RTCIntersectContext *uniform incoherent_context,
         QuadLight *uniform lights, uniform uint32_t num_lights,
-        uint16_t &ray_stats, PCGRand &rng)
+        uint16_t &ray_stats, LCGRand &rng)
 {
     float3 illum = make_float3(0.f);
 
-    uint32_t light_id = pcg32_randomf(rng) * num_lights;
+    uint32_t light_id = lcg_randomf(rng) * num_lights;
     light_id = min(light_id, num_lights - 1);
     QuadLight light = lights[light_id];
 
@@ -113,7 +113,7 @@ float3 sample_direct_light(const SceneContext *uniform scene,
 
     // Sample the light to compute an incident light ray to this point
     {
-        float3 light_pos = sample_quad_light_position(light, make_float2(pcg32_randomf(rng), pcg32_randomf(rng)));
+        float3 light_pos = sample_quad_light_position(light, make_float2(lcg_randomf(rng), lcg_randomf(rng)));
         float3 light_dir = light_pos - hit_p;
         float light_dist = length(light_dir);
         light_dir = normalize(light_dir);
@@ -188,10 +188,10 @@ export void trace_rays(void *uniform _scene, void *uniform _tile, const void *un
         const uint32_t i = mod(ray, tile->width);
         const uint32_t j = ray / tile->width;
 
-        PCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width) * (view_params->frame_id + 1));
+        LCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width), view_params->frame_id + 1);
 
-        const float px_x = (i + tile->x + pcg32_randomf(rng)) / tile->fb_width;
-        const float px_y = (j + tile->y + pcg32_randomf(rng)) / tile->fb_height;
+        const float px_x = (i + tile->x + lcg_randomf(rng)) / tile->fb_width;
+        const float px_y = (j + tile->y + lcg_randomf(rng)) / tile->fb_height;
 
         RTCRayHit path_ray;
         {
