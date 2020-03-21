@@ -126,6 +126,9 @@ Buffer Buffer::create(ID3D12Device *device,
                       D3D12_HEAP_PROPERTIES props,
                       D3D12_RESOURCE_DESC desc)
 {
+    if (nbytes == 0) {
+        throw std::runtime_error("Error: Cannot create a buffer of size 0");
+    }
     Buffer b;
     b.buf_size = nbytes;
     b.rheap = props.Type;
@@ -214,8 +217,12 @@ Texture2D Texture2D::default(ID3D12Device *device,
     t.rstate = state;
     t.rheap = D3D12_HEAP_TYPE_DEFAULT;
     t.format = img_format;
-    CHECK_ERR(device->CreateCommittedResource(
-        &DEFAULT_HEAP_PROPS, D3D12_HEAP_FLAG_NONE, &desc, state, nullptr, IID_PPV_ARGS(&t.res)));
+    CHECK_ERR(device->CreateCommittedResource(&DEFAULT_HEAP_PROPS,
+                                              D3D12_HEAP_FLAG_NONE,
+                                              &desc,
+                                              state,
+                                              nullptr,
+                                              IID_PPV_ARGS(&t.res)));
     return t;
 }
 
