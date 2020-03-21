@@ -1,7 +1,6 @@
 #include "scene.h"
 #include <algorithm>
 #include <iostream>
-#include <map>
 #include <numeric>
 #include <stdexcept>
 #include <vector>
@@ -10,6 +9,8 @@
 #include "flatten_gltf.h"
 #include "gltf_types.h"
 #include "json.hpp"
+#include "phmap.h"
+#include "phmap_utils.h"
 #include "stb_image.h"
 #include "tiny_gltf.h"
 #include "tiny_obj_loader.h"
@@ -22,13 +23,15 @@
 #include "pbrtParser/Scene.h"
 #endif
 
-struct VertIdxLess {
-    bool operator()(const glm::uvec3 &a, const glm::uvec3 &b) const
+namespace std {
+template <>
+struct hash<glm::uvec3> {
+    size_t operator()(glm::uvec3 const &v) const
     {
-        return a.x < b.x || (a.x == b.x && a.y < b.y) ||
-               (a.x == b.x && a.y == b.y && a.z < b.z);
+        return phmap::HashState().combine(0, v.x, v.y, v.z);
     }
 };
+}
 
 bool operator==(const glm::uvec3 &a, const glm::uvec3 &b)
 {
@@ -107,7 +110,7 @@ void Scene::load_obj(const std::string &file)
         // We've got to remap from 3 indices per-vert (independent for pos, normal & uv) used
         // by tinyobjloader over to single index per-vert (single for pos, normal & uv tuple)
         // used by renderers
-        std::map<glm::uvec3, uint32_t, VertIdxLess> index_mapping;
+        phmap::parallel_flat_hash_map<glm::uvec3, uint32_t> index_mapping;
         Geometry geom;
         // Note: not supporting per-primitive materials
         material_ids.push_back(obj_mesh.material_ids[0]);
@@ -167,7 +170,7 @@ void Scene::load_obj(const std::string &file)
     // OBJ has a single "instance"
     instances.emplace_back(glm::mat4(1.f), 0, material_ids);
 
-    std::unordered_map<std::string, int32_t> texture_ids;
+    phmap::parallel_flat_hash_map<std::string, int32_t> texture_ids;
     // Parse the materials over to a similar DisneyMaterial representation
     for (const auto &m : obj_materials) {
         DisneyMaterial d;
@@ -606,8 +609,7 @@ void Scene::load_pbrt(const std::string &file)
 
     // For PBRTv3 Each Mesh corresponds to a PBRT Object, consisting of potentially multiple
     // Shapes. This maps to a Mesh with multiple geometries, which can then be instanced
-    // TODO: Maybe use https://github.com/greg7mdp/parallel-hashmap for perf.
-    std::unordered_map<std::string, size_t> pbrt_objects;
+    phmap::parallel_flat_hash_map<std::string, size_t> pbrt_objects;
     for (const auto &inst : scene->world->instances) {
         // Note: Materials are per-shape, so we should parse them and the IDs when loading the
         // shapes
@@ -627,6 +629,9 @@ void Scene::load_pbrt(const std::string &file)
                         std::dynamic_pointer_cast<pbrt::TriangleMesh>(g)) {
                     std::cout << "Object triangle mesh w/ " << mesh->index.size()
                               << " triangles: " << mesh->toString() << "\n";
+                    if (mesh->material) {
+                        std::cout << "Uses material " << mesh->material->toString() << "\n";
+                    }
 
                     Geometry geom;
                     geom.vertices.reserve(mesh->vertex.size());
@@ -653,8 +658,7 @@ void Scene::load_pbrt(const std::string &file)
                 } else if (pbrt::QuadMesh::SP mesh =
                                std::dynamic_pointer_cast<pbrt::QuadMesh>(g)) {
                     std::cout << "Encountered instanced quadmesh (unsupported type). Will "
-                                 "TODO maybe "
-                                 "triangulate\n";
+                                 "TODO maybe triangulate\n";
                 } else {
                     std::cout << "un-handled instanced geometry type : " << g->toString()
                               << std::endl;
