@@ -677,6 +677,7 @@ void Scene::load_pbrt(const std::string &file)
         } else {
             mesh_id = fnd->second;
         }
+        material_ids.resize(meshes[mesh_id].geometries.size(), -1);
 
         glm::mat4 transform(1.f);
         transform[0] = glm::vec4(inst->xfm.l.vx.x, inst->xfm.l.vx.y, inst->xfm.l.vx.z, 0.f);
