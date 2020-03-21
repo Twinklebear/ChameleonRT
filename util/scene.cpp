@@ -341,7 +341,22 @@ void Scene::load_gltf(const std::string &fname)
             SET_TEXTURE_ID(tex_mask, id);
             mat.base_color.r = *reinterpret_cast<float *>(&tex_mask);
         }
-        // TODO: Can now load roughness and metalness textures
+        // glTF: metallic is blue channel, roughness is green channel
+        if (m.pbrMetallicRoughness.metallicRoughnessTexture.index != -1) {
+            const int32_t id =
+                model.textures[m.pbrMetallicRoughness.metallicRoughnessTexture.index].source;
+            textures[id].color_space = LINEAR;
+
+            uint32_t tex_mask = TEXTURED_PARAM_MASK;
+            SET_TEXTURE_ID(tex_mask, id);
+            SET_TEXTURE_CHANNEL(tex_mask, 2);
+            mat.metallic = *reinterpret_cast<float *>(&tex_mask);
+
+            tex_mask = TEXTURED_PARAM_MASK;
+            SET_TEXTURE_ID(tex_mask, id);
+            SET_TEXTURE_CHANNEL(tex_mask, 1);
+            mat.roughness = *reinterpret_cast<float *>(&tex_mask);
+        }
         materials.push_back(mat);
     }
 
