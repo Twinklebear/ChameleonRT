@@ -19,3 +19,5 @@ std::string get_cpu_brand();
 float srgb_to_linear(const float x);
 
 float linear_to_srgb(const float x);
+
+float luminance(const glm::vec3 &c);

@@ -110,3 +110,8 @@ float linear_to_srgb(float x)
     }
     return 1.055f * pow(x, 1.f / 2.4f) - 0.055f;
 }
+
+float luminance(const glm::vec3 &c)
+{
+    return 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z;
+}
