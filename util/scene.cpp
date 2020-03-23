@@ -429,6 +429,18 @@ void Scene::load_crts(const std::string &file)
             Accessor<glm::vec2> accessor(view);
             geom.uvs = std::vector<glm::vec2>(accessor.begin(), accessor.end());
         }
+#if 0
+        if (m.find("normals") != m.end()) {
+            const uint64_t view_id = m["normals"].get<uint64_t>();
+            auto &v = header["buffer_views"][view_id];
+            const DTYPE dtype = parse_dtype(v["type"]);
+            BufferView view(data_base + v["byte_offset"].get<uint64_t>(),
+                            v["byte_length"].get<uint64_t>(),
+                            dtype_stride(dtype));
+            Accessor<glm::vec3> accessor(view);
+            geom.normals = std::vector<glm::vec3>(accessor.begin(), accessor.end());
+        }
+#endif
 
         Mesh mesh;
         mesh.geometries.push_back(geom);
