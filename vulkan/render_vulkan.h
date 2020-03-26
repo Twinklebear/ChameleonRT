@@ -8,10 +8,12 @@
 #include "vulkanrt_utils.h"
 
 struct HitGroupParams {
-    uint32_t vert_buf = 0;
-    uint32_t idx_buf = 0;
-    uint32_t normal_buf = 0;
-    uint32_t uv_buf = 0;
+    uint64_t vert_buf = 0;
+    uint64_t idx_buf = 0;
+    uint64_t normal_buf = 0;
+    uint64_t uv_buf = 0;
+    uint32_t num_normals = 0;
+    uint32_t num_uvs = 0;
     uint32_t material_id = 0;
 };
 
@@ -28,6 +30,10 @@ struct RenderVulkan : RenderBackend {
     std::shared_ptr<vkrt::Buffer> view_param_buf, img_readback_buf, mat_params, light_params;
 
     std::shared_ptr<vkrt::Texture2D> render_target, accum_buffer;
+
+    // Temp hack
+    std::vector<std::shared_ptr<vkrt::Buffer>> index_buffers, vertex_buffers, normal_buffers,
+        uv_buffers;
 
 #ifdef REPORT_RAY_STATS
     std::shared_ptr<vkrt::Texture2D> ray_stats;

@@ -281,6 +281,7 @@ void Device::make_logical_device(const std::vector<std::string> &extensions)
     device_features.shaderFloat64 = true;
     device_features.shaderInt64 = true;
 
+    // TODO: This is now core
     VkPhysicalDeviceDescriptorIndexingFeaturesEXT device_desc_features = {};
     device_desc_features.sType =
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
@@ -289,10 +290,18 @@ void Device::make_logical_device(const std::vector<std::string> &extensions)
     device_desc_features.descriptorBindingVariableDescriptorCount = true;
     device_desc_features.shaderSampledImageArrayNonUniformIndexing = true;
 
+    VkPhysicalDeviceBufferDeviceAddressFeatures device_buf_addr_features = {};
+    device_buf_addr_features.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+    device_buf_addr_features.bufferDeviceAddress = true;
+    device_buf_addr_features.pNext = &device_desc_features;
+
     std::vector<const char *> device_extensions = {
         VK_NV_RAY_TRACING_EXTENSION_NAME,
         VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
-        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME};
+        // TODO: I guess this one has become core now?
+        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME};
 
     for (const auto &ext : extensions) {
         device_extensions.push_back(ext.c_str());
@@ -312,7 +321,7 @@ void Device::make_logical_device(const std::vector<std::string> &extensions)
     create_info.enabledExtensionCount = device_extensions.size();
     create_info.ppEnabledExtensionNames = device_extensions.data();
     create_info.pEnabledFeatures = &device_features;
-    create_info.pNext = &device_desc_features;
+    create_info.pNext = &device_buf_addr_features;
     CHECK_VULKAN(vkCreateDevice(vk_physical_device, &create_info, nullptr, &device));
 
     vkGetDeviceQueue(device, graphics_queue_index, 0, &queue);

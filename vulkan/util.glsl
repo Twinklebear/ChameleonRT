@@ -5,6 +5,7 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_ARB_gpu_shader_int64 : enable
+#extension GL_EXT_buffer_reference2 : enable
 
 #define M_PI 3.14159265358979323846f
 #define M_1_PI 0.318309886183790671538f

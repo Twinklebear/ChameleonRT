@@ -833,8 +833,10 @@ void RenderVulkan::build_shader_descriptor_table()
     CHECK_VULKAN(
         vkAllocateDescriptorSets(device->logical_device(), &alloc_info, &textures_desc_set));
 
-    std::vector<std::shared_ptr<vkrt::Buffer>> index_buffers, vertex_buffers, normal_buffers,
-        uv_buffers;
+    index_buffers.clear();
+    vertex_buffers.clear();
+    normal_buffers.clear();
+    uv_buffers.clear();
 
     GeomBufIndices indices;
     for (const auto &m : meshes) {
@@ -932,10 +934,31 @@ void RenderVulkan::build_shader_binding_table()
             HitGroupParams *params =
                 reinterpret_cast<HitGroupParams *>(shader_table.sbt_params(hg_name));
 
-            params->idx_buf = buf_indices[inst.mesh_id][j].idx_buf;
-            params->vert_buf = buf_indices[inst.mesh_id][j].vert_buf;
-            params->normal_buf = buf_indices[inst.mesh_id][j].normal_buf;
-            params->uv_buf = buf_indices[inst.mesh_id][j].uv_buf;
+            VkBufferDeviceAddressInfo buf_info = {};
+            buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+            buf_info.buffer = vertex_buffers[buf_indices[inst.mesh_id][j].vert_buf]->handle();
+            params->vert_buf = vkGetBufferDeviceAddress(device->logical_device(), &buf_info);
+
+            buf_info.buffer = index_buffers[buf_indices[inst.mesh_id][j].idx_buf]->handle();
+            params->idx_buf = vkGetBufferDeviceAddress(device->logical_device(), &buf_info);
+
+            if (buf_indices[inst.mesh_id][j].normal_buf != uint32_t(-1)) {
+                buf_info.buffer =
+                    normal_buffers[buf_indices[inst.mesh_id][j].normal_buf]->handle();
+                params->normal_buf =
+                    vkGetBufferDeviceAddress(device->logical_device(), &buf_info);
+                params->num_normals = 1;
+            } else {
+                params->num_normals = 0;
+            }
+
+            if (buf_indices[inst.mesh_id][j].uv_buf != uint32_t(-1)) {
+                buf_info.buffer = uv_buffers[buf_indices[inst.mesh_id][j].uv_buf]->handle();
+                params->uv_buf = vkGetBufferDeviceAddress(device->logical_device(), &buf_info);
+                params->num_uvs = 1;
+            } else {
+                params->num_uvs = 0;
+            }
             params->material_id = inst.material_ids[j];
         }
     }
