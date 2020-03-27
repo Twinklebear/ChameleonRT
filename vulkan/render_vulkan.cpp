@@ -57,7 +57,6 @@ RenderVulkan::~RenderVulkan()
     vkDestroyCommandPool(device->logical_device(), render_cmd_pool, nullptr);
     vkDestroyPipelineLayout(device->logical_device(), pipeline_layout, nullptr);
     vkDestroyDescriptorSetLayout(device->logical_device(), desc_layout, nullptr);
-    vkDestroyDescriptorSetLayout(device->logical_device(), buffer_desc_layout, nullptr);
     vkDestroyDescriptorSetLayout(device->logical_device(), textures_desc_layout, nullptr);
     vkDestroyDescriptorPool(device->logical_device(), desc_pool, nullptr);
     vkDestroyFence(device->logical_device(), fence, nullptr);
@@ -741,16 +740,6 @@ void RenderVulkan::build_raytracing_pipeline()
                             return n + t->geometries.size();
                         });
 
-    // Make the variable sized descriptor layout for all our varying sized buffer arrays which
-    // we use to send the mesh data
-    buffer_desc_layout = vkrt::DescriptorSetLayoutBuilder()
-                             .add_binding(0,
-                                          total_geom,
-                                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
-                                          VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)
-                             .build(*device);
-
     textures_desc_layout =
         vkrt::DescriptorSetLayoutBuilder()
             .add_binding(0,
@@ -761,10 +750,6 @@ void RenderVulkan::build_raytracing_pipeline()
             .build(*device);
 
     std::vector<VkDescriptorSetLayout> descriptor_layouts = {desc_layout,
-                                                             buffer_desc_layout,
-                                                             buffer_desc_layout,
-                                                             buffer_desc_layout,
-                                                             buffer_desc_layout,
                                                              textures_desc_layout};
 
     VkPipelineLayoutCreateInfo pipeline_create_info = {};
@@ -803,7 +788,7 @@ void RenderVulkan::build_shader_descriptor_table()
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 1},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 + uint32_t(4 * total_geom)},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                              std::max(uint32_t(textures.size()), uint32_t(1))}};
 
@@ -822,53 +807,9 @@ void RenderVulkan::build_shader_descriptor_table()
     alloc_info.pSetLayouts = &desc_layout;
     CHECK_VULKAN(vkAllocateDescriptorSets(device->logical_device(), &alloc_info, &desc_set));
 
-    alloc_info.pSetLayouts = &buffer_desc_layout;
-    CHECK_VULKAN(
-        vkAllocateDescriptorSets(device->logical_device(), &alloc_info, &index_desc_set));
-    CHECK_VULKAN(
-        vkAllocateDescriptorSets(device->logical_device(), &alloc_info, &vert_desc_set));
-    CHECK_VULKAN(
-        vkAllocateDescriptorSets(device->logical_device(), &alloc_info, &normals_desc_set));
-    CHECK_VULKAN(
-        vkAllocateDescriptorSets(device->logical_device(), &alloc_info, &uv_desc_set));
-
     alloc_info.pSetLayouts = &textures_desc_layout;
     CHECK_VULKAN(
         vkAllocateDescriptorSets(device->logical_device(), &alloc_info, &textures_desc_set));
-
-    index_buffers.clear();
-    vertex_buffers.clear();
-    normal_buffers.clear();
-    uv_buffers.clear();
-
-    GeomBufIndices indices;
-    for (const auto &m : meshes) {
-        std::vector<GeomBufIndices> geom_indices;
-        for (const auto &geom : m->geometries) {
-            GeomBufIndices idx = indices;
-            indices.idx_buf++;
-            indices.vert_buf++;
-
-            index_buffers.emplace_back(geom.index_buf);
-            vertex_buffers.emplace_back(geom.vertex_buf);
-
-            if (geom.normal_buf) {
-                indices.normal_buf++;
-                normal_buffers.emplace_back(geom.normal_buf);
-            } else {
-                idx.normal_buf = -1;
-            }
-
-            if (geom.uv_buf) {
-                indices.uv_buf++;
-                uv_buffers.emplace_back(geom.uv_buf);
-            } else {
-                idx.uv_buf = -1;
-            }
-            geom_indices.push_back(idx);
-        }
-        buf_indices.push_back(geom_indices);
-    }
 
     std::vector<vkrt::CombinedImageSampler> combined_samplers;
     for (const auto &t : textures) {
@@ -881,19 +822,11 @@ void RenderVulkan::build_shader_descriptor_table()
                        .write_storage_image(desc_set, 2, accum_buffer)
                        .write_ubo(desc_set, 3, view_param_buf)
                        .write_ssbo(desc_set, 4, mat_params)
-                       .write_ssbo(desc_set, 5, light_params)
+                       .write_ssbo(desc_set, 5, light_params);
 #ifdef REPORT_RAY_STATS
-                       .write_storage_image(desc_set, 6, ray_stats)
+    updater.write_storage_image(desc_set, 6, ray_stats);
 #endif
-                       .write_ssbo_array(index_desc_set, 0, index_buffers)
-                       .write_ssbo_array(vert_desc_set, 0, vertex_buffers);
 
-    if (!normal_buffers.empty()) {
-        updater.write_ssbo_array(normals_desc_set, 0, normal_buffers);
-    }
-    if (!uv_buffers.empty()) {
-        updater.write_ssbo_array(uv_desc_set, 0, uv_buffers);
-    }
     if (!combined_samplers.empty()) {
         updater.write_combined_sampler_array(textures_desc_set, 0, combined_samplers);
     }
@@ -939,15 +872,14 @@ void RenderVulkan::build_shader_binding_table()
 
             VkBufferDeviceAddressInfo buf_info = {};
             buf_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-            buf_info.buffer = vertex_buffers[buf_indices[inst.mesh_id][j].vert_buf]->handle();
+            buf_info.buffer = meshes[inst.mesh_id]->geometries[j].vertex_buf->handle();
             params->vert_buf = vkGetBufferDeviceAddress(device->logical_device(), &buf_info);
 
-            buf_info.buffer = index_buffers[buf_indices[inst.mesh_id][j].idx_buf]->handle();
+            buf_info.buffer = meshes[inst.mesh_id]->geometries[j].index_buf->handle();
             params->idx_buf = vkGetBufferDeviceAddress(device->logical_device(), &buf_info);
 
-            if (buf_indices[inst.mesh_id][j].normal_buf != uint32_t(-1)) {
-                buf_info.buffer =
-                    normal_buffers[buf_indices[inst.mesh_id][j].normal_buf]->handle();
+            if (meshes[inst.mesh_id]->geometries[j].normal_buf) {
+                buf_info.buffer = meshes[inst.mesh_id]->geometries[j].normal_buf->handle();
                 params->normal_buf =
                     vkGetBufferDeviceAddress(device->logical_device(), &buf_info);
                 params->num_normals = 1;
@@ -955,8 +887,8 @@ void RenderVulkan::build_shader_binding_table()
                 params->num_normals = 0;
             }
 
-            if (buf_indices[inst.mesh_id][j].uv_buf != uint32_t(-1)) {
-                buf_info.buffer = uv_buffers[buf_indices[inst.mesh_id][j].uv_buf]->handle();
+            if (meshes[inst.mesh_id]->geometries[j].uv_buf) {
+                buf_info.buffer = meshes[inst.mesh_id]->geometries[j].uv_buf->handle();
                 params->uv_buf = vkGetBufferDeviceAddress(device->logical_device(), &buf_info);
                 params->num_uvs = 1;
             } else {
@@ -1037,12 +969,7 @@ void RenderVulkan::record_command_buffers()
     vkCmdBindPipeline(
         render_cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, rt_pipeline.handle());
 
-    const std::vector<VkDescriptorSet> descriptor_sets = {desc_set,
-                                                          index_desc_set,
-                                                          vert_desc_set,
-                                                          normals_desc_set,
-                                                          uv_desc_set,
-                                                          textures_desc_set};
+    const std::vector<VkDescriptorSet> descriptor_sets = {desc_set, textures_desc_set};
 
     vkCmdBindDescriptorSets(render_cmd_buf,
                             VK_PIPELINE_BIND_POINT_RAY_TRACING_NV,

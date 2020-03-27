@@ -49,7 +49,7 @@ layout(binding = 5, set = 0, std430) buffer LightParamsBuffer {
 layout(binding = 6, set = 0, r16ui) uniform writeonly uimage2D ray_stats;
 #endif
 
-layout(binding = 0, set = 5) uniform sampler2D textures[];
+layout(binding = 0, set = 1) uniform sampler2D textures[];
 
 layout(location = PRIMARY_RAY) rayPayloadNV RayPayload payload;
 layout(location = OCCLUSION_RAY) rayPayloadNV bool occlusion_hit;
