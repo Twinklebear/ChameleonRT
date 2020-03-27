@@ -170,6 +170,14 @@ VkDeviceMemory Device::alloc(size_t nbytes, uint32_t type_filter, VkMemoryProper
     info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     info.allocationSize = nbytes;
     info.memoryTypeIndex = memory_type_index(type_filter, props);
+
+    VkMemoryAllocateFlagsInfo flags = {};
+    flags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    if (props & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+        flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        info.pNext = &flags;
+    }
+
     VkDeviceMemory mem = VK_NULL_HANDLE;
     CHECK_VULKAN(vkAllocateMemory(device, &info, nullptr, &mem));
     return mem;
@@ -193,7 +201,7 @@ void Device::make_instance(const std::vector<std::string> &extensions)
     app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     app_info.pEngineName = "None";
     app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    app_info.apiVersion = VK_API_VERSION_1_1;
+    app_info.apiVersion = VK_API_VERSION_1_2;
 
     std::vector<const char *> extension_names;
     for (const auto &ext : extensions) {
@@ -281,10 +289,9 @@ void Device::make_logical_device(const std::vector<std::string> &extensions)
     device_features.shaderFloat64 = true;
     device_features.shaderInt64 = true;
 
-    // TODO: This is now core
-    VkPhysicalDeviceDescriptorIndexingFeaturesEXT device_desc_features = {};
+    VkPhysicalDeviceDescriptorIndexingFeatures device_desc_features = {};
     device_desc_features.sType =
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
     device_desc_features.shaderStorageBufferArrayNonUniformIndexing = true;
     device_desc_features.runtimeDescriptorArray = true;
     device_desc_features.descriptorBindingVariableDescriptorCount = true;
@@ -298,10 +305,7 @@ void Device::make_logical_device(const std::vector<std::string> &extensions)
 
     std::vector<const char *> device_extensions = {
         VK_NV_RAY_TRACING_EXTENSION_NAME,
-        VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
-        // TODO: I guess this one has become core now?
-        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
-        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME};
+    };
 
     for (const auto &ext : extensions) {
         device_extensions.push_back(ext.c_str());
@@ -531,25 +535,34 @@ std::shared_ptr<Texture2D> Texture2D::device(Device &device,
 
     CHECK_VULKAN(vkBindImageMemory(device.logical_device(), texture->image, texture->mem, 0));
 
-    VkImageViewCreateInfo view_create_info = {};
-    view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view_create_info.image = texture->image;
-    view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    view_create_info.format = texture->img_format;
+    // An ImageView is only valid for certain image types, so check that the image being made
+    // is one of those
+    const bool make_view = (usage & VK_IMAGE_USAGE_SAMPLED_BIT) ||
+                           (usage & VK_IMAGE_USAGE_STORAGE_BIT) ||
+                           (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
+                           (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ||
+                           (usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
+    if (make_view) {
+        VkImageViewCreateInfo view_create_info = {};
+        view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view_create_info.image = texture->image;
+        view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view_create_info.format = texture->img_format;
 
-    view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 
-    view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    view_create_info.subresourceRange.baseMipLevel = 0;
-    view_create_info.subresourceRange.levelCount = 1;
-    view_create_info.subresourceRange.baseArrayLayer = 0;
-    view_create_info.subresourceRange.layerCount = 1;
+        view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        view_create_info.subresourceRange.baseMipLevel = 0;
+        view_create_info.subresourceRange.levelCount = 1;
+        view_create_info.subresourceRange.baseArrayLayer = 0;
+        view_create_info.subresourceRange.layerCount = 1;
 
-    CHECK_VULKAN(vkCreateImageView(
-        device.logical_device(), &view_create_info, nullptr, &texture->view));
+        CHECK_VULKAN(vkCreateImageView(
+            device.logical_device(), &view_create_info, nullptr, &texture->view));
+    }
     return texture;
 }
 
@@ -650,8 +663,8 @@ DescriptorSetLayoutBuilder &DescriptorSetLayoutBuilder::add_binding(uint32_t bin
 
 VkDescriptorSetLayout DescriptorSetLayoutBuilder::build(Device &device)
 {
-    VkDescriptorSetLayoutBindingFlagsCreateInfoEXT ext_flags = {};
-    ext_flags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
+    VkDescriptorSetLayoutBindingFlagsCreateInfo ext_flags = {};
+    ext_flags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
     ext_flags.bindingCount = binding_ext_flags.size();
     ext_flags.pBindingFlags = binding_ext_flags.data();
 

@@ -211,7 +211,8 @@ void RenderVulkan::set_scene(const Scene &scene)
                 normal_buf = vkrt::Buffer::device(
                     *device,
                     upload_normals->size(),
-                    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
                 void *map = upload_normals->map();
                 std::memcpy(map, geom.normals.data(), upload_normals->size());
@@ -224,10 +225,11 @@ void RenderVulkan::set_scene(const Scene &scene)
                 upload_uvs = vkrt::Buffer::host(*device,
                                                 geom.uvs.size() * sizeof(glm::vec2),
                                                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-                uv_buf = vkrt::Buffer::device(
-                    *device,
-                    upload_uvs->size(),
-                    VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                uv_buf = vkrt::Buffer::device(*device,
+                                              upload_uvs->size(),
+                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
                 void *map = upload_uvs->map();
                 std::memcpy(map, geom.uvs.data(), upload_uvs->size());
@@ -237,12 +239,14 @@ void RenderVulkan::set_scene(const Scene &scene)
             auto vertex_buf = vkrt::Buffer::device(
                 *device,
                 upload_verts->size(),
-                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
             auto index_buf = vkrt::Buffer::device(
                 *device,
                 upload_indices->size(),
-                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
             // Execute the upload to the device
             {
@@ -739,14 +743,13 @@ void RenderVulkan::build_raytracing_pipeline()
 
     // Make the variable sized descriptor layout for all our varying sized buffer arrays which
     // we use to send the mesh data
-    buffer_desc_layout =
-        vkrt::DescriptorSetLayoutBuilder()
-            .add_binding(0,
-                         total_geom,
-                         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                         VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
-                         VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)
-            .build(*device);
+    buffer_desc_layout = vkrt::DescriptorSetLayoutBuilder()
+                             .add_binding(0,
+                                          total_geom,
+                                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                          VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV,
+                                          VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)
+                             .build(*device);
 
     textures_desc_layout =
         vkrt::DescriptorSetLayoutBuilder()
@@ -754,7 +757,7 @@ void RenderVulkan::build_raytracing_pipeline()
                          std::max(textures.size(), size_t(1)),
                          VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                          VK_SHADER_STAGE_RAYGEN_BIT_NV,
-                         VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT)
+                         VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)
             .build(*device);
 
     std::vector<VkDescriptorSetLayout> descriptor_layouts = {desc_layout,

@@ -85,7 +85,7 @@ VKDisplay::VKDisplay(SDL_Window *window)
     // Setup ImGui render pass
     {
         VkAttachmentDescription attachment = {};
-        attachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+        attachment.format = VK_FORMAT_B8G8R8A8_UNORM;
         attachment.samples = VK_SAMPLE_COUNT_1_BIT;
         // TODO: I think I want load op load to preserve the ray traced image I copied onto the
         // back buffer
@@ -226,13 +226,11 @@ void VKDisplay::resize(const int fb_width, const int fb_height)
     }
 
     fb_dims = glm::uvec2(fb_width, fb_height);
-
-    upload_texture = vkrt::Texture2D::device(*device,
-                                             fb_dims,
-                                             VK_FORMAT_R8G8B8A8_UNORM,
-                                             VK_FORMAT_FEATURE_BLIT_SRC_BIT |
-                                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                                 VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+    upload_texture = vkrt::Texture2D::device(
+        *device,
+        fb_dims,
+        VK_FORMAT_R8G8B8A8_UNORM,
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 
     upload_buffer = vkrt::Buffer::host(
         *device, sizeof(uint32_t) * fb_dims.x * fb_dims.y, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
@@ -405,12 +403,12 @@ void VKDisplay::display_native(std::shared_ptr<vkrt::Texture2D> &img)
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
 
-    // Transition image to the present src layout
+    // Transition image to the transfer dest for the blit layout
     VkImageMemoryBarrier img_mem_barrier = {};
     img_mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     img_mem_barrier.image = swap_chain_images[back_buffer_idx];
     img_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
     img_mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     img_mem_barrier.subresourceRange.baseMipLevel = 0;
     img_mem_barrier.subresourceRange.levelCount = 1;
@@ -454,7 +452,7 @@ void VKDisplay::display_native(std::shared_ptr<vkrt::Texture2D> &img)
                    img->image_handle(),
                    VK_IMAGE_LAYOUT_GENERAL,
                    swap_chain_images[back_buffer_idx],
-                   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                   VK_IMAGE_LAYOUT_GENERAL,
                    1,
                    &blit,
                    VK_FILTER_NEAREST);
