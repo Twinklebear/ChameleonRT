@@ -7,7 +7,7 @@
 #include "util/texture_channel_mask.h"
 
 struct MaterialParams {
-    pack_float3 base_color;
+    vec3 base_color;
     float metallic;
 
     float specular;
@@ -37,7 +37,7 @@ layout(binding = 3, set = 0, std140) uniform ViewParams {
     int frame_id;
 };
 
-layout(binding = 4, set = 0, std430) buffer MaterialParamsBuffer {
+layout(binding = 4, set = 0, scalar) buffer MaterialParamsBuffer {
     MaterialParams material_params[];
 };
 
@@ -77,7 +77,7 @@ void unpack_material(inout DisneyMaterial mat, uint id, vec2 uv) {
         const uint32_t channel = GET_TEXTURE_CHANNEL(mask);
         mat.base_color = texture(textures[nonuniformEXT(tex_id)], uv).rgb;
     } else {
-		mat.base_color = unpack_float3(p.base_color);
+		mat.base_color = p.base_color;
 	}
 
     mat.metallic = textured_scalar_param(p.metallic, uv);

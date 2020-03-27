@@ -4,7 +4,6 @@
 #extension GL_NV_ray_tracing : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_nonuniform_qualifier : enable
-#extension GL_ARB_gpu_shader_int64 : enable
 #extension GL_EXT_buffer_reference2 : enable
 
 #define M_PI 3.14159265358979323846f
@@ -15,23 +14,6 @@
 #define PRIMARY_RAY 0
 #define OCCLUSION_RAY 1
 #define MAX_PATH_DEPTH 5
-
-// Packed types for working around std430 array padding rules
-struct pack_uint3 {
-	uint x, y, z; 
-};
-
-uvec3 unpack_uint3(in const pack_uint3 v) {
-    return uvec3(v.x, v.y, v.z);
-}
-
-struct pack_float3 {
-	float x, y, z;
-};
-
-vec3 unpack_float3(in const pack_float3 v) {
-    return vec3(v.x, v.y, v.z);
-}
 
 struct RayPayload {
     vec3 normal;
