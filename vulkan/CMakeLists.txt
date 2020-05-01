@@ -31,6 +31,9 @@ if (REPORT_RAY_STATS)
 		-DREPORT_RAY_STATS=1)
 endif()
 
+target_compile_options(render_vulkan PUBLIC
+    -DVK_ENABLE_BETA_EXTENSIONS=1)
+
 target_link_libraries(render_vulkan PUBLIC
 	spv_shaders util Vulkan::Vulkan)
 

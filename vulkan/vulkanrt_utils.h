@@ -10,20 +10,9 @@
 
 namespace vkrt {
 
-// See
-// https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html#acceleration-structure-instance
-struct GeometryInstance {
-    float transform[12];
-    uint32_t instance_custom_index : 24;
-    uint32_t mask : 8;
-    uint32_t instance_offset : 24;
-    uint32_t flags : 8;
-    uint64_t acceleration_structure_handle;
-};
-
 struct Geometry {
     std::shared_ptr<Buffer> vertex_buf, index_buf, normal_buf, uv_buf;
-    VkGeometryNV geom_desc = {};
+    VkAccelerationStructureGeometryKHR geom_desc = {};
 
     Geometry() = default;
 
@@ -31,25 +20,29 @@ struct Geometry {
              std::shared_ptr<Buffer> index_buf,
              std::shared_ptr<Buffer> normal_buf,
              std::shared_ptr<Buffer> uv_buf,
-             uint32_t geom_flags = VK_GEOMETRY_OPAQUE_BIT_NV);
+             uint32_t geom_flags = VK_GEOMETRY_OPAQUE_BIT_KHR);
+
+    uint32_t num_vertices() const;
+
+    uint32_t num_triangles() const;
 };
 
 class TriangleMesh {
     Device *device = nullptr;
-    std::vector<VkGeometryNV> geom_descs;
+    std::vector<VkAccelerationStructureGeometryKHR> geom_descs;
+    std::vector<VkAccelerationStructureCreateGeometryTypeInfoKHR> create_geom_descs;
 
-    VkBuildAccelerationStructureFlagBitsNV build_flags =
-        (VkBuildAccelerationStructureFlagBitsNV)0;
-    VkAccelerationStructureInfoNV accel_info = {};
+    VkBuildAccelerationStructureFlagBitsKHR build_flags =
+        (VkBuildAccelerationStructureFlagBitsKHR)0;
 
     VkDeviceMemory bvh_mem, compacted_mem;
     std::shared_ptr<Buffer> scratch;
     VkQueryPool query_pool = VK_NULL_HANDLE;
-    VkAccelerationStructureNV compacted_bvh = VK_NULL_HANDLE;
+    VkAccelerationStructureKHR compacted_bvh = VK_NULL_HANDLE;
 
 public:
     std::vector<Geometry> geometries;
-    VkAccelerationStructureNV bvh = VK_NULL_HANDLE;
+    VkAccelerationStructureKHR bvh = VK_NULL_HANDLE;
     uint64_t handle = 0;
 
     // TODO: Allow other vertex and index formats? Right now this
@@ -57,8 +50,8 @@ public:
     TriangleMesh(
         Device &dev,
         std::vector<Geometry> geometries,
-        uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV |
-                               VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_NV);
+        uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
+                               VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 
     TriangleMesh() = default;
     ~TriangleMesh();
@@ -76,7 +69,6 @@ public:
     /* Enqueue the BVH compaction copy if the BVH was built with compaction enabled.
      * The BVH build must have been enqueued and completed so that the post build info is
      * available
-     * TODO: query compacted size via vkCmdWriteAccelerationStructuresPropertiesNV
      */
     void enqueue_compaction(VkCommandBuffer &cmd_buf);
 
@@ -89,9 +81,9 @@ public:
 
 class TopLevelBVH {
     Device *device = nullptr;
-    VkBuildAccelerationStructureFlagBitsNV build_flags =
-        (VkBuildAccelerationStructureFlagBitsNV)0;
-    VkAccelerationStructureInfoNV accel_info = {};
+    VkBuildAccelerationStructureFlagBitsKHR build_flags =
+        (VkBuildAccelerationStructureFlagBitsKHR)0;
+    VkAccelerationStructureCreateGeometryTypeInfoKHR accel_info = {};
 
     VkDeviceMemory bvh_mem = VK_NULL_HANDLE;
     std::shared_ptr<Buffer> scratch;
@@ -99,7 +91,7 @@ class TopLevelBVH {
 public:
     std::shared_ptr<Buffer> instance_buf;
     std::vector<Instance> instances;
-    VkAccelerationStructureNV bvh = VK_NULL_HANDLE;
+    VkAccelerationStructureKHR bvh = VK_NULL_HANDLE;
     uint64_t handle = 0;
 
     // TODO: Re-check on compacting the top-level BVH in DXR, it seems to be do-able
@@ -108,7 +100,7 @@ public:
         Device &dev,
         std::shared_ptr<Buffer> &instance_buf,
         const std::vector<Instance> &instances,
-        uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV);
+        uint32_t build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
 
     TopLevelBVH() = default;
     ~TopLevelBVH();
@@ -149,7 +141,7 @@ public:
 struct ShaderGroup {
     const std::shared_ptr<ShaderModule> shader_module;
     VkShaderStageFlagBits stage;
-    VkRayTracingShaderGroupTypeNV group;
+    VkRayTracingShaderGroupTypeKHR group;
     std::string name;
     std::string entry_point;
 
@@ -157,7 +149,7 @@ struct ShaderGroup {
                 const std::shared_ptr<ShaderModule> &shader_module,
                 const std::string &entry_point,
                 VkShaderStageFlagBits stage,
-                VkRayTracingShaderGroupTypeNV group);
+                VkRayTracingShaderGroupTypeKHR group);
 };
 
 class RTPipelineBuilder {
@@ -200,14 +192,9 @@ struct ShaderBindingTable {
     uint8_t *sbt_mapping = nullptr;
 
     std::shared_ptr<Buffer> sbt;
-
-    size_t raygen_stride = 0;
-
-    size_t miss_start = 0;
-    size_t miss_stride = 0;
-
-    size_t hitgroup_start = 0;
-    size_t hitgroup_stride = 0;
+    VkStridedBufferRegionKHR raygen = {};
+    VkStridedBufferRegionKHR miss = {};
+    VkStridedBufferRegionKHR hitgroup = {};
 
     void map_sbt();
 

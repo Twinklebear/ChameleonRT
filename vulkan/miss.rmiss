@@ -2,12 +2,12 @@
 
 #include "util.glsl"
 
-layout(location = PRIMARY_RAY) rayPayloadInNV RayPayload payload;
+layout(location = PRIMARY_RAY) rayPayloadInEXT RayPayload payload;
 
 void main() {
     payload.dist = -1;
 
-    vec3 dir = gl_WorldRayDirectionNV;
+    vec3 dir = gl_WorldRayDirectionEXT;
     float u = (1.f + atan(dir.x, -dir.z) * M_1_PI) * 0.5f;
     float v = acos(dir.y) * M_1_PI;
 

@@ -25,7 +25,7 @@ struct MaterialParams {
     vec2 pad;
 };
 
-layout(binding = 0, set = 0) uniform accelerationStructureNV scene;
+layout(binding = 0, set = 0) uniform accelerationStructureEXT scene;
 layout(binding = 1, set = 0, rgba8) uniform writeonly image2D framebuffer;
 layout(binding = 2, set = 0, rgba32f) uniform image2D accum_buffer;
 
@@ -51,10 +51,10 @@ layout(binding = 6, set = 0, r16ui) uniform writeonly uimage2D ray_stats;
 
 layout(binding = 0, set = 1) uniform sampler2D textures[];
 
-layout(location = PRIMARY_RAY) rayPayloadNV RayPayload payload;
-layout(location = OCCLUSION_RAY) rayPayloadNV bool occlusion_hit;
+layout(location = PRIMARY_RAY) rayPayloadEXT RayPayload payload;
+layout(location = OCCLUSION_RAY) rayPayloadEXT bool occlusion_hit;
 
-layout(shaderRecordNV) buffer SBT {
+layout(shaderRecordEXT) buffer SBT {
     uint32_t num_lights;
 };
 
@@ -102,9 +102,9 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 	light_id = min(light_id, num_lights - 1);
 	QuadLight light = lights[nonuniformEXT(light_id)];
 
-    const uint32_t occlusion_flags = gl_RayFlagsOpaqueNV
-        | gl_RayFlagsTerminateOnFirstHitNV
-        | gl_RayFlagsSkipClosestHitShaderNV;
+    const uint32_t occlusion_flags = gl_RayFlagsOpaqueEXT
+        | gl_RayFlagsTerminateOnFirstHitEXT
+        | gl_RayFlagsSkipClosestHitShaderEXT;
 
 	// Sample the light to compute an incident light ray to this point
 	{
@@ -118,7 +118,7 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 		float bsdf_pdf = disney_pdf(mat, n, w_o, light_dir, v_x, v_y);
 
         occlusion_hit = true;
-        traceNV(scene, occlusion_flags, 0xff,
+        traceRayEXT(scene, occlusion_flags, 0xff,
                 PRIMARY_RAY, 1, OCCLUSION_RAY, hit_p, EPSILON, light_dir, light_dist, OCCLUSION_RAY);
 #ifdef REPORT_RAY_STATS
 		++ray_count;
@@ -145,7 +145,7 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 			if (light_pdf >= EPSILON) {
 				float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
                 occlusion_hit = true;
-                traceNV(scene, occlusion_flags, 0xff,
+                traceRayEXT(scene, occlusion_flags, 0xff,
                         PRIMARY_RAY, 1, OCCLUSION_RAY, hit_p, EPSILON, w_i, light_dist, OCCLUSION_RAY);
 #ifdef REPORT_RAY_STATS
 				++ray_count;
@@ -160,8 +160,8 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 }
 
 void main() {
-    const ivec2 pixel = ivec2(gl_LaunchIDNV.xy);
-    const vec2 dims = vec2(gl_LaunchSizeNV.xy);
+    const ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    const vec2 dims = vec2(gl_LaunchSizeEXT.xy);
     LCGRand rng = get_rng(frame_id);
     vec2 d = (pixel + vec2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
 
@@ -177,7 +177,7 @@ void main() {
 	vec3 illum = vec3(0.f);
 	vec3 path_throughput = vec3(1.f);
     do {
-        traceNV(scene, gl_RayFlagsOpaqueNV, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY,
+        traceRayEXT(scene, gl_RayFlagsOpaqueEXT, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY,
                 ray_origin, t_min, ray_dir, t_max, PRIMARY_RAY);
 #ifdef REPORT_RAY_STATS
 		++ray_count;

@@ -17,21 +17,21 @@
         }                                                  \
     }
 
-extern PFN_vkCreateAccelerationStructureNV vkCreateAccelerationStructure;
-extern PFN_vkDestroyAccelerationStructureNV vkDestroyAccelerationStructure;
-extern PFN_vkBindAccelerationStructureMemoryNV vkBindAccelerationStructureMemory;
-extern PFN_vkGetAccelerationStructureHandleNV vkGetAccelerationStructureHandle;
-extern PFN_vkGetAccelerationStructureMemoryRequirementsNV
-    vkGetAccelerationStructureMemoryRequirements;
-extern PFN_vkCmdBuildAccelerationStructureNV vkCmdBuildAccelerationStructure;
-extern PFN_vkCmdCopyAccelerationStructureNV vkCmdCopyAccelerationStructure;
-extern PFN_vkCmdWriteAccelerationStructuresPropertiesNV
-    vkCmdWriteAccelerationStructuresProperties;
-extern PFN_vkCreateRayTracingPipelinesNV vkCreateRayTracingPipelines;
-extern PFN_vkGetRayTracingShaderGroupHandlesNV vkGetRayTracingShaderGroupHandles;
-extern PFN_vkCmdTraceRaysNV vkCmdTraceRays;
-
 namespace vkrt {
+
+extern PFN_vkCmdTraceRaysKHR CmdTraceRaysKHR;
+extern PFN_vkDestroyAccelerationStructureKHR DestroyAccelerationStructureKHR;
+extern PFN_vkBindAccelerationStructureMemoryKHR BindAccelerationStructureMemoryKHR;
+extern PFN_vkGetRayTracingShaderGroupHandlesKHR GetRayTracingShaderGroupHandlesKHR;
+extern PFN_vkCmdWriteAccelerationStructuresPropertiesKHR
+    CmdWriteAccelerationStructuresPropertiesKHR;
+extern PFN_vkCreateAccelerationStructureKHR CreateAccelerationStructureKHR;
+extern PFN_vkGetAccelerationStructureMemoryRequirementsKHR
+    GetAccelerationStructureMemoryRequirementsKHR;
+extern PFN_vkCmdBuildAccelerationStructureKHR CmdBuildAccelerationStructureKHR;
+extern PFN_vkCmdCopyAccelerationStructureKHR CmdCopyAccelerationStructureKHR;
+extern PFN_vkCreateRayTracingPipelinesKHR CreateRayTracingPipelinesKHR;
+extern PFN_vkGetAccelerationStructureDeviceAddressKHR GetAccelerationStructureDeviceAddressKHR;
 
 class Device {
     VkInstance vk_instance = VK_NULL_HANDLE;
@@ -42,7 +42,7 @@ class Device {
     uint32_t graphics_queue_index = -1;
 
     VkPhysicalDeviceMemoryProperties mem_props = {};
-    VkPhysicalDeviceRayTracingPropertiesNV rt_props = {};
+    VkPhysicalDeviceRayTracingPropertiesKHR rt_props = {};
 
 public:
     Device(const std::vector<std::string> &instance_extensions = std::vector<std::string>{},
@@ -72,7 +72,7 @@ public:
     VkDeviceMemory alloc(size_t nbytes, uint32_t type_filter, VkMemoryPropertyFlags props);
 
     const VkPhysicalDeviceMemoryProperties &memory_properties() const;
-    const VkPhysicalDeviceRayTracingPropertiesNV &raytracing_properties() const;
+    const VkPhysicalDeviceRayTracingPropertiesKHR &raytracing_properties() const;
 
 private:
     void make_instance(const std::vector<std::string> &extensions);
@@ -126,6 +126,8 @@ public:
     size_t size() const;
 
     VkBuffer handle() const;
+
+    VkDeviceAddress device_address() const;
 };
 
 class Texture2D {
@@ -211,7 +213,7 @@ struct CombinedImageSampler {
 
 class DescriptorSetUpdater {
     std::vector<WriteDescriptorInfo> writes;
-    std::vector<VkWriteDescriptorSetAccelerationStructureNV> accel_structs;
+    std::vector<VkWriteDescriptorSetAccelerationStructureKHR> accel_structs;
     std::vector<VkDescriptorImageInfo> images;
     std::vector<VkDescriptorBufferInfo> buffers;
 

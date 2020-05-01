@@ -2,9 +2,9 @@
 
 #include "util.glsl"
 
-layout(location = PRIMARY_RAY) rayPayloadInNV RayPayload payload;
+layout(location = PRIMARY_RAY) rayPayloadInEXT RayPayload payload;
 
-hitAttributeNV vec3 attrib;
+hitAttributeEXT vec3 attrib;
 
 layout(buffer_reference, buffer_reference_align=8, scalar) buffer VertexBuffer {
     vec3 v[];
@@ -22,7 +22,7 @@ layout(buffer_reference, buffer_reference_align=8, scalar) buffer UVBuffer {
     vec2 uv[];
 };
 
-layout(shaderRecordNV, std430) buffer SBT {
+layout(shaderRecordEXT, std430) buffer SBT {
     VertexBuffer verts;
     IndexBuffer indices;
     NormalBuffer normals;
@@ -48,9 +48,9 @@ void main() {
             + attrib.x * uvb + attrib.y * uvc;
     }
 
-    mat3 inv_transp = transpose(mat3(gl_WorldToObjectNV));
+    mat3 inv_transp = transpose(mat3(gl_WorldToObjectEXT));
     payload.normal = normalize(inv_transp * n);
-    payload.dist = gl_RayTmaxNV;
+    payload.dist = gl_RayTmaxEXT;
     payload.uv = uv;
     payload.material_id = material_id;
 }

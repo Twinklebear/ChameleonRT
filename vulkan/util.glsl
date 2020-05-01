@@ -1,7 +1,7 @@
 #ifndef UTIL_GLSL
 #define UTIL_GLSL
 
-#extension GL_NV_ray_tracing : require
+#extension GL_EXT_ray_tracing : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_buffer_reference2 : enable

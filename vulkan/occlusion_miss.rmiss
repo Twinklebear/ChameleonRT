@@ -2,7 +2,7 @@
 
 #include "util.glsl"
 
-layout(location = OCCLUSION_RAY) rayPayloadInNV bool occlusion_hit;
+layout(location = OCCLUSION_RAY) rayPayloadInEXT bool occlusion_hit;
 
 void main() {
     occlusion_hit = false;

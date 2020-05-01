@@ -53,8 +53,8 @@ float lcg_randomf(inout LCGRand rng)
 
 LCGRand get_rng(int frame_id)
 {
-	const uvec2 pixel = uvec2(gl_LaunchIDNV.xy);
-    const uvec2 dims = uvec2(gl_LaunchSizeNV.xy);
+    const uvec2 pixel = uvec2(gl_LaunchIDEXT.xy);
+    const uvec2 dims = uvec2(gl_LaunchSizeEXT.xy);
 
     LCGRand rng;
     rng.state = murmur_hash3_mix(0, pixel.x + pixel.y * dims.x);
