@@ -83,9 +83,9 @@ cmake .. -DENABLE_DXR=ON
 
 You can then pass `-dxr` to use the DXR backend.
 
-### Vulkan NV Ray Tracing
+### Vulkan KHR Ray Tracing
 
-Dependencies: [Vulkan](https://vulkan.lunarg.com/).
+Dependencies: [Vulkan](https://vulkan.lunarg.com/) (version 1.2 or higher)
 
 To build the Vulkan backend run CMake with:
 
@@ -97,7 +97,7 @@ You can then pass `-vulkan` to use the Vulkan backend.
 
 If CMake doesn't find your install of Vulkan you can tell it where it's
 installed with `-DVULKAN_SDK`. This path should be to the specific version
-of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.1.114.0/`
+of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.2.135.0/`
 
 ### OSPRay
 
