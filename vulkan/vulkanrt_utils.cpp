@@ -616,7 +616,8 @@ ShaderBindingTable SBTBuilder::build(Device &device)
 {
     ShaderBindingTable sbt;
     sbt.raygen.stride =
-        device.raytracing_properties().shaderGroupHandleSize + raygen.param_size;
+        align_to(device.raytracing_properties().shaderGroupHandleSize + raygen.param_size,
+                 device.raytracing_properties().shaderGroupHandleSize);
     sbt.raygen.size = sbt.raygen.stride;
 
     sbt.miss.offset =
@@ -624,9 +625,10 @@ ShaderBindingTable SBTBuilder::build(Device &device)
 
     sbt.miss.stride = 0;
     for (const auto &m : miss_records) {
-        sbt.miss.stride =
-            std::max(sbt.miss.stride,
-                     device.raytracing_properties().shaderGroupHandleSize + m.param_size);
+        sbt.miss.stride = std::max(
+            sbt.miss.stride,
+            align_to(device.raytracing_properties().shaderGroupHandleSize + m.param_size,
+                     device.raytracing_properties().shaderGroupHandleSize));
     }
     sbt.miss.size = sbt.miss.stride * miss_records.size();
 
@@ -634,9 +636,10 @@ ShaderBindingTable SBTBuilder::build(Device &device)
                                    device.raytracing_properties().shaderGroupBaseAlignment);
     sbt.hitgroup.stride = 0;
     for (const auto &h : hitgroups) {
-        sbt.hitgroup.stride =
-            std::max(sbt.hitgroup.stride,
-                     device.raytracing_properties().shaderGroupHandleSize + h.param_size);
+        sbt.hitgroup.stride = std::max(
+            sbt.hitgroup.stride,
+            align_to(device.raytracing_properties().shaderGroupHandleSize + h.param_size,
+                     device.raytracing_properties().shaderGroupHandleSize));
     }
     sbt.hitgroup.size = sbt.hitgroup.stride * hitgroups.size();
 
