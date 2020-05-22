@@ -308,7 +308,6 @@ void Device::make_logical_device(const std::vector<std::string> &extensions)
 
     VkPhysicalDeviceFeatures2 device_features = {};
     device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    device_features.features.shaderFloat64 = true;
     device_features.pNext = &raytracing_features;
 
     std::vector<const char *> device_extensions = {
