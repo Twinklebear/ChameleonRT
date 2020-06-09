@@ -181,19 +181,23 @@ extern "C" __global__ void __raygen__perspective_camera() {
         float3 w_i;
         float pdf;
         float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
-        if (pdf < EPSILON || all_zero(bsdf)) {
+        if (pdf == 0.f || all_zero(bsdf)) {
             break;
         }
         path_throughput = path_throughput * bsdf * fabs(dot(w_i, v_z)) / pdf;
 
-        if (path_throughput.x < EPSILON && path_throughput.y < EPSILON && path_throughput.z < EPSILON) {
-            break;
-        }
-
         ray_origin = hit_p;
         ray_dir = w_i;
-
         ++bounce;
+
+        // Russian roulette termination
+        if (bounce > 3) {
+            const float q = max(0.05f, 1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
+            if (lcg_randomf(rng) < q) {
+                break;
+            }
+            path_throughput = path_throughput / (1.f - q);
+        }
     } while (bounce < MAX_PATH_DEPTH);
 
     const float3 prev_color = make_float3(launch_params.accum_buffer[pixel_idx]);

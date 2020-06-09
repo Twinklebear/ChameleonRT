@@ -216,21 +216,25 @@ void RayGen() {
         float3 w_i;
         float pdf;
         float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
-        if (pdf < EPSILON || all(bsdf == 0.f)) {
+        if (pdf == 0.f || all(bsdf == 0.f)) {
             break;
         }
         path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
-
-        if (all(path_throughput < EPSILON)) {
-            break;
-        }
 
         ray.Origin = hit_p;
         ray.Direction = w_i;
         ray.TMin = EPSILON;
         ray.TMax = 1e20f;
-
         ++bounce;
+
+        // Russian roulette termination
+        if (bounce > 3) {
+            const float q = max(0.05f, 1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
+            if (lcg_randomf(rng) < q) {
+                break;
+            }
+            path_throughput = path_throughput / (1.f - q);
+        }
     } while (bounce < MAX_PATH_DEPTH);
 
     const float4 accum_color = (float4(illum, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);

@@ -276,21 +276,23 @@ export void trace_rays(void *uniform _scene, void *uniform _tile, const void *un
             float pdf;
             float3 w_i;
             float3 bsdf = sample_disney_brdf(mat, normal, w_o, v_x, v_y, rng, w_i, pdf);
-            if (pdf < EPSILON || all_zero(bsdf)) {
+            if (pdf == 0.f || all_zero(bsdf)) {
                 break;
             }
             path_throughput = path_throughput * bsdf * abs(dot(w_i, normal)) / pdf;
 
-            if (path_throughput.x < EPSILON && path_throughput.y < EPSILON
-                    && path_throughput.z < EPSILON)
-            {
-                break;
-            }
-
             // Trace the ray continuing the path
             set_ray_hit(path_ray, hit_p, w_i, EPSILON);
-
             ++bounce;
+
+            // Russian roulette termination
+            if (bounce > 3) {
+                const float q = max(0.05f, 1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
+                if (lcg_randomf(rng) < q) {
+                    break;
+                }
+                path_throughput = path_throughput / (1.f - q);
+            }
         } while (bounce < MAX_PATH_DEPTH);
 
 #ifdef REPORT_RAY_STATS

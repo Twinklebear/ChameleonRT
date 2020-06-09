@@ -205,21 +205,25 @@ void main() {
 		vec3 w_i;
 		float pdf;
 		vec3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
-		if (pdf < EPSILON || all(equal(bsdf, vec3(0.f)))) {
+		if (pdf == 0.f || all(equal(bsdf, vec3(0.f)))) {
 			break;
 		}
 		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
-
-		if (all(lessThan(path_throughput, vec3(EPSILON)))) {
-			break;
-		}
 
 		ray_origin = hit_p;
 		ray_dir = w_i;
 		t_min = EPSILON;
 		t_max = 1e20f;
-
 		++bounce;
+
+        // Russian roulette termination
+        if (bounce > 3) {
+            const float q = max(0.05f, 1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
+            if (lcg_randomf(rng) < q) {
+                break;
+            }
+            path_throughput = path_throughput / (1.f - q);
+        }
 	} while (bounce < MAX_PATH_DEPTH);
 
     vec4 accum_color = imageLoad(accum_buffer, pixel);
