@@ -125,7 +125,7 @@ If you find ChameleonRT useful in your work, please cite it as:
 @misc{chameleonrt,
 	author = {Will Usher},
 	year = {2019},
-	note = {https://github.com/Twinklebear/ChameleonRT},
+	howpublished = {\url{https://github.com/Twinklebear/ChameleonRT}},
 	title = {{ChameleonRT}}
 } 
 ```
