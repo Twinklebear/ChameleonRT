@@ -1,5 +1,6 @@
 #include "embree_utils.h"
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <glm/ext.hpp>
 

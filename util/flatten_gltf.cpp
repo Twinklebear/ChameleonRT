@@ -1,4 +1,5 @@
 #include "flatten_gltf.h"
+#include <iterator>
 #include <string>
 #include "tiny_gltf.h"
 #include <glm/ext.hpp>
@@ -20,8 +21,8 @@ glm::mat4 read_node_transform(const tinygltf::Node &n)
             transform = glm::mat4_cast(rot) * transform;
         }
         if (!n.translation.empty()) {
-            const glm::mat4 translate =
-                glm::translate(glm::vec3(n.translation[0], n.translation[1], n.translation[2]));
+            const glm::mat4 translate = glm::translate(
+                glm::vec3(n.translation[0], n.translation[1], n.translation[2]));
             transform = translate * transform;
         }
     }
@@ -54,8 +55,9 @@ void flatten_gltf_node(const tinygltf::Node &node,
     flat.rotation.clear();
     flat.translation.clear();
     flat.matrix.clear();
-    std::copy(
-        glm::value_ptr(transform), glm::value_ptr(transform) + 16, std::back_inserter(flat.matrix));
+    std::copy(glm::value_ptr(transform),
+              glm::value_ptr(transform) + 16,
+              std::back_inserter(flat.matrix));
     if (flat.mesh != -1 || flat.camera != -1 || flat.skin != -1) {
         flattened.push_back(flat);
     }
