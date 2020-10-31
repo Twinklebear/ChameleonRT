@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
-#include <itrator>
+#include <iterator>
 #include <numeric>
 #include "util.h"
 #include <glm/glm.hpp>
