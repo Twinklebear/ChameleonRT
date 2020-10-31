@@ -1,6 +1,7 @@
 #include "dxr_utils.h"
 #include <algorithm>
 #include <array>
+#include <iterator>
 #include <limits>
 #include <numeric>
 #include "mesh.h"

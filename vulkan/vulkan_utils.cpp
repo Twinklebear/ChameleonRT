@@ -1,6 +1,7 @@
 #include "vulkan_utils.h"
 #include <array>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <vector>
 #include "vulkanrt_utils.h"

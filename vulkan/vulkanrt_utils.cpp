@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <itrator>
 #include <numeric>
 #include "util.h"
 #include <glm/glm.hpp>

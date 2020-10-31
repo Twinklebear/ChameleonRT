@@ -1,6 +1,7 @@
 #include "vkdisplay.h"
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 #include "display/imgui_impl_sdl.h"

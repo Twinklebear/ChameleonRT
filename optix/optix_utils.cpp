@@ -1,6 +1,7 @@
 #include "optix_utils.h"
 #include <algorithm>
 #include <iostream>
+#include <iterator>
 #include <optix_stubs.h>
 #include "util.h"
 
