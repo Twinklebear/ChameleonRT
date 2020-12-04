@@ -36,5 +36,9 @@ target_include_directories(render_optix PUBLIC
     $<BUILD_INTERFACE:${CUDA_INCLUDE_DIRS}>)
 
 target_link_libraries(render_optix PUBLIC
-    optix_kernels util ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY})
+    optix_kernels
+    util
+    glad
+    ${CUDA_LIBRARIES}
+    ${CUDA_CUDA_LIBRARY})
 

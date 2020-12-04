@@ -6,7 +6,7 @@
 #include "imgui_impl_sdl.h"
 
 const std::string fullscreen_quad_vs = R"(
-#version 450 core
+#version 330 core
 
 const vec4 pos[4] = vec4[4](
 	vec4(-1, 1, 0.5, 1),
@@ -21,9 +21,9 @@ void main(void){
 )";
 
 const std::string display_texture_fs = R"(
-#version 450 core
+#version 330 core
 
-layout(binding=0) uniform sampler2D img;
+uniform sampler2D img;
 
 out vec4 color;
 
@@ -38,16 +38,16 @@ GLDisplay::GLDisplay(SDL_Window *win)
     SDL_GL_SetSwapInterval(1);
     SDL_GL_MakeCurrent(window, gl_context);
 
-    if (ogl_LoadFunctions() == ogl_LOAD_FAILED) {
+    if (!gladLoadGL()) {
         throw std::runtime_error("Failed to initialize OpenGL");
     }
 
     ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
-    ImGui_ImplOpenGL3_Init("#version 450 core");
+    ImGui_ImplOpenGL3_Init("#version 330 core");
 
     display_render = std::make_unique<Shader>(fullscreen_quad_vs, display_texture_fs);
 
-    glCreateVertexArrays(1, &vao);
+    glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
     glClearColor(0.0, 0.0, 0.0, 0.0);
@@ -56,6 +56,10 @@ GLDisplay::GLDisplay(SDL_Window *win)
 
 GLDisplay::~GLDisplay()
 {
+    glDeleteVertexArrays(1, &vao);
+    if (render_texture != -1) {
+        glDeleteTextures(1, &render_texture);
+    }
     ImGui_ImplOpenGL3_Shutdown();
     SDL_GL_DeleteContext(gl_context);
 }
@@ -78,7 +82,15 @@ void GLDisplay::resize(const int fb_width, const int fb_height)
     }
     glGenTextures(1, &render_texture);
     glBindTexture(GL_TEXTURE_2D, render_texture);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, fb_dims.x, fb_dims.y);
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 GL_RGBA8,
+                 fb_dims.x,
+                 fb_dims.y,
+                 0,
+                 GL_RGBA,
+                 GL_UNSIGNED_BYTE,
+                 nullptr);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);

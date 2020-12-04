@@ -2,7 +2,7 @@
 
 #include <string>
 #include <unordered_map>
-#include "gl_core_4_5.h"
+#include "glad/glad.h"
 
 struct Shader {
     GLuint program;

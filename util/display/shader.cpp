@@ -121,15 +121,6 @@ GLint compile_shader(GLenum type, const std::string &src)
         case GL_GEOMETRY_SHADER:
             std::cout << "Geometry shader: ";
             break;
-        case GL_COMPUTE_SHADER:
-            std::cout << "Compute shader: ";
-            break;
-        case GL_TESS_CONTROL_SHADER:
-            std::cout << "Tessellation Control shader: ";
-            break;
-        case GL_TESS_EVALUATION_SHADER:
-            std::cout << "Tessellation Evaluation shader: ";
-            break;
         default:
             std::cout << "Unknown shader type: ";
         }

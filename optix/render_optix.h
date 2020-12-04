@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optix.h>
-#include "display/gl_core_4_5.h"
+#include "glad/glad.h"
 #include "optix_utils.h"
 #include "render_backend.h"
 

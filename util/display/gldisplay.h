@@ -3,7 +3,7 @@
 #include <memory>
 #include <SDL.h>
 #include "display.h"
-#include "gl_core_4_5.h"
+#include "glad/glad.h"
 #include "shader.h"
 #include <glm/glm.hpp>
 

@@ -25,7 +25,7 @@
 
 #include "imgui.h"
 
-#define IMGUI_IMPL_OPENGL_LOADER_CUSTOM "gl_core_4_5.h"
+#define IMGUI_IMPL_OPENGL_LOADER_GLAD
 
 // Backend API
 IMGUI_IMPL_API bool     ImGui_ImplOpenGL3_Init(const char* glsl_version = NULL);
