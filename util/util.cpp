@@ -2,7 +2,7 @@
 #include <array>
 #ifdef _WIN32
 #include <intrin.h>
-#else
+#elif not defined(__aarch64__)
 #include <cpuid.h>
 #endif
 #include "util.h"
@@ -73,6 +73,9 @@ std::string get_file_extension(const std::string &fname)
 
 std::string get_cpu_brand()
 {
+#if defined(__APPLE__) and defined(__aarch64__)
+    return "Apple Silicon M1";
+#else
     std::string brand = "Unspecified";
     std::array<int32_t, 4> regs;
 #ifdef _WIN32
@@ -93,6 +96,7 @@ std::string get_cpu_brand()
         brand = b;
     }
     return brand;
+#endif
 }
 
 float srgb_to_linear(float x)

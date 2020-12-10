@@ -4,18 +4,28 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
-#include <pmmintrin.h>
+#include <tbb/global_control.h>
 #include <tbb/parallel_for.h>
-#include <util.h>
+#ifndef __aarch64__
+#include <pmmintrin.h>
 #include <xmmintrin.h>
+#endif
+#include <util.h>
 #include "render_embree_ispc.h"
 #include <glm/ext.hpp>
 
+static std::unique_ptr<tbb::global_control> tbb_thread_config;
+
 RenderEmbree::RenderEmbree()
 {
+#ifndef __aarch64__
     _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
     _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
-    device = rtcNewDevice(nullptr);
+    const std::string embree_cfg = "";
+#else
+    const std::string embree_cfg = "set_affinity=0,frequency_level=simd256";
+#endif
+    device = rtcNewDevice(embree_cfg.c_str());
 }
 
 RenderEmbree::~RenderEmbree()
