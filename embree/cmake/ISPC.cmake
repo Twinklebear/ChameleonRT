@@ -15,9 +15,10 @@ function(add_ispc_library)
     set(ISPC_LIB ${ARGV0})
     set(ISPC_SRCS ${ISPC_UNPARSED_ARGUMENTS})
 
-    if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64")
+    if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64" OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
         set(ISPC_ARCH "x86-64")
     elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64")
+        set(ISPC_TARGET_ARG "--target=neon-i32x4")
         set(ISPC_ARCH "aarch64")
     else ()
         message(FATAL_ERROR "Unrecognized system processor ${CMAKE_SYSTEM_PROCESSOR}")
@@ -66,8 +67,7 @@ function(add_ispc_library)
             --arch=${ISPC_ARCH}
             ${ISPC_COMPILE_DEFINITIONS}
             ${ISPC_PIC}
-            # for M1: double-pump neon for "avx2" embree
-            --target=neon-i32x4
+            ${ISPC_TARGET_ARG}            
             DEPENDS ${DEPS}
             COMMENT "Compiling ISPC file ${CMAKE_CURRENT_LIST_DIR}/${SRC}")
     endforeach()
