@@ -74,7 +74,7 @@ std::string get_file_extension(const std::string &fname)
 std::string get_cpu_brand()
 {
 #if defined(__APPLE__) and defined(__aarch64__)
-    return "Apple Silicon M1";
+    return "Apple M1";
 #else
     std::string brand = "Unspecified";
     std::array<int32_t, 4> regs;
