@@ -10,4 +10,7 @@ target_include_directories(glad PUBLIC
 
 target_link_libraries(glad PUBLIC ${OPENGL_LIBRARIES})
 
+if (UNIX AND NOT APPLE)
+    target_link_libraries(glad PUBLIC dl)
+endif()
 
