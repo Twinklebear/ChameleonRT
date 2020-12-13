@@ -4,6 +4,7 @@
 #include <Metal/Metal.h>
 #include <QuartzCore/CAMetalLayer.h>
 #include "render_metal_embedded_metallib.h"
+#include "shader_types.h"
 
 struct RenderMetalData {
     id<MTLDevice> device = nullptr;
@@ -95,6 +96,9 @@ void RenderMetal::set_scene(const Scene &scene)
     // TODO Testing: Just take the first mesh of the first instance for now
     const Geometry &geom = scene.meshes[scene.instances[0].mesh_id].geometries[0];
 
+    // TODO: Sending vertex/index/etc. args through. Need to see how to do bindless
+    // equivalent in Metal, seems like it's possible to just have buffers in a buffer?
+    // or a pointer to some array of buffers?
     metal->vertex_buffer =
         [metal->device newBufferWithLength:sizeof(glm::vec3) * geom.vertices.size()
                                    options:MTLResourceStorageModeManaged];
@@ -191,6 +195,12 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
 {
     RenderStats stats;
 
+    if (camera_changed) {
+        frame_id = 0;
+    }
+
+    ViewParams view_params = compute_view_parameters(pos, dir, up, fovy);
+
     @autoreleasepool {
         id<MTLCommandBuffer> command_buffer = [metal->command_queue commandBuffer];
 
@@ -198,8 +208,12 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
 
         // Raytrace it!
         [command_encoder setTexture:metal->render_target atIndex:0];
-        [command_encoder setAccelerationStructure:metal->tlas atBufferIndex:0];
+        [command_encoder setAccelerationStructure:metal->tlas atBufferIndex:1];
         [command_encoder useResource:metal->blas usage:MTLResourceUsageRead];
+        // Embed the view params in the command buffer
+        // TODO: It seems like this is the best way to pass small constants that potentially
+        // change every frame?
+        [command_encoder setBytes:&view_params length:sizeof(ViewParams) atIndex:0];
         [command_encoder setComputePipelineState:metal->pipeline];
         // TODO: Better thread group sizing here, this is a poor choice for utilization
         // but keeps the example simple
@@ -218,7 +232,33 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
                            mipmapLevel:0];
     }
 
+    ++frame_id;
     return stats;
+}
+
+ViewParams RenderMetal::compute_view_parameters(const glm::vec3 &pos,
+                                                const glm::vec3 &dir,
+                                                const glm::vec3 &up,
+                                                const float fovy)
+{
+    glm::vec2 img_plane_size;
+    img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
+    img_plane_size.x = img_plane_size.y * static_cast<float>(fb_dims.x) / fb_dims.y;
+
+    const glm::vec3 dir_du = glm::normalize(glm::cross(dir, up)) * img_plane_size.x;
+    const glm::vec3 dir_dv = -glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
+    const glm::vec3 dir_top_left = dir - 0.5f * dir_du - 0.5f * dir_dv;
+
+    ViewParams view_params;
+    view_params.cam_pos = simd::float4{pos.x, pos.y, pos.z, 1.f};
+    view_params.cam_du = simd::float4{dir_du.x, dir_du.y, dir_du.z, 0.f};
+    view_params.cam_dv = simd::float4{dir_dv.x, dir_dv.y, dir_dv.z, 0.f};
+    view_params.cam_dir_top_left =
+        simd::float4{dir_top_left.x, dir_top_left.y, dir_top_left.z, 0.f};
+    view_params.fb_dims = simd::uint2{fb_dims.x, fb_dims.y};
+    view_params.frame_id = frame_id;
+
+    return view_params;
 }
 
 id<MTLAccelerationStructure> build_acceleration_structure(

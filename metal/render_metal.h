@@ -2,6 +2,7 @@
 
 #include <memory>
 #include "render_backend.h"
+#include "shader_types.h"
 
 // Need to be a bit careful here to not pull in Obj-C headers
 // in to render_metal.h which is included in plain C++ code
@@ -17,7 +18,7 @@ struct RenderMetal : RenderBackend {
     bool native_display = false;
 
     RenderMetal();
-        
+
     virtual ~RenderMetal();
 
     std::string name() override;
@@ -33,5 +34,11 @@ struct RenderMetal : RenderBackend {
                        const float fovy,
                        const bool camera_changed,
                        const bool readback_framebuffer) override;
+
+private:
+    ViewParams compute_view_parameters(const glm::vec3 &pos,
+                                       const glm::vec3 &dir,
+                                       const glm::vec3 &up,
+                                       const float fovy);
 };
 

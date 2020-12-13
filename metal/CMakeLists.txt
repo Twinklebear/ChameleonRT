@@ -13,7 +13,7 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror=objc-method-access")
 
-add_metal_embed_library(metal_shaders render_metal.metal
+add_metal_embed_library(metal_shaders render_metal.metal shader_types.h
     INCLUDE_DIRECTORIES
         ${CMAKE_CURRENT_LIST_DIR}
         ${PROJECT_SOURCE_DIR})
