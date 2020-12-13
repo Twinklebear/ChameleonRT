@@ -33,6 +33,9 @@
 #include "vulkan/render_vulkan.h"
 #include "vulkan/vkdisplay.h"
 #endif
+#if ENABLE_METAL
+#include "metal/render_metal.h"
+#endif
 
 const std::string USAGE =
     "Usage: <backend> <obj_file> [options]\n"
@@ -46,11 +49,14 @@ const std::string USAGE =
 #if ENABLE_EMBREE
     "\t-embree    Render with Embree\n"
 #endif
+#if ENABLE_VULKAN
+    "\t-vulkan    Render with Vulkan Ray Tracing\n"
+#endif
 #if ENABLE_DXR
     "\t-dxr       Render with DirectX Ray Tracing\n"
 #endif
-#if ENABLE_VULKAN
-    "\t-vulkan    Render with Vulkan Ray Tracing\n"
+#if ENABLE_METAL
+    "\t-metal     Render with Metal Ray Tracing\n"
 #endif
     "Options:\n"
     "\t-eye <x> <y> <z>       Set the camera position\n"
@@ -249,6 +255,13 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             } else {
                 renderer = std::make_unique<RenderVulkan>();
             }
+            backend_arg = args[i];
+        }
+#endif
+#if ENABLE_METAL
+        else if (args[i] == "-metal") {
+            // TODO: native metal display
+            renderer = std::make_unique<RenderMetal>();
             backend_arg = args[i];
         }
 #endif
