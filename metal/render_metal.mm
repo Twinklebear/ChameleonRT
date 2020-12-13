@@ -5,6 +5,7 @@
 #include <QuartzCore/CAMetalLayer.h>
 #include "render_metal_embedded_metallib.h"
 #include "shader_types.h"
+#include <glm/ext.hpp>
 
 struct RenderMetalData {
     id<MTLDevice> device = nullptr;
@@ -24,6 +25,7 @@ struct RenderMetalData {
 
     id<MTLComputePipelineState> pipeline = nullptr;
 
+    id<MTLBuffer> geom_arg_buffer = nullptr;
     // TODO: Destructor here cleans up all objects explicitly?
     // Is that needed in Obj-C?
 };
@@ -99,6 +101,8 @@ void RenderMetal::set_scene(const Scene &scene)
     // TODO: Sending vertex/index/etc. args through. Need to see how to do bindless
     // equivalent in Metal, seems like it's possible to just have buffers in a buffer?
     // or a pointer to some array of buffers?
+    // TODO: This will be done by putting these all in a heap and then encoding the
+    // buffer pointers into a single argument buffer
     metal->vertex_buffer =
         [metal->device newBufferWithLength:sizeof(glm::vec3) * geom.vertices.size()
                                    options:MTLResourceStorageModeManaged];
@@ -111,6 +115,36 @@ void RenderMetal::set_scene(const Scene &scene)
                                    options:MTLResourceStorageModeManaged];
     std::memcpy(metal->index_buffer.contents, geom.indices.data(), metal->index_buffer.length);
     [metal->index_buffer didModifyRange:NSMakeRange(0, metal->index_buffer.length)];
+
+    // Build argument buffer for the mesh
+    id<MTLArgumentEncoder> argument_encoder;
+    {
+        MTLArgumentDescriptor *vertex_buf_desc = [MTLArgumentDescriptor argumentDescriptor];
+        vertex_buf_desc.index = 0;
+        vertex_buf_desc.access = MTLArgumentAccessReadOnly;
+        vertex_buf_desc.dataType = MTLDataTypePointer;
+
+        MTLArgumentDescriptor *index_buf_desc = [MTLArgumentDescriptor argumentDescriptor];
+        index_buf_desc.index = 1;
+        index_buf_desc.access = MTLArgumentAccessReadOnly;
+        index_buf_desc.dataType = MTLDataTypePointer;
+
+        argument_encoder =
+            [metal->device newArgumentEncoderWithArguments:@[vertex_buf_desc, index_buf_desc]];
+    }
+
+    // This will be the stride between consecutive geometries, though right now
+    // we just have one so it's also the buffer size we need
+    const uint32_t geom_args_stride = argument_encoder.encodedLength;
+    std::cout << "Geom args length: " << geom_args_stride << "b\n";
+    metal->geom_arg_buffer = [metal->device newBufferWithLength:geom_args_stride
+                                                        options:MTLResourceStorageModeManaged];
+    // Write the arguments into the buffer
+    [argument_encoder setArgumentBuffer:metal->geom_arg_buffer offset:0];
+    [argument_encoder setBuffer:metal->vertex_buffer offset:0 atIndex:0];
+    [argument_encoder setBuffer:metal->index_buffer offset:0 atIndex:1];
+
+    [metal->geom_arg_buffer didModifyRange:NSMakeRange(0, metal->geom_arg_buffer.length)];
 
     // Setup the geometry descriptor for this triangle geometry
     MTLAccelerationStructureTriangleGeometryDescriptor *geom_desc =
@@ -206,14 +240,22 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
 
         id<MTLComputeCommandEncoder> command_encoder = [command_buffer computeCommandEncoder];
 
-        // Raytrace it!
         [command_encoder setTexture:metal->render_target atIndex:0];
-        [command_encoder setAccelerationStructure:metal->tlas atBufferIndex:1];
-        [command_encoder useResource:metal->blas usage:MTLResourceUsageRead];
+
         // Embed the view params in the command buffer
         // TODO: It seems like this is the best way to pass small constants that potentially
         // change every frame?
         [command_encoder setBytes:&view_params length:sizeof(ViewParams) atIndex:0];
+
+        [command_encoder setAccelerationStructure:metal->tlas atBufferIndex:1];
+        [command_encoder useResource:metal->blas usage:MTLResourceUsageRead];
+
+        [command_encoder setBuffer:metal->geom_arg_buffer offset:0 atIndex:2];
+        [command_encoder useResource:metal->vertex_buffer usage:MTLResourceUsageRead];
+        [command_encoder useResource:metal->index_buffer usage:MTLResourceUsageRead];
+
+        [command_encoder setBuffer:metal->instance_buffer offset:0 atIndex:3];
+
         [command_encoder setComputePipelineState:metal->pipeline];
         // TODO: Better thread group sizing here, this is a poor choice for utilization
         // but keeps the example simple
