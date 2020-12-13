@@ -53,15 +53,12 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
 
         const float3 normal = normalize(cross(vb - va, vc - va));
 
-        const float bary_a = 1.f - hit_result.triangle_barycentric_coord.x -
-                             hit_result.triangle_barycentric_coord.y;
+        const float3 bary_coords = float3(1.f - hit_result.triangle_barycentric_coord.x -
+                                              hit_result.triangle_barycentric_coord.y,
+                                          hit_result.triangle_barycentric_coord.x,
+                                          hit_result.triangle_barycentric_coord.y);
 
         float3 color = (normal + 1.f) * 0.5f;
-        /*
-                const float3 color = float3(bary_a,
-                                            hit_result.triangle_barycentric_coord.x,
-                                            hit_result.triangle_barycentric_coord.y);
-                */
         render_target.write(float4(color, 1.f), tid);
     } else {
         render_target.write(float4(0.f), tid);

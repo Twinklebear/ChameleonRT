@@ -5,7 +5,15 @@
 #include <QuartzCore/CAMetalLayer.h>
 #include "render_metal_embedded_metallib.h"
 #include "shader_types.h"
+#include "util.h"
 #include <glm/ext.hpp>
+
+// TODO: Need to manually manage lifetimes, since I'm not
+// sure if ARC will play very well with being used from a
+// C++ class called from outside?
+#if __has_feature(objc_arc)
+#error "Do not enable ARC"
+#endif
 
 struct RenderMetalData {
     id<MTLDevice> device = nullptr;
@@ -26,8 +34,11 @@ struct RenderMetalData {
     id<MTLComputePipelineState> pipeline = nullptr;
 
     id<MTLBuffer> geom_arg_buffer = nullptr;
-    // TODO: Destructor here cleans up all objects explicitly?
-    // Is that needed in Obj-C?
+
+    // Heap containing all the geometry's vertex and index buffers
+    id<MTLHeap> geometry_heap = nullptr;
+
+    // TODO: Destructor to clean up, we're not using ARC
 };
 
 // TODO: Decide on and implement abstractions, will follow similar
@@ -89,6 +100,7 @@ void RenderMetal::initialize(const int fb_width, const int fb_height)
                                                           height:fb_height
                                                        mipmapped:NO];
     tex_desc.usage = MTLTextureUsageShaderWrite;
+    // TODO: Explciitly release render target
     // TODO: Later render target
     metal->render_target = [metal->device newTextureWithDescriptor:tex_desc];
 }
@@ -98,23 +110,69 @@ void RenderMetal::set_scene(const Scene &scene)
     // TODO Testing: Just take the first mesh of the first instance for now
     const Geometry &geom = scene.meshes[scene.instances[0].mesh_id].geometries[0];
 
-    // TODO: Sending vertex/index/etc. args through. Need to see how to do bindless
-    // equivalent in Metal, seems like it's possible to just have buffers in a buffer?
-    // or a pointer to some array of buffers?
-    // TODO: This will be done by putting these all in a heap and then encoding the
-    // buffer pointers into a single argument buffer
-    metal->vertex_buffer =
-        [metal->device newBufferWithLength:sizeof(glm::vec3) * geom.vertices.size()
-                                   options:MTLResourceStorageModeManaged];
-    std::memcpy(
-        metal->vertex_buffer.contents, geom.vertices.data(), metal->vertex_buffer.length);
-    [metal->vertex_buffer didModifyRange:NSMakeRange(0, metal->vertex_buffer.length)];
+    // Create a heap to hold all the geometry buffers
+    {
+        MTLHeapDescriptor *heap_desc = [MTLHeapDescriptor new];
+        heap_desc.storageMode = MTLStorageModePrivate;
+        heap_desc.size = 0;
 
-    metal->index_buffer =
-        [metal->device newBufferWithLength:sizeof(glm::uvec3) * geom.indices.size()
-                                   options:MTLResourceStorageModeManaged];
-    std::memcpy(metal->index_buffer.contents, geom.indices.data(), metal->index_buffer.length);
-    [metal->index_buffer didModifyRange:NSMakeRange(0, metal->index_buffer.length)];
+        // Compute the size needed to hold everything in the heap
+        MTLSizeAndAlign size_align = [metal->device
+            heapBufferSizeAndAlignWithLength:sizeof(glm::vec3) * geom.vertices.size()
+                                     options:MTLResourceStorageModePrivate];
+        heap_desc.size += align_to(size_align.size, size_align.align);
+
+        size_align = [metal->device
+            heapBufferSizeAndAlignWithLength:sizeof(glm::uvec3) * geom.indices.size()
+                                     options:MTLResourceStorageModePrivate];
+        heap_desc.size += align_to(size_align.size, size_align.align);
+
+        metal->geometry_heap = [metal->device newHeapWithDescriptor:heap_desc];
+    }
+
+    // Upload the data to staging and copy it into the heap
+    {
+        // TODO: Released automatically right?
+        id<MTLBuffer> vertex_buffer =
+            [metal->device newBufferWithLength:sizeof(glm::vec3) * geom.vertices.size()
+                                       options:MTLResourceStorageModeManaged];
+        std::memcpy(vertex_buffer.contents, geom.vertices.data(), vertex_buffer.length);
+        [vertex_buffer didModifyRange:NSMakeRange(0, vertex_buffer.length)];
+
+        id<MTLBuffer> index_buffer =
+            [metal->device newBufferWithLength:sizeof(glm::uvec3) * geom.indices.size()
+                                       options:MTLResourceStorageModeManaged];
+        std::memcpy(index_buffer.contents, geom.indices.data(), index_buffer.length);
+        [index_buffer didModifyRange:NSMakeRange(0, index_buffer.length)];
+
+        // Allocate the buffers from the heap and copy the data into them
+        metal->vertex_buffer =
+            [metal->geometry_heap newBufferWithLength:vertex_buffer.length
+                                              options:MTLResourceStorageModePrivate];
+
+        metal->index_buffer =
+            [metal->geometry_heap newBufferWithLength:index_buffer.length
+                                              options:MTLResourceStorageModePrivate];
+
+        id<MTLCommandBuffer> command_buffer = [metal->command_queue commandBuffer];
+        id<MTLBlitCommandEncoder> blit_encoder = command_buffer.blitCommandEncoder;
+
+        [blit_encoder copyFromBuffer:vertex_buffer
+                        sourceOffset:0
+                            toBuffer:metal->vertex_buffer
+                   destinationOffset:0
+                                size:metal->vertex_buffer.length];
+
+        [blit_encoder copyFromBuffer:index_buffer
+                        sourceOffset:0
+                            toBuffer:metal->index_buffer
+                   destinationOffset:0
+                                size:metal->index_buffer.length];
+
+        [blit_encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+    }
 
     // Build argument buffer for the mesh
     id<MTLArgumentEncoder> argument_encoder;
@@ -251,8 +309,7 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
         [command_encoder useResource:metal->blas usage:MTLResourceUsageRead];
 
         [command_encoder setBuffer:metal->geom_arg_buffer offset:0 atIndex:2];
-        [command_encoder useResource:metal->vertex_buffer usage:MTLResourceUsageRead];
-        [command_encoder useResource:metal->index_buffer usage:MTLResourceUsageRead];
+        [command_encoder useHeap:metal->geometry_heap];
 
         [command_encoder setBuffer:metal->instance_buffer offset:0 atIndex:3];
 
