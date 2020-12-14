@@ -41,6 +41,7 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
     // TODO: intersect returns the primitive id (triangle within a mesh in the BLAS)
     // and geometry id (id of a group of triangles in the BLAS, i.e. a Geometry)
     // so I also need the mesh -> geometry id info uploaded here later
+    // And the instance's accelerationStructureIndex is the mesh index
     hit_result = traversal.intersect(ray, scene);
     if (hit_result.type != intersection_type::none) {
         // Find the vertex positions for this triangle. Right now we know we only

@@ -19,7 +19,8 @@ add_metal_embed_library(metal_shaders render_metal.metal shader_types.h
         ${PROJECT_SOURCE_DIR})
 
 add_library(render_metal
-    render_metal.mm)
+    render_metal.mm
+    metalrt_utils.mm)
 
 set_target_properties(render_metal PROPERTIES
     CXX_STANDARD 14

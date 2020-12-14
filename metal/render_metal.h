@@ -4,22 +4,36 @@
 #include "render_backend.h"
 #include "shader_types.h"
 
-// Need to be a bit careful here to not pull in Obj-C headers
-// in to render_metal.h which is included in plain C++ code
-// RenderMetalData contains all the actual Obj-C objects/etc.
-// we need for interacting with the Metal API
-struct RenderMetalData;
+// We just declare the Metal API wrapper objects because we
+// don't want to include the header here as it will pull in
+// ObjC objects into this file which is included from plain C++ files
+namespace metal {
+struct Context;
+struct ShaderLibrary;
+struct ComputePipeline;
+struct Heap;
+struct Buffer;
+struct Texture2D;
+struct TopLevelBVH;
+}
 
 struct RenderMetal : RenderBackend {
-    std::shared_ptr<RenderMetalData> metal;
+    std::shared_ptr<metal::Context> context;
 
-    glm::uvec2 fb_dims;
+    std::shared_ptr<metal::ShaderLibrary> shader_library;
+    std::shared_ptr<metal::ComputePipeline> pipeline;
+
+    std::shared_ptr<metal::Texture2D> render_target;
+
+    std::shared_ptr<metal::Heap> geometry_heap;
+    std::shared_ptr<metal::Buffer> geometry_args_buffer;
+
+    std::shared_ptr<metal::TopLevelBVH> bvh;
+
     uint32_t frame_id = 0;
     bool native_display = false;
 
     RenderMetal();
-
-    virtual ~RenderMetal();
 
     std::string name() override;
 

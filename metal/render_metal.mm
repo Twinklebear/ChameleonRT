@@ -1,85 +1,25 @@
 #include "render_metal.h"
 #include <iostream>
-#include <Cocoa/Cocoa.h>
+#include <stdexcept>
 #include <Metal/Metal.h>
-#include <QuartzCore/CAMetalLayer.h>
+#include "metalrt_utils.h"
 #include "render_metal_embedded_metallib.h"
 #include "shader_types.h"
 #include "util.h"
 #include <glm/ext.hpp>
 
-// TODO: Need to manually manage lifetimes, since I'm not
-// sure if ARC will play very well with being used from a
-// C++ class called from outside?
-#if __has_feature(objc_arc)
-#error "Do not enable ARC"
-#endif
-
-struct RenderMetalData {
-    id<MTLDevice> device = nullptr;
-    id<MTLCommandQueue> command_queue = nullptr;
-
-    dispatch_data_t shader_library_data;
-    id<MTLLibrary> shader_library = nullptr;
-
-    id<MTLTexture> render_target = nullptr;
-
-    id<MTLBuffer> vertex_buffer = nullptr;
-    id<MTLBuffer> index_buffer = nullptr;
-    id<MTLBuffer> instance_buffer = nullptr;
-
-    id<MTLAccelerationStructure> blas = nullptr;
-    id<MTLAccelerationStructure> tlas = nullptr;
-
-    id<MTLComputePipelineState> pipeline = nullptr;
-
-    id<MTLBuffer> geom_arg_buffer = nullptr;
-
-    // Heap containing all the geometry's vertex and index buffers
-    id<MTLHeap> geometry_heap = nullptr;
-
-    // TODO: Destructor to clean up, we're not using ARC
-};
-
-// TODO: Decide on and implement abstractions, will follow similar
-// to the other backends
-id<MTLAccelerationStructure> build_acceleration_structure(
-    id<MTLDevice> device,
-    id<MTLCommandQueue> command_queue,
-    MTLAccelerationStructureDescriptor *desc);
-
 RenderMetal::RenderMetal()
 {
-    metal = std::make_shared<RenderMetalData>();
+    context = std::make_shared<metal::Context>();
 
-    // Find a Metal device that supports ray tracing
-    NSArray<id<MTLDevice>> *devices = MTLCopyAllDevices();
-    for (id<MTLDevice> d in devices) {
-        if (d.supportsRaytracing && (!metal->device || !d.isLowPower)) {
-            metal->device = d;
-        }
-    }
-    // TODO: check/throw if no device, means we don't have ray tracing support
+    std::cout << "Selected Metal device " << context->device_name() << "\n";
 
-    std::cout << "Selected Metal device " << [metal->device.name UTF8String] << "\n";
+    shader_library = std::make_shared<metal::ShaderLibrary>(
+        *context, render_metal_metallib, sizeof(render_metal_metallib));
 
-    metal->command_queue = [metal->device newCommandQueue];
-
-    metal->shader_library_data = dispatch_data_create(
-        render_metal_metallib, sizeof(render_metal_metallib), nullptr, nullptr);
-
-    NSError *err = nullptr;
-    metal->shader_library = [metal->device newLibraryWithData:metal->shader_library_data
-                                                        error:&err];
-    if (!metal->shader_library) {
-        std::cout << "Failed to load shader library: " << [err.localizedDescription UTF8String]
-                  << "\n";
-    }
-}
-
-RenderMetal::~RenderMetal()
-{
-    // TODO: Cleanup
+    // Setup the compute pipeline
+    pipeline = std::make_shared<metal::ComputePipeline>(
+        *context, shader_library->new_function(@"raygen"));
 }
 
 std::string RenderMetal::name()
@@ -90,19 +30,10 @@ std::string RenderMetal::name()
 void RenderMetal::initialize(const int fb_width, const int fb_height)
 {
     frame_id = 0;
-    fb_dims = glm::uvec2(fb_width, fb_height);
     img.resize(fb_width * fb_height);
 
-    // Make our render target (TODO: also need a float accum target)
-    MTLTextureDescriptor *tex_desc =
-        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
-                                                           width:fb_width
-                                                          height:fb_height
-                                                       mipmapped:NO];
-    tex_desc.usage = MTLTextureUsageShaderWrite;
-    // TODO: Explciitly release render target
-    // TODO: Later render target
-    metal->render_target = [metal->device newTextureWithDescriptor:tex_desc];
+    render_target = std::make_shared<metal::Texture2D>(
+        *context, fb_width, fb_height, MTLPixelFormatRGBA8Unorm, MTLTextureUsageShaderWrite);
 }
 
 void RenderMetal::set_scene(const Scene &scene)
@@ -111,70 +42,61 @@ void RenderMetal::set_scene(const Scene &scene)
     const Geometry &geom = scene.meshes[scene.instances[0].mesh_id].geometries[0];
 
     // Create a heap to hold all the geometry buffers
-    {
-        MTLHeapDescriptor *heap_desc = [MTLHeapDescriptor new];
-        heap_desc.storageMode = MTLStorageModePrivate;
-        heap_desc.size = 0;
+    geometry_heap = metal::HeapBuilder(*context)
+                        .add_buffer(sizeof(glm::vec3) * geom.vertices.size(),
+                                    MTLResourceStorageModePrivate)
+                        .add_buffer(sizeof(glm::uvec3) * geom.indices.size(),
+                                    MTLResourceStorageModePrivate)
+                        .build();
 
-        // Compute the size needed to hold everything in the heap
-        MTLSizeAndAlign size_align = [metal->device
-            heapBufferSizeAndAlignWithLength:sizeof(glm::vec3) * geom.vertices.size()
-                                     options:MTLResourceStorageModePrivate];
-        heap_desc.size += align_to(size_align.size, size_align.align);
-
-        size_align = [metal->device
-            heapBufferSizeAndAlignWithLength:sizeof(glm::uvec3) * geom.indices.size()
-                                     options:MTLResourceStorageModePrivate];
-        heap_desc.size += align_to(size_align.size, size_align.align);
-
-        metal->geometry_heap = [metal->device newHeapWithDescriptor:heap_desc];
-    }
-
+    std::vector<metal::Geometry> geometries;
     // Upload the data to staging and copy it into the heap
     {
-        // TODO: Released automatically right?
-        id<MTLBuffer> vertex_buffer =
-            [metal->device newBufferWithLength:sizeof(glm::vec3) * geom.vertices.size()
-                                       options:MTLResourceStorageModeManaged];
-        std::memcpy(vertex_buffer.contents, geom.vertices.data(), vertex_buffer.length);
-        [vertex_buffer didModifyRange:NSMakeRange(0, vertex_buffer.length)];
+        metal::Buffer vertex_upload(
+            *context, sizeof(glm::vec3) * geom.vertices.size(), MTLResourceStorageModeManaged);
+        std::cout << "vertex_upload size: " << vertex_upload.size() << "\n";
 
-        id<MTLBuffer> index_buffer =
-            [metal->device newBufferWithLength:sizeof(glm::uvec3) * geom.indices.size()
-                                       options:MTLResourceStorageModeManaged];
-        std::memcpy(index_buffer.contents, geom.indices.data(), index_buffer.length);
-        [index_buffer didModifyRange:NSMakeRange(0, index_buffer.length)];
+        std::memcpy(vertex_upload.data(), geom.vertices.data(), vertex_upload.size());
+        vertex_upload.mark_modified();
+
+        metal::Buffer index_upload(
+            *context, sizeof(glm::uvec3) * geom.indices.size(), MTLResourceStorageModeManaged);
+        std::memcpy(index_upload.data(), geom.indices.data(), index_upload.size());
+        index_upload.mark_modified();
 
         // Allocate the buffers from the heap and copy the data into them
-        metal->vertex_buffer =
-            [metal->geometry_heap newBufferWithLength:vertex_buffer.length
-                                              options:MTLResourceStorageModePrivate];
+        auto vertex_buffer = std::make_shared<metal::Buffer>(
+            *geometry_heap, vertex_upload.size(), MTLResourceStorageModePrivate);
 
-        metal->index_buffer =
-            [metal->geometry_heap newBufferWithLength:index_buffer.length
-                                              options:MTLResourceStorageModePrivate];
+        auto index_buffer = std::make_shared<metal::Buffer>(
+            *geometry_heap, index_upload.size(), MTLResourceStorageModePrivate);
 
-        id<MTLCommandBuffer> command_buffer = [metal->command_queue commandBuffer];
+        id<MTLCommandBuffer> command_buffer = context->command_buffer();
         id<MTLBlitCommandEncoder> blit_encoder = command_buffer.blitCommandEncoder;
 
-        [blit_encoder copyFromBuffer:vertex_buffer
+        [blit_encoder copyFromBuffer:vertex_upload.buffer
                         sourceOffset:0
-                            toBuffer:metal->vertex_buffer
+                            toBuffer:vertex_buffer->buffer
                    destinationOffset:0
-                                size:metal->vertex_buffer.length];
+                                size:vertex_buffer->size()];
 
-        [blit_encoder copyFromBuffer:index_buffer
+        [blit_encoder copyFromBuffer:index_upload.buffer
                         sourceOffset:0
-                            toBuffer:metal->index_buffer
+                            toBuffer:index_buffer->buffer
                    destinationOffset:0
-                                size:metal->index_buffer.length];
+                                size:index_buffer->size()];
 
         [blit_encoder endEncoding];
         [command_buffer commit];
         [command_buffer waitUntilCompleted];
+
+        [command_buffer release];
+
+        geometries.emplace_back(vertex_buffer, index_buffer, nullptr, nullptr);
     }
 
     // Build argument buffer for the mesh
+    // TODO: Argument encoder and buffer utilities
     id<MTLArgumentEncoder> argument_encoder;
     {
         MTLArgumentDescriptor *vertex_buf_desc = [MTLArgumentDescriptor argumentDescriptor];
@@ -187,94 +109,82 @@ void RenderMetal::set_scene(const Scene &scene)
         index_buf_desc.access = MTLArgumentAccessReadOnly;
         index_buf_desc.dataType = MTLDataTypePointer;
 
-        argument_encoder =
-            [metal->device newArgumentEncoderWithArguments:@[vertex_buf_desc, index_buf_desc]];
+        argument_encoder = [context->device
+            newArgumentEncoderWithArguments:@[vertex_buf_desc, index_buf_desc]];
+
+        [vertex_buf_desc release];
+        [index_buf_desc release];
     }
 
     // This will be the stride between consecutive geometries, though right now
     // we just have one so it's also the buffer size we need
     const uint32_t geom_args_stride = argument_encoder.encodedLength;
     std::cout << "Geom args length: " << geom_args_stride << "b\n";
-    metal->geom_arg_buffer = [metal->device newBufferWithLength:geom_args_stride
-                                                        options:MTLResourceStorageModeManaged];
+    geometry_args_buffer = std::make_shared<metal::Buffer>(
+        *context, geom_args_stride, MTLResourceStorageModeManaged);
+
     // Write the arguments into the buffer
-    [argument_encoder setArgumentBuffer:metal->geom_arg_buffer offset:0];
-    [argument_encoder setBuffer:metal->vertex_buffer offset:0 atIndex:0];
-    [argument_encoder setBuffer:metal->index_buffer offset:0 atIndex:1];
+    [argument_encoder setArgumentBuffer:geometry_args_buffer->buffer offset:0];
+    [argument_encoder setBuffer:geometries[0].vertex_buf->buffer offset:0 atIndex:0];
+    [argument_encoder setBuffer:geometries[0].index_buf->buffer offset:0 atIndex:1];
 
-    [metal->geom_arg_buffer didModifyRange:NSMakeRange(0, metal->geom_arg_buffer.length)];
+    geometry_args_buffer->mark_modified();
 
-    // Setup the geometry descriptor for this triangle geometry
-    MTLAccelerationStructureTriangleGeometryDescriptor *geom_desc =
-        [MTLAccelerationStructureTriangleGeometryDescriptor descriptor];
-    geom_desc.vertexBuffer = metal->vertex_buffer;
-    geom_desc.vertexStride = sizeof(glm::vec3);
-    geom_desc.triangleCount = geom.num_tris();
-
-    geom_desc.indexBuffer = metal->index_buffer;
-    geom_desc.indexType = MTLIndexTypeUInt32;
-
-    // TODO: Seems like Metal is inline ray tracing style, but also has some stuff
-    // for "opaque triangle" intersection functions and visible ones? How does the
-    // pipeline map out when using those? Are they more like any hit or closest hit?
-    // Won't be using intersection table here for now
-    geom_desc.intersectionFunctionTableOffset = 0;
-    geom_desc.opaque = YES;
-
-    MTLPrimitiveAccelerationStructureDescriptor *blas_desc =
-        [MTLPrimitiveAccelerationStructureDescriptor descriptor];
-    blas_desc.geometryDescriptors = @[geom_desc];
-    metal->blas = build_acceleration_structure(metal->device, metal->command_queue, blas_desc);
-
-    // Setup the instances for the TLAS
-    metal->instance_buffer =
-        [metal->device newBufferWithLength:sizeof(MTLAccelerationStructureInstanceDescriptor)
-                                   options:MTLResourceStorageModeManaged];
-
+    // Build the BLAS
+    auto blas = std::make_shared<metal::BottomLevelBVH>(geometries);
     {
-        MTLAccelerationStructureInstanceDescriptor *instance =
-            reinterpret_cast<MTLAccelerationStructureInstanceDescriptor *>(
-                metal->instance_buffer.contents);
+        id<MTLCommandBuffer> command_buffer = context->command_buffer();
+        id<MTLAccelerationStructureCommandEncoder> command_encoder =
+            [command_buffer accelerationStructureCommandEncoder];
 
-        instance->accelerationStructureIndex = 0;
-        instance->intersectionFunctionTableOffset = 0;
-        instance->mask = 1;
+        blas->enqueue_build(*context, command_encoder);
 
-        // Note: Column-major in Metal
-        std::memset(&instance->transformationMatrix, 0, sizeof(MTLPackedFloat4x3));
-        instance->transformationMatrix.columns[0][0] = 1.f;
-        instance->transformationMatrix.columns[1][1] = 1.f;
-        instance->transformationMatrix.columns[2][2] = 1.f;
+        [command_encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+        [command_encoder release];
+        [command_buffer release];
 
-        [metal->instance_buffer didModifyRange:NSMakeRange(0, metal->instance_buffer.length)];
+        command_buffer = context->command_buffer();
+        command_encoder = [command_buffer accelerationStructureCommandEncoder];
+
+        blas->enqueue_compaction(*context, command_encoder);
+
+        [command_encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+        [command_encoder release];
+        [command_buffer release];
     }
 
-    // Now build the TLAS
-    MTLInstanceAccelerationStructureDescriptor *tlas_desc =
-        [MTLInstanceAccelerationStructureDescriptor descriptor];
-    tlas_desc.instancedAccelerationStructures = @[metal->blas];
-    tlas_desc.instanceDescriptorBuffer = metal->instance_buffer;
-    tlas_desc.instanceCount = 1;
-    tlas_desc.instanceDescriptorBufferOffset = 0;
-    tlas_desc.instanceDescriptorStride = sizeof(MTLAccelerationStructureInstanceDescriptor);
+    // For now we're just drawing the first instance
+    std::vector<Instance> instances = {scene.instances[0]};
+    std::vector<std::shared_ptr<metal::BottomLevelBVH>> meshes = {blas};
+    bvh = std::make_shared<metal::TopLevelBVH>(instances, meshes);
 
-    metal->tlas = build_acceleration_structure(metal->device, metal->command_queue, tlas_desc);
+    {
+        id<MTLCommandBuffer> command_buffer = context->command_buffer();
+        id<MTLAccelerationStructureCommandEncoder> command_encoder =
+            [command_buffer accelerationStructureCommandEncoder];
 
-    // Setup the compute pipeline
-    id<MTLFunction> raygen_shader = [metal->shader_library newFunctionWithName:@"raygen"];
-    MTLComputePipelineDescriptor *pipeline_desc = [[MTLComputePipelineDescriptor alloc] init];
-    pipeline_desc.computeFunction = raygen_shader;
-    // TODO Later: make this yes and have better threadgroup setup
-    pipeline_desc.threadGroupSizeIsMultipleOfThreadExecutionWidth = NO;
+        bvh->enqueue_build(*context, command_encoder);
 
-    NSError *err = nullptr;
-    metal->pipeline = [metal->device newComputePipelineStateWithDescriptor:pipeline_desc
-                                                                   options:0
-                                                                reflection:nil
-                                                                     error:&err];
-    if (!metal->pipeline) {
-        std::cout << "Failed to create compute pipeline: " <<
-            [err.localizedDescription UTF8String] << "\n";
+        [command_encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+        [command_encoder release];
+        [command_buffer release];
+
+        command_buffer = context->command_buffer();
+        command_encoder = [command_buffer accelerationStructureCommandEncoder];
+
+        bvh->enqueue_compaction(*context, command_encoder);
+
+        [command_encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+        [command_encoder release];
+        [command_buffer release];
     }
 }
 
@@ -293,43 +203,42 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
 
     ViewParams view_params = compute_view_parameters(pos, dir, up, fovy);
 
-    @autoreleasepool {
-        id<MTLCommandBuffer> command_buffer = [metal->command_queue commandBuffer];
+    id<MTLCommandBuffer> command_buffer = context->command_buffer();
+    id<MTLComputeCommandEncoder> command_encoder = [command_buffer computeCommandEncoder];
 
-        id<MTLComputeCommandEncoder> command_encoder = [command_buffer computeCommandEncoder];
+    [command_encoder setTexture:render_target->texture atIndex:0];
 
-        [command_encoder setTexture:metal->render_target atIndex:0];
+    // Embed the view params in the command buffer
+    [command_encoder setBytes:&view_params length:sizeof(ViewParams) atIndex:0];
 
-        // Embed the view params in the command buffer
-        // TODO: It seems like this is the best way to pass small constants that potentially
-        // change every frame?
-        [command_encoder setBytes:&view_params length:sizeof(ViewParams) atIndex:0];
+    [command_encoder setAccelerationStructure:bvh->bvh atBufferIndex:1];
+    // Also mark all BLAS's used
+    [command_encoder useResource:bvh->meshes[0]->bvh usage:MTLResourceUsageRead];
 
-        [command_encoder setAccelerationStructure:metal->tlas atBufferIndex:1];
-        [command_encoder useResource:metal->blas usage:MTLResourceUsageRead];
+    [command_encoder setBuffer:geometry_args_buffer->buffer offset:0 atIndex:2];
+    [command_encoder useHeap:geometry_heap->heap];
 
-        [command_encoder setBuffer:metal->geom_arg_buffer offset:0 atIndex:2];
-        [command_encoder useHeap:metal->geometry_heap];
+    [command_encoder setBuffer:bvh->instance_buffer->buffer offset:0 atIndex:3];
 
-        [command_encoder setBuffer:metal->instance_buffer offset:0 atIndex:3];
+    [command_encoder setComputePipelineState:pipeline->pipeline];
+    // TODO: Better thread group sizing here, this is a poor choice for utilization
+    // but keeps the example simple
+    const glm::uvec2 fb_dims = render_target->dims();
+    [command_encoder dispatchThreadgroups:MTLSizeMake(fb_dims.x, fb_dims.y, 1)
+                    threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
 
-        [command_encoder setComputePipelineState:metal->pipeline];
-        // TODO: Better thread group sizing here, this is a poor choice for utilization
-        // but keeps the example simple
-        [command_encoder dispatchThreadgroups:MTLSizeMake(fb_dims.x, fb_dims.y, 1)
-                        threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+    [command_encoder endEncoding];
+    [command_buffer commit];
+    [command_buffer waitUntilCompleted];
 
-        [command_encoder endEncoding];
-        [command_buffer commit];
-        [command_buffer waitUntilCompleted];
-    }
+    // TODO: explicitly release
 
     if (readback_framebuffer || !native_display) {
-        [metal->render_target getBytes:img.data()
-                           bytesPerRow:fb_dims.x * sizeof(uint32_t)
-                            fromRegion:MTLRegionMake2D(0, 0, fb_dims.x, fb_dims.y)
-                           mipmapLevel:0];
+        render_target->get_bytes(img.data());
     }
+
+    [command_encoder release];
+    [command_buffer release];
 
     ++frame_id;
     return stats;
@@ -340,6 +249,7 @@ ViewParams RenderMetal::compute_view_parameters(const glm::vec3 &pos,
                                                 const glm::vec3 &up,
                                                 const float fovy)
 {
+    const glm::uvec2 fb_dims = render_target->dims();
     glm::vec2 img_plane_size;
     img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
     img_plane_size.x = img_plane_size.y * static_cast<float>(fb_dims.x) / fb_dims.y;
@@ -360,64 +270,3 @@ ViewParams RenderMetal::compute_view_parameters(const glm::vec3 &pos,
     return view_params;
 }
 
-id<MTLAccelerationStructure> build_acceleration_structure(
-    id<MTLDevice> device,
-    id<MTLCommandQueue> command_queue,
-    MTLAccelerationStructureDescriptor *desc)
-{
-    // Does it need an autoreleaseblock?
-    // Build then compact the acceleration structure
-    MTLAccelerationStructureSizes accel_sizes =
-        [device accelerationStructureSizesWithDescriptor:desc];
-    std::cout << "Acceleration structure sizes:\n"
-              << "\tstructure size: " << accel_sizes.accelerationStructureSize << "b\n"
-              << "\tscratch size: " << accel_sizes.buildScratchBufferSize << "b\n";
-
-    id<MTLAccelerationStructure> scratch_as =
-        [device newAccelerationStructureWithSize:accel_sizes.accelerationStructureSize];
-
-    id<MTLBuffer> scratch_buffer =
-        [device newBufferWithLength:accel_sizes.buildScratchBufferSize
-                            options:MTLResourceStorageModePrivate];
-
-    id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
-    id<MTLAccelerationStructureCommandEncoder> command_encoder =
-        [command_buffer accelerationStructureCommandEncoder];
-
-    // Readback buffer to get the compacted size
-    id<MTLBuffer> compacted_size_buffer =
-        [device newBufferWithLength:sizeof(uint32_t) options:MTLResourceStorageModeShared];
-
-    // Queue the build
-    [command_encoder buildAccelerationStructure:scratch_as
-                                     descriptor:desc
-                                  scratchBuffer:scratch_buffer
-                            scratchBufferOffset:0];
-
-    // Get the compacted size back from the build
-    [command_encoder writeCompactedAccelerationStructureSize:scratch_as
-                                                    toBuffer:compacted_size_buffer
-                                                      offset:0];
-
-    // Submit the buffer and wait for the build so we can read back the compact size
-    [command_encoder endEncoding];
-    [command_buffer commit];
-    [command_buffer waitUntilCompleted];
-
-    uint32_t compact_size = *reinterpret_cast<uint32_t *>(compacted_size_buffer.contents);
-    std::cout << "Compact size: " << compact_size << "b\n";
-
-    // Now allocate the compact AS and compact the structure into it
-    // For our single triangle AS this won't make it any smaller, but shows how it's done
-    id<MTLAccelerationStructure> compact_as =
-        [device newAccelerationStructureWithSize:compact_size];
-    command_buffer = [command_queue commandBuffer];
-    command_encoder = [command_buffer accelerationStructureCommandEncoder];
-
-    [command_encoder copyAndCompactAccelerationStructure:scratch_as
-                                 toAccelerationStructure:compact_as];
-    [command_encoder endEncoding];
-    [command_buffer commit];
-    [command_buffer waitUntilCompleted];
-    return compact_as;
-}
