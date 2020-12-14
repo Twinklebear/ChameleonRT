@@ -231,8 +231,6 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
     [command_buffer commit];
     [command_buffer waitUntilCompleted];
 
-    // TODO: explicitly release
-
     if (readback_framebuffer || !native_display) {
         render_target->get_bytes(img.data());
     }
