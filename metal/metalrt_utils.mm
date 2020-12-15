@@ -214,6 +214,71 @@ std::shared_ptr<Heap> HeapBuilder::build()
     return heap;
 }
 
+ArgumentEncoder::~ArgumentEncoder()
+{
+    [encoder release];
+}
+
+void ArgumentEncoder::set_buffer(Buffer &buffer, const size_t offset, const size_t index)
+{
+    [encoder setBuffer:buffer.buffer offset:offset atIndex:index];
+}
+
+void *ArgumentEncoder::constant_data_at(const size_t index)
+{
+    return [encoder constantDataAtIndex:index];
+}
+
+ArgumentEncoderBuilder::ArgumentEncoderBuilder(Context &context) : device(context.device) {}
+
+ArgumentEncoderBuilder::~ArgumentEncoderBuilder()
+{
+    [arguments release];
+}
+
+ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_buffer(const size_t index,
+                                                           const MTLArgumentAccess access)
+{
+    MTLArgumentDescriptor *buf_desc = [MTLArgumentDescriptor argumentDescriptor];
+    buf_desc.index = index;
+    buf_desc.access = access;
+    buf_desc.dataType = MTLDataTypePointer;
+    [arguments addObject:buf_desc];
+
+    [buf_desc release];
+    return *this;
+}
+
+ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_constant(const size_t index,
+                                                             const MTLDataType type)
+{
+    MTLArgumentDescriptor *buf_desc = [MTLArgumentDescriptor argumentDescriptor];
+    buf_desc.index = index;
+    buf_desc.access = MTLArgumentAccessReadOnly;
+    buf_desc.dataType = type;
+    [arguments addObject:buf_desc];
+
+    [buf_desc release];
+    return *this;
+}
+
+size_t ArgumentEncoderBuilder::encoded_length() const
+{
+    id<MTLArgumentEncoder> encoder = [device newArgumentEncoderWithArguments:arguments];
+    const size_t length = encoder.encodedLength;
+    [encoder release];
+    return length;
+}
+
+std::shared_ptr<ArgumentEncoder> ArgumentEncoderBuilder::encoder_for_buffer(
+    Buffer &buffer, const size_t offset)
+{
+    auto encoder = std::make_shared<ArgumentEncoder>();
+    encoder->encoder = [device newArgumentEncoderWithArguments:arguments];
+    [encoder->encoder setArgumentBuffer:buffer.buffer offset:offset];
+    return encoder;
+}
+
 Geometry::Geometry(const std::shared_ptr<Buffer> &vertex_buf,
                    const std::shared_ptr<Buffer> &index_buf,
                    const std::shared_ptr<Buffer> &normal_buf,

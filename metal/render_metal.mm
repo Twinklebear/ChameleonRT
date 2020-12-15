@@ -96,37 +96,22 @@ void RenderMetal::set_scene(const Scene &scene)
     }
 
     // Build argument buffer for the mesh
-    // TODO: Argument encoder and buffer utilities
-    id<MTLArgumentEncoder> argument_encoder;
-    {
-        MTLArgumentDescriptor *vertex_buf_desc = [MTLArgumentDescriptor argumentDescriptor];
-        vertex_buf_desc.index = 0;
-        vertex_buf_desc.access = MTLArgumentAccessReadOnly;
-        vertex_buf_desc.dataType = MTLDataTypePointer;
-
-        MTLArgumentDescriptor *index_buf_desc = [MTLArgumentDescriptor argumentDescriptor];
-        index_buf_desc.index = 1;
-        index_buf_desc.access = MTLArgumentAccessReadOnly;
-        index_buf_desc.dataType = MTLDataTypePointer;
-
-        argument_encoder = [context->device
-            newArgumentEncoderWithArguments:@[vertex_buf_desc, index_buf_desc]];
-
-        [vertex_buf_desc release];
-        [index_buf_desc release];
-    }
+    metal::ArgumentEncoderBuilder argument_encoder_builder(*context);
+    argument_encoder_builder.add_buffer(0, MTLArgumentAccessReadOnly)
+        .add_buffer(1, MTLArgumentAccessReadOnly);
 
     // This will be the stride between consecutive geometries, though right now
     // we just have one so it's also the buffer size we need
-    const uint32_t geom_args_stride = argument_encoder.encodedLength;
+    const uint32_t geom_args_stride = argument_encoder_builder.encoded_length();
     std::cout << "Geom args length: " << geom_args_stride << "b\n";
     geometry_args_buffer = std::make_shared<metal::Buffer>(
         *context, geom_args_stride, MTLResourceStorageModeManaged);
 
     // Write the arguments into the buffer
-    [argument_encoder setArgumentBuffer:geometry_args_buffer->buffer offset:0];
-    [argument_encoder setBuffer:geometries[0].vertex_buf->buffer offset:0 atIndex:0];
-    [argument_encoder setBuffer:geometries[0].index_buf->buffer offset:0 atIndex:1];
+    auto argument_encoder =
+        argument_encoder_builder.encoder_for_buffer(*geometry_args_buffer, 0);
+    argument_encoder->set_buffer(*geometries[0].vertex_buf, 0, 0);
+    argument_encoder->set_buffer(*geometries[0].index_buf, 0, 1);
 
     geometry_args_buffer->mark_modified();
 
@@ -213,6 +198,8 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
 
     [command_encoder setAccelerationStructure:bvh->bvh atBufferIndex:1];
     // Also mark all BLAS's used
+    // TODO: Seems like we can't do a similar heap thing for the BLAS's to mark
+    // them all used at once?
     [command_encoder useResource:bvh->meshes[0]->bvh usage:MTLResourceUsageRead];
 
     [command_encoder setBuffer:geometry_args_buffer->buffer offset:0 atIndex:2];

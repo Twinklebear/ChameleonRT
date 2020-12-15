@@ -129,6 +129,40 @@ public:
     std::shared_ptr<Heap> build();
 };
 
+struct ArgumentEncoder {
+    id<MTLArgumentEncoder> encoder = nullptr;
+
+    ArgumentEncoder() = default;
+
+    ~ArgumentEncoder();
+
+    void set_buffer(Buffer &buffer, const size_t offset, const size_t index);
+
+    // TODO: Could do some template here and type validation
+    void *constant_data_at(const size_t index);
+};
+
+struct ArgumentEncoderBuilder {
+private:
+    id<MTLDevice> device = nullptr;
+    NSMutableArray *arguments = [NSMutableArray array];
+
+public:
+    ArgumentEncoderBuilder(Context &context);
+
+    ~ArgumentEncoderBuilder();
+
+    ArgumentEncoderBuilder &add_buffer(const size_t index, const MTLArgumentAccess access);
+
+    ArgumentEncoderBuilder &add_constant(const size_t index, const MTLDataType type);
+
+    size_t encoded_length() const;
+
+    // Note: it doesn't seem like you can re-use the same argument encoder but swap out
+    // the buffer it's writing too, so the encoder is not very reusable
+    std::shared_ptr<ArgumentEncoder> encoder_for_buffer(Buffer &buffer, const size_t offset);
+};
+
 struct Geometry {
     std::shared_ptr<Buffer> vertex_buf, index_buf, normal_buf, uv_buf;
 
