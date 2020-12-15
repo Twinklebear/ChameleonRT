@@ -27,8 +27,10 @@ struct RenderMetal : RenderBackend {
 
     std::shared_ptr<metal::Heap> geometry_heap;
     std::shared_ptr<metal::Buffer> geometry_args_buffer;
+    std::shared_ptr<metal::Buffer> mesh_args_buffer;
 
     std::shared_ptr<metal::TopLevelBVH> bvh;
+    std::shared_ptr<metal::Buffer> instance_inverse_transforms_buffer;
 
     uint32_t frame_id = 0;
     bool native_display = false;

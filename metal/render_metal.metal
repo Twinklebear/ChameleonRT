@@ -1,3 +1,4 @@
+#include <metal_common>
 #include <metal_stdlib>
 #include <simd/simd.h>
 #include "shader_types.h"
@@ -14,12 +15,18 @@ struct Geometry {
     // and leave them unset
 };
 
+struct Mesh {
+    device uint32_t *geometries [[id(0)]];
+};
+
 kernel void raygen(uint2 tid [[thread_position_in_grid]],
                    texture2d<float, access::write> render_target [[texture(0)]],
                    constant ViewParams &view_params [[buffer(0)]],
                    instance_acceleration_structure scene [[buffer(1)]],
                    device Geometry *geometries [[buffer(2)]],
-                   device MTLAccelerationStructureInstanceDescriptor *instances [[buffer(3)]])
+                   device Mesh *meshes [[buffer(3)]],
+                   device MTLAccelerationStructureInstanceDescriptor *instances [[buffer(4)]],
+                   device float4x4 *instance_inverse_transforms [[buffer(5)]])
 {
     const float2 pixel = float2(tid);
     // The example traces an orthographic view of a triangle (just rendering in NDC)
@@ -44,15 +51,22 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
     // And the instance's accelerationStructureIndex is the mesh index
     hit_result = traversal.intersect(ray, scene);
     if (hit_result.type != intersection_type::none) {
-        // Find the vertex positions for this triangle. Right now we know we only
-        // have a single Geometry
-        device const Geometry &geom = geometries[0];
+        device const MTLAccelerationStructureInstanceDescriptor &instance =
+            instances[hit_result.instance_id];
+        device const Mesh &mesh = meshes[instance.accelerationStructureIndex];
+        device const Geometry &geom = geometries[mesh.geometries[hit_result.geometry_id]];
+
         const uint3 indices = geom.indices[hit_result.primitive_id];
         const float3 va = geom.vertices[indices.x];
         const float3 vb = geom.vertices[indices.y];
         const float3 vc = geom.vertices[indices.z];
 
-        const float3 normal = normalize(cross(vb - va, vc - va));
+        float4x4 normal_transform =
+            transpose(instance_inverse_transforms[hit_result.instance_id]);
+
+        // Transform the normal into world space
+        float3 normal = normalize(cross(vb - va, vc - va));
+        normal = normalize((normal_transform * float4(normal, 0.f)).xyz);
 
         const float3 bary_coords = float3(1.f - hit_result.triangle_barycentric_coord.x -
                                               hit_result.triangle_barycentric_coord.y,
