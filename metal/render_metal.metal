@@ -78,11 +78,8 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
                                           hit_result.triangle_barycentric_coord.x,
                                           hit_result.triangle_barycentric_coord.y);
 
-        const uint32_t material_id =
-            instance_data.material_ids[instance.accelerationStructureIndex];
-
-        float3 color = float3(material_id / 32.0);  // material_colors[material_id];
-        // float3 color = materials[material_id].base_color;
+        const uint32_t material_id = instance_data.material_ids[hit_result.geometry_id];
+        float3 color = material_colors[material_id];
         // float3 color = (normal + 1.f) * 0.5f;
         render_target.write(float4(color, 1.f), tid);
     } else {

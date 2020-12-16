@@ -77,13 +77,6 @@ void RenderMetal::set_scene(const Scene &scene)
             *context, sizeof(uint32_t) * i.material_ids.size(), MTLResourceStorageModeManaged);
         std::memcpy(upload.data(), i.material_ids.data(), upload.size());
         upload.mark_modified();
-        std::cout << "mat ids: {";
-        for (const auto matid : i.material_ids) {
-            std::cout << matid
-                      << " (color: " << glm::to_string(scene.materials[matid].base_color)
-                      << "), ";
-        }
-        std::cout << "}\n";
 
         auto material_id_buffer = std::make_shared<metal::Buffer>(
             *data_heap, upload.size(), MTLResourceStorageModePrivate);
@@ -113,11 +106,9 @@ void RenderMetal::set_scene(const Scene &scene)
     instance_args_encoder_builder.add_constant(0, MTLDataTypeFloat4x4)
         .add_buffer(1, MTLArgumentAccessReadOnly);
     const size_t instance_args_size = instance_args_encoder_builder.encoded_length();
-    std::cout << "Instance args size: " << instance_args_size << "\n";
 
     instance_args_buffer = std::make_shared<metal::Buffer>(
         *context, scene.instances.size() * instance_args_size, MTLResourceStorageModeManaged);
-    std::cout << "instance args buffer size: " << instance_args_buffer->size() << "b\n";
 
     size_t instance_args_offset = 0;
     for (size_t i = 0; i < scene.instances.size(); ++i) {
@@ -126,7 +117,6 @@ void RenderMetal::set_scene(const Scene &scene)
         glm::mat4 *inverse_tfm = reinterpret_cast<glm::mat4 *>(encoder->constant_data_at(0));
         *inverse_tfm = glm::inverse(scene.instances[i].transform);
 
-        // TODO: Not sending the material ID buffer through properly!?
         encoder->set_buffer(*instance_material_ids[i], 0, 1);
 
         instance_args_offset += instance_args_size;
