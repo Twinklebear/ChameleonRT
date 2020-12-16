@@ -14,6 +14,7 @@ struct ComputePipeline;
 struct Heap;
 struct Buffer;
 struct Texture2D;
+struct BottomLevelBVH;
 struct TopLevelBVH;
 }
 
@@ -25,7 +26,7 @@ struct RenderMetal : RenderBackend {
 
     std::shared_ptr<metal::Texture2D> render_target;
 
-    std::shared_ptr<metal::Heap> geometry_heap;
+    std::shared_ptr<metal::Heap> data_heap;
     std::shared_ptr<metal::Buffer> geometry_args_buffer;
     std::shared_ptr<metal::Buffer> mesh_args_buffer;
 
@@ -56,5 +57,9 @@ private:
                                        const glm::vec3 &dir,
                                        const glm::vec3 &up,
                                        const float fovy);
+
+    std::shared_ptr<metal::Heap> allocate_heap(const Scene &scene);
+
+    std::vector<std::shared_ptr<metal::BottomLevelBVH>> build_meshes(const Scene &scene);
 };
 

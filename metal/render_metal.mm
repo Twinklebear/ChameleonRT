@@ -38,201 +38,12 @@ void RenderMetal::initialize(const int fb_width, const int fb_height)
 
 void RenderMetal::set_scene(const Scene &scene)
 {
-    // Create a heap to hold all the geometry buffers and mesh geometry ID buffers
-    std::vector<std::vector<uint32_t>> mesh_geometry_ids;
-    {
-        metal::HeapBuilder heap_builder(*context);
-        for (const auto &m : scene.meshes) {
-            // Also get enough space to store the mesh's gometry indices buffer
-            heap_builder.add_buffer(sizeof(uint32_t) * m.geometries.size(),
-                                    MTLResourceStorageModePrivate);
-
-            for (const auto &g : m.geometries) {
-                heap_builder
-                    .add_buffer(sizeof(glm::vec3) * g.vertices.size(),
-                                MTLResourceStorageModePrivate)
-                    .add_buffer(sizeof(glm::uvec3) * g.indices.size(),
-                                MTLResourceStorageModePrivate);
-                /*
-                if (!g.normals.empty()) {
-                    heap_builder.add_buffer(sizeof(glm::vec3) * g.normals.size(),
-                                            MTLResourceStorageModePrivate);
-                }
-                if (!g.uvs.empty()) {
-                    heap_builder.add_buffer(sizeof(glm::vec2) * g.uvs.size(),
-                                            MTLResourceStorageModePrivate);
-                }
-                */
-            }
-        }
-        geometry_heap = heap_builder.build();
-    }
+    // Create a heap to hold all the data we'll need to upload
+    data_heap = allocate_heap(scene);
+    std::cout << "Data heap size: " << pretty_print_count(data_heap->size()) << "b\n";
 
     // Upload the geometry for each mesh and build its BLAS
-    std::vector<std::shared_ptr<metal::BottomLevelBVH>> meshes;
-
-    // We also need to build a list of global geometry indices for each mesh, since
-    // all the geometry info will be flattened into a single buffer
-    uint32_t total_geometries = 0;
-    std::vector<std::shared_ptr<metal::Buffer>> mesh_geometry_id_buffers;
-
-    for (const auto &m : scene.meshes) {
-        // Upload the mesh geometry ids first
-        {
-            metal::Buffer geom_id_upload(*context,
-                                         sizeof(uint32_t) * m.geometries.size(),
-                                         MTLResourceStorageModeManaged);
-            uint32_t *geom_ids = reinterpret_cast<uint32_t *>(geom_id_upload.data());
-            for (uint32_t i = 0; i < m.geometries.size(); ++i) {
-                geom_ids[i] = total_geometries + i;
-            }
-            geom_id_upload.mark_modified();
-
-            auto geom_id_buffer = std::make_shared<metal::Buffer>(
-                *geometry_heap, geom_id_upload.size(), MTLResourceStorageModePrivate);
-
-            id<MTLCommandBuffer> command_buffer = context->command_buffer();
-            id<MTLBlitCommandEncoder> blit_encoder = command_buffer.blitCommandEncoder;
-
-            [blit_encoder copyFromBuffer:geom_id_upload.buffer
-                            sourceOffset:0
-                                toBuffer:geom_id_buffer->buffer
-                       destinationOffset:0
-                                    size:geom_id_buffer->size()];
-
-            [blit_encoder endEncoding];
-            [command_buffer commit];
-            [command_buffer waitUntilCompleted];
-
-            [command_buffer release];
-
-            mesh_geometry_id_buffers.push_back(geom_id_buffer);
-        }
-
-        std::vector<metal::Geometry> geometries;
-        for (const auto &g : m.geometries) {
-            metal::Buffer vertex_upload(*context,
-                                        sizeof(glm::vec3) * g.vertices.size(),
-                                        MTLResourceStorageModeManaged);
-
-            std::memcpy(vertex_upload.data(), g.vertices.data(), vertex_upload.size());
-            vertex_upload.mark_modified();
-
-            metal::Buffer index_upload(*context,
-                                       sizeof(glm::uvec3) * g.indices.size(),
-                                       MTLResourceStorageModeManaged);
-            std::memcpy(index_upload.data(), g.indices.data(), index_upload.size());
-            index_upload.mark_modified();
-
-            // TODO: normals and uvs as well
-
-            // Allocate the buffers from the heap and copy the data into them
-            auto vertex_buffer = std::make_shared<metal::Buffer>(
-                *geometry_heap, vertex_upload.size(), MTLResourceStorageModePrivate);
-
-            auto index_buffer = std::make_shared<metal::Buffer>(
-                *geometry_heap, index_upload.size(), MTLResourceStorageModePrivate);
-
-            id<MTLCommandBuffer> command_buffer = context->command_buffer();
-            id<MTLBlitCommandEncoder> blit_encoder = command_buffer.blitCommandEncoder;
-
-            [blit_encoder copyFromBuffer:vertex_upload.buffer
-                            sourceOffset:0
-                                toBuffer:vertex_buffer->buffer
-                       destinationOffset:0
-                                    size:vertex_buffer->size()];
-
-            [blit_encoder copyFromBuffer:index_upload.buffer
-                            sourceOffset:0
-                                toBuffer:index_buffer->buffer
-                       destinationOffset:0
-                                    size:index_buffer->size()];
-
-            [blit_encoder endEncoding];
-            [command_buffer commit];
-            [command_buffer waitUntilCompleted];
-
-            [command_buffer release];
-
-            geometries.emplace_back(vertex_buffer, index_buffer, nullptr, nullptr);
-        }
-        total_geometries += geometries.size();
-
-        // Build the BLAS
-        auto mesh = std::make_shared<metal::BottomLevelBVH>(geometries);
-        id<MTLCommandBuffer> command_buffer = context->command_buffer();
-        id<MTLAccelerationStructureCommandEncoder> command_encoder =
-            [command_buffer accelerationStructureCommandEncoder];
-
-        mesh->enqueue_build(*context, command_encoder);
-
-        [command_encoder endEncoding];
-        [command_buffer commit];
-        [command_buffer waitUntilCompleted];
-        [command_encoder release];
-        [command_buffer release];
-
-        command_buffer = context->command_buffer();
-        command_encoder = [command_buffer accelerationStructureCommandEncoder];
-
-        mesh->enqueue_compaction(*context, command_encoder);
-
-        [command_encoder endEncoding];
-        [command_buffer commit];
-        [command_buffer waitUntilCompleted];
-        [command_encoder release];
-        [command_buffer release];
-
-        meshes.push_back(mesh);
-    }
-
-    // Build the argument buffer for the mesh geometry IDs
-    metal::ArgumentEncoderBuilder mesh_args_encoder_builder(*context);
-    mesh_args_encoder_builder.add_buffer(0, MTLArgumentAccessReadOnly);
-
-    const uint32_t mesh_args_size = mesh_args_encoder_builder.encoded_length();
-    std::cout << "Mesh args size: " << mesh_args_size
-              << "b, total arg buffer size: " << mesh_args_size * meshes.size() << "b\n";
-    mesh_args_buffer = std::make_shared<metal::Buffer>(
-        *context, mesh_args_size * meshes.size(), MTLResourceStorageModeManaged);
-
-    // Build the argument buffer for each geometry
-    metal::ArgumentEncoderBuilder geom_args_encoder_builder(*context);
-    geom_args_encoder_builder.add_buffer(0, MTLArgumentAccessReadOnly)
-        .add_buffer(1, MTLArgumentAccessReadOnly);
-    // TODO: also normals, uvs
-
-    const uint32_t geom_args_size = geom_args_encoder_builder.encoded_length();
-    std::cout << "Geom args size: " << geom_args_size
-              << "b, total arg buffer size: " << geom_args_size * total_geometries << "b\n";
-    geometry_args_buffer = std::make_shared<metal::Buffer>(
-        *context, geom_args_size * total_geometries, MTLResourceStorageModeManaged);
-
-    // Write the geometry arguments to the buffer
-    size_t mesh_args_offset = 0;
-    size_t geom_args_offset = 0;
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        // Write the mesh geometry ID buffer
-        {
-            auto argument_encoder = mesh_args_encoder_builder.encoder_for_buffer(
-                *mesh_args_buffer, mesh_args_offset);
-            argument_encoder->set_buffer(*mesh_geometry_id_buffers[i], 0, 0);
-            mesh_args_offset += mesh_args_size;
-        }
-
-        // Write the geometry data arguments
-        const auto &m = meshes[i];
-        for (const auto &g : m->geometries) {
-            auto argument_encoder = geom_args_encoder_builder.encoder_for_buffer(
-                *geometry_args_buffer, geom_args_offset);
-            argument_encoder->set_buffer(*g.vertex_buf, 0, 0);
-            argument_encoder->set_buffer(*g.index_buf, 0, 1);
-
-            geom_args_offset += geom_args_size;
-        }
-    }
-    mesh_args_buffer->mark_modified();
-    geometry_args_buffer->mark_modified();
+    std::vector<std::shared_ptr<metal::BottomLevelBVH>> meshes = build_meshes(scene);
 
     std::vector<Instance> instances = scene.instances;
     bvh = std::make_shared<metal::TopLevelBVH>(instances, meshes);
@@ -306,7 +117,7 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
 
     [command_encoder setBuffer:geometry_args_buffer->buffer offset:0 atIndex:2];
     [command_encoder setBuffer:mesh_args_buffer->buffer offset:0 atIndex:3];
-    [command_encoder useHeap:geometry_heap->heap];
+    [command_encoder useHeap:data_heap->heap];
 
     [command_encoder setBuffer:bvh->instance_buffer->buffer offset:0 atIndex:4];
     [command_encoder setBuffer:instance_inverse_transforms_buffer->buffer offset:0 atIndex:5];
@@ -359,3 +170,202 @@ ViewParams RenderMetal::compute_view_parameters(const glm::vec3 &pos,
     return view_params;
 }
 
+std::shared_ptr<metal::Heap> RenderMetal::allocate_heap(const Scene &scene)
+{
+    metal::HeapBuilder heap_builder(*context);
+    // Allocate enough room to store the data for each mesh
+    for (const auto &m : scene.meshes) {
+        // Also get enough space to store the mesh's gometry indices buffer
+        heap_builder.add_buffer(sizeof(uint32_t) * m.geometries.size(),
+                                MTLResourceStorageModePrivate);
+
+        for (const auto &g : m.geometries) {
+            heap_builder
+                .add_buffer(sizeof(glm::vec3) * g.vertices.size(),
+                            MTLResourceStorageModePrivate)
+                .add_buffer(sizeof(glm::uvec3) * g.indices.size(),
+                            MTLResourceStorageModePrivate);
+            /*
+            if (!g.normals.empty()) {
+                heap_builder.add_buffer(sizeof(glm::vec3) * g.normals.size(),
+                                        MTLResourceStorageModePrivate);
+            }
+            if (!g.uvs.empty()) {
+                heap_builder.add_buffer(sizeof(glm::vec2) * g.uvs.size(),
+                                        MTLResourceStorageModePrivate);
+            }
+            */
+        }
+    }
+
+    // Allocate room for the instance's material ID lists
+    for (const auto &i : scene.instances) {
+        heap_builder.add_buffer(sizeof(uint32_t) * i.material_ids.size(),
+                                MTLResourceStorageModePrivate);
+    }
+
+    return heap_builder.build();
+}
+
+std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
+    const Scene &scene)
+{
+    // We also need to build a list of global geometry indices for each mesh, since
+    // all the geometry info will be flattened into a single buffer
+    uint32_t total_geometries = 0;
+    std::vector<std::shared_ptr<metal::BottomLevelBVH>> meshes;
+
+    for (const auto &m : scene.meshes) {
+        // Upload the mesh geometry ids first
+        std::shared_ptr<metal::Buffer> geom_id_buffer;
+        {
+            metal::Buffer geom_id_upload(*context,
+                                         sizeof(uint32_t) * m.geometries.size(),
+                                         MTLResourceStorageModeManaged);
+            uint32_t *geom_ids = reinterpret_cast<uint32_t *>(geom_id_upload.data());
+            for (uint32_t i = 0; i < m.geometries.size(); ++i) {
+                geom_ids[i] = total_geometries++;
+            }
+            geom_id_upload.mark_modified();
+
+            geom_id_buffer = std::make_shared<metal::Buffer>(
+                *data_heap, geom_id_upload.size(), MTLResourceStorageModePrivate);
+
+            id<MTLCommandBuffer> command_buffer = context->command_buffer();
+            id<MTLBlitCommandEncoder> blit_encoder = command_buffer.blitCommandEncoder;
+
+            [blit_encoder copyFromBuffer:geom_id_upload.buffer
+                            sourceOffset:0
+                                toBuffer:geom_id_buffer->buffer
+                       destinationOffset:0
+                                    size:geom_id_buffer->size()];
+
+            [blit_encoder endEncoding];
+            [command_buffer commit];
+            [command_buffer waitUntilCompleted];
+
+            [command_buffer release];
+        }
+
+        std::vector<metal::Geometry> geometries;
+        for (const auto &g : m.geometries) {
+            metal::Buffer vertex_upload(*context,
+                                        sizeof(glm::vec3) * g.vertices.size(),
+                                        MTLResourceStorageModeManaged);
+
+            std::memcpy(vertex_upload.data(), g.vertices.data(), vertex_upload.size());
+            vertex_upload.mark_modified();
+
+            metal::Buffer index_upload(*context,
+                                       sizeof(glm::uvec3) * g.indices.size(),
+                                       MTLResourceStorageModeManaged);
+            std::memcpy(index_upload.data(), g.indices.data(), index_upload.size());
+            index_upload.mark_modified();
+
+            // TODO: normals and uvs as well
+
+            // Allocate the buffers from the heap and copy the data into them
+            auto vertex_buffer = std::make_shared<metal::Buffer>(
+                *data_heap, vertex_upload.size(), MTLResourceStorageModePrivate);
+
+            auto index_buffer = std::make_shared<metal::Buffer>(
+                *data_heap, index_upload.size(), MTLResourceStorageModePrivate);
+
+            id<MTLCommandBuffer> command_buffer = context->command_buffer();
+            id<MTLBlitCommandEncoder> blit_encoder = command_buffer.blitCommandEncoder;
+
+            [blit_encoder copyFromBuffer:vertex_upload.buffer
+                            sourceOffset:0
+                                toBuffer:vertex_buffer->buffer
+                       destinationOffset:0
+                                    size:vertex_buffer->size()];
+
+            [blit_encoder copyFromBuffer:index_upload.buffer
+                            sourceOffset:0
+                                toBuffer:index_buffer->buffer
+                       destinationOffset:0
+                                    size:index_buffer->size()];
+
+            [blit_encoder endEncoding];
+            [command_buffer commit];
+            [command_buffer waitUntilCompleted];
+
+            [command_buffer release];
+
+            geometries.emplace_back(vertex_buffer, index_buffer, nullptr, nullptr);
+        }
+
+        // Build the BLAS
+        auto mesh = std::make_shared<metal::BottomLevelBVH>(geometries, geom_id_buffer);
+        id<MTLCommandBuffer> command_buffer = context->command_buffer();
+        id<MTLAccelerationStructureCommandEncoder> command_encoder =
+            [command_buffer accelerationStructureCommandEncoder];
+
+        mesh->enqueue_build(*context, command_encoder);
+
+        [command_encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+        [command_encoder release];
+        [command_buffer release];
+
+        command_buffer = context->command_buffer();
+        command_encoder = [command_buffer accelerationStructureCommandEncoder];
+
+        mesh->enqueue_compaction(*context, command_encoder);
+
+        [command_encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+        [command_encoder release];
+        [command_buffer release];
+
+        meshes.push_back(mesh);
+    }
+
+    // Build the argument buffer for the mesh geometry IDs
+    metal::ArgumentEncoderBuilder mesh_args_encoder_builder(*context);
+    mesh_args_encoder_builder.add_buffer(0, MTLArgumentAccessReadOnly);
+
+    const uint32_t mesh_args_size = mesh_args_encoder_builder.encoded_length();
+    mesh_args_buffer = std::make_shared<metal::Buffer>(
+        *context, mesh_args_size * meshes.size(), MTLResourceStorageModeManaged);
+
+    // Build the argument buffer for each geometry
+    metal::ArgumentEncoderBuilder geom_args_encoder_builder(*context);
+    geom_args_encoder_builder.add_buffer(0, MTLArgumentAccessReadOnly)
+        .add_buffer(1, MTLArgumentAccessReadOnly);
+    // TODO: also normals, uvs
+
+    const uint32_t geom_args_size = geom_args_encoder_builder.encoded_length();
+    geometry_args_buffer = std::make_shared<metal::Buffer>(
+        *context, geom_args_size * total_geometries, MTLResourceStorageModeManaged);
+
+    // Write the geometry arguments to the buffer
+    size_t mesh_args_offset = 0;
+    size_t geom_args_offset = 0;
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        // Write the mesh geometry ID buffer
+        {
+            auto argument_encoder = mesh_args_encoder_builder.encoder_for_buffer(
+                *mesh_args_buffer, mesh_args_offset);
+            argument_encoder->set_buffer(*meshes[i]->geometry_id_buffer, 0, 0);
+            mesh_args_offset += mesh_args_size;
+        }
+
+        // Write the geometry data arguments
+        const auto &m = meshes[i];
+        for (const auto &g : m->geometries) {
+            auto argument_encoder = geom_args_encoder_builder.encoder_for_buffer(
+                *geometry_args_buffer, geom_args_offset);
+            argument_encoder->set_buffer(*g.vertex_buf, 0, 0);
+            argument_encoder->set_buffer(*g.index_buf, 0, 1);
+
+            geom_args_offset += geom_args_size;
+        }
+    }
+    mesh_args_buffer->mark_modified();
+    geometry_args_buffer->mark_modified();
+
+    return meshes;
+}

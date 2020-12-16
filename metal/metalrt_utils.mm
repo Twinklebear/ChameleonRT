@@ -192,6 +192,11 @@ Heap::~Heap()
     [heap release];
 }
 
+size_t Heap::size() const
+{
+    return heap.size;
+}
+
 HeapBuilder::HeapBuilder(Context &context) : device(context.device)
 {
     descriptor = [MTLHeapDescriptor new];
@@ -304,9 +309,11 @@ void BVH::build(Context &context,
 {
     MTLAccelerationStructureSizes accel_sizes =
         [context.device accelerationStructureSizesWithDescriptor:desc];
+    /*
     std::cout << "Acceleration structure sizes:\n"
               << "\tstructure size: " << accel_sizes.accelerationStructureSize << "b\n"
               << "\tscratch size: " << accel_sizes.buildScratchBufferSize << "b\n";
+              */
 
     bvh = [context.device
         newAccelerationStructureWithSize:accel_sizes.accelerationStructureSize];
@@ -333,7 +340,7 @@ void BVH::enqueue_compaction(Context &context,
                              id<MTLAccelerationStructureCommandEncoder> command_encoder)
 {
     const uint32_t compact_size = *reinterpret_cast<uint32_t *>(compacted_size_buffer->data());
-    std::cout << "Compacted size: " << compact_size << "\n";
+    // std::cout << "Compacted size: " << compact_size << "\n";
     id<MTLAccelerationStructure> compact_as =
         [context.device newAccelerationStructureWithSize:compact_size];
     [command_encoder copyAndCompactAccelerationStructure:bvh
@@ -347,7 +354,11 @@ void BVH::enqueue_compaction(Context &context,
     bvh = compact_as;
 }
 
-BottomLevelBVH::BottomLevelBVH(std::vector<Geometry> &geometries) : geometries(geometries) {}
+BottomLevelBVH::BottomLevelBVH(std::vector<Geometry> &geometries,
+                               std::shared_ptr<Buffer> &geometry_id_buffer)
+    : geometries(geometries), geometry_id_buffer(geometry_id_buffer)
+{
+}
 
 void BottomLevelBVH::enqueue_build(Context &context,
                                    id<MTLAccelerationStructureCommandEncoder> command_encoder)

@@ -87,6 +87,8 @@ struct Heap {
     Heap() = default;
 
     ~Heap();
+
+    size_t size() const;
 };
 
 struct Buffer {
@@ -202,10 +204,13 @@ public:
 
 struct BottomLevelBVH : BVH {
     std::vector<Geometry> geometries;
+    // The indices of the geometry of this BLAS in the global geometry list
+    std::shared_ptr<Buffer> geometry_id_buffer;
 
     BottomLevelBVH() = default;
 
-    BottomLevelBVH(std::vector<Geometry> &geometries);
+    BottomLevelBVH(std::vector<Geometry> &geometries,
+                   std::shared_ptr<Buffer> &geometry_id_buffer);
 
     void enqueue_build(Context &context,
                        id<MTLAccelerationStructureCommandEncoder> command_encoder);
