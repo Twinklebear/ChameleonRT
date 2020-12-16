@@ -29,7 +29,6 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
                    device float4x4 *instance_inverse_transforms [[buffer(5)]])
 {
     const float2 pixel = float2(tid);
-    // The example traces an orthographic view of a triangle (just rendering in NDC)
     const float2 d = (pixel + 0.5f) / float2(view_params.fb_dims);
 
     ray ray;
@@ -45,12 +44,11 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
     traversal.assume_geometry_type(geometry_type::triangle);
     traversal.force_opacity(forced_opacity::opaque);
 
-    // TODO: intersect returns the primitive id (triangle within a mesh in the BLAS)
-    // and geometry id (id of a group of triangles in the BLAS, i.e. a Geometry)
-    // so I also need the mesh -> geometry id info uploaded here later
-    // And the instance's accelerationStructureIndex is the mesh index
     hit_result = traversal.intersect(ray, scene);
+
     if (hit_result.type != intersection_type::none) {
+        // Find the instance we hit, the mesh associated with it and the geometry
+        // within that mesh to find the intersected triangle
         device const MTLAccelerationStructureInstanceDescriptor &instance =
             instances[hit_result.instance_id];
         device const Mesh &mesh = meshes[instance.accelerationStructureIndex];

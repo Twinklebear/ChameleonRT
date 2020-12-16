@@ -73,7 +73,6 @@ ComputePipeline::ComputePipeline(Context &context, id<MTLFunction> shader)
 {
     MTLComputePipelineDescriptor *pipeline_desc = [[MTLComputePipelineDescriptor alloc] init];
     pipeline_desc.computeFunction = shader;
-    // TODO Later: make this yes and have better threadgroup setup
     pipeline_desc.threadGroupSizeIsMultipleOfThreadExecutionWidth = NO;
 
     NSError *err = nullptr;
@@ -88,6 +87,13 @@ ComputePipeline::ComputePipeline(Context &context, id<MTLFunction> shader)
     }
 
     [pipeline_desc release];
+}
+
+MTLSize ComputePipeline::recommended_thread_group_size() const
+{
+    const size_t width = pipeline.threadExecutionWidth;
+    const size_t height = pipeline.maxTotalThreadsPerThreadgroup / width;
+    return MTLSizeMake(width, height, 1);
 }
 
 ComputePipeline::~ComputePipeline()

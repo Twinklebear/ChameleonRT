@@ -312,11 +312,11 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
     [command_encoder setBuffer:instance_inverse_transforms_buffer->buffer offset:0 atIndex:5];
 
     [command_encoder setComputePipelineState:pipeline->pipeline];
-    // TODO: Better thread group sizing here, this is a poor choice for utilization
-    // but keeps the example simple
+
+    // Use Metal's non-uniform dispatch support to divide up into 16x16 thread groups
     const glm::uvec2 fb_dims = render_target->dims();
-    [command_encoder dispatchThreadgroups:MTLSizeMake(fb_dims.x, fb_dims.y, 1)
-                    threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+    [command_encoder dispatchThreads:MTLSizeMake(fb_dims.x, fb_dims.y, 1)
+               threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
 
     [command_encoder endEncoding];
     [command_buffer commit];

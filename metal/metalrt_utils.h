@@ -50,6 +50,8 @@ struct ComputePipeline {
 
     ComputePipeline(Context &context, id<MTLFunction> shader);
 
+    MTLSize recommended_thread_group_size() const;
+
     ~ComputePipeline();
 };
 
