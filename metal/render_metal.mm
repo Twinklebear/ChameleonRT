@@ -45,8 +45,7 @@ void RenderMetal::set_scene(const Scene &scene)
     // Upload the geometry for each mesh and build its BLAS
     std::vector<std::shared_ptr<metal::BottomLevelBVH>> meshes = build_meshes(scene);
 
-    std::vector<Instance> instances = scene.instances;
-    bvh = std::make_shared<metal::TopLevelBVH>(instances, meshes);
+    bvh = std::make_shared<metal::TopLevelBVH>(scene.instances, meshes);
     {
         id<MTLCommandBuffer> command_buffer = context->command_buffer();
         id<MTLAccelerationStructureCommandEncoder> command_encoder =
@@ -72,16 +71,76 @@ void RenderMetal::set_scene(const Scene &scene)
         [command_buffer release];
     }
 
-    // Compute and upload the inverse instance transform matrices since Metal doesn't provide
-    // these. TODO: Later this will merge with the material ID list info for each instance
-    instance_inverse_transforms_buffer = std::make_shared<metal::Buffer>(
-        *context, instances.size() * sizeof(glm::mat4), MTLResourceStorageModeManaged);
-    glm::mat4 *instance_inverse_transforms =
-        reinterpret_cast<glm::mat4 *>(instance_inverse_transforms_buffer->data());
-    for (size_t i = 0; i < instances.size(); ++i) {
-        instance_inverse_transforms[i] = glm::inverse(instances[i].transform);
+    // Upload the instance material id buffers to the heap
+    for (const auto &i : scene.instances) {
+        metal::Buffer upload(
+            *context, sizeof(uint32_t) * i.material_ids.size(), MTLResourceStorageModeManaged);
+        std::memcpy(upload.data(), i.material_ids.data(), upload.size());
+        upload.mark_modified();
+        std::cout << "mat ids: {";
+        for (const auto matid : i.material_ids) {
+            std::cout << matid
+                      << " (color: " << glm::to_string(scene.materials[matid].base_color)
+                      << "), ";
+        }
+        std::cout << "}\n";
+
+        auto material_id_buffer = std::make_shared<metal::Buffer>(
+            *data_heap, upload.size(), MTLResourceStorageModePrivate);
+
+        id<MTLCommandBuffer> command_buffer = context->command_buffer();
+        id<MTLBlitCommandEncoder> blit_encoder = command_buffer.blitCommandEncoder;
+
+        [blit_encoder copyFromBuffer:upload.buffer
+                        sourceOffset:0
+                            toBuffer:material_id_buffer->buffer
+                   destinationOffset:0
+                                size:material_id_buffer->size()];
+
+        [blit_encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+
+        [command_buffer release];
+
+        instance_material_ids.push_back(material_id_buffer);
     }
-    instance_inverse_transforms_buffer->mark_modified();
+
+    // Build the argument buffer for the instance. Each instance is passed its
+    // inverse object transform (not provided by Metal), and a buffer of material IDs
+    // for each of its mesh's geometries
+    metal::ArgumentEncoderBuilder instance_args_encoder_builder(*context);
+    instance_args_encoder_builder.add_constant(0, MTLDataTypeFloat4x4)
+        .add_buffer(1, MTLArgumentAccessReadOnly);
+    const size_t instance_args_size = instance_args_encoder_builder.encoded_length();
+    std::cout << "Instance args size: " << instance_args_size << "\n";
+
+    instance_args_buffer = std::make_shared<metal::Buffer>(
+        *context, scene.instances.size() * instance_args_size, MTLResourceStorageModeManaged);
+    std::cout << "instance args buffer size: " << instance_args_buffer->size() << "b\n";
+
+    size_t instance_args_offset = 0;
+    for (size_t i = 0; i < scene.instances.size(); ++i) {
+        auto encoder = instance_args_encoder_builder.encoder_for_buffer(*instance_args_buffer,
+                                                                        instance_args_offset);
+        glm::mat4 *inverse_tfm = reinterpret_cast<glm::mat4 *>(encoder->constant_data_at(0));
+        *inverse_tfm = glm::inverse(scene.instances[i].transform);
+
+        // TODO: Not sending the material ID buffer through properly!?
+        encoder->set_buffer(*instance_material_ids[i], 0, 1);
+
+        instance_args_offset += instance_args_size;
+    }
+    instance_args_buffer->mark_modified();
+
+    // Upload the material data
+    material_buffer = std::make_shared<metal::Buffer>(
+        *context, sizeof(glm::vec3) * scene.materials.size(), MTLResourceStorageModeManaged);
+    glm::vec3 *material_colors = reinterpret_cast<glm::vec3 *>(material_buffer->data());
+    for (size_t i = 0; i < scene.materials.size(); ++i) {
+        material_colors[i] = scene.materials[i].base_color;
+    }
+    material_buffer->mark_modified();
 }
 
 RenderStats RenderMetal::render(const glm::vec3 &pos,
@@ -120,7 +179,8 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
     [command_encoder useHeap:data_heap->heap];
 
     [command_encoder setBuffer:bvh->instance_buffer->buffer offset:0 atIndex:4];
-    [command_encoder setBuffer:instance_inverse_transforms_buffer->buffer offset:0 atIndex:5];
+    [command_encoder setBuffer:instance_args_buffer->buffer offset:0 atIndex:5];
+    [command_encoder setBuffer:material_buffer->buffer offset:0 atIndex:6];
 
     [command_encoder setComputePipelineState:pipeline->pipeline];
 
@@ -344,22 +404,21 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
     // Write the geometry arguments to the buffer
     size_t mesh_args_offset = 0;
     size_t geom_args_offset = 0;
-    for (size_t i = 0; i < meshes.size(); ++i) {
+    for (const auto &m : meshes) {
         // Write the mesh geometry ID buffer
         {
-            auto argument_encoder = mesh_args_encoder_builder.encoder_for_buffer(
-                *mesh_args_buffer, mesh_args_offset);
-            argument_encoder->set_buffer(*meshes[i]->geometry_id_buffer, 0, 0);
+            auto encoder = mesh_args_encoder_builder.encoder_for_buffer(*mesh_args_buffer,
+                                                                        mesh_args_offset);
+            encoder->set_buffer(*m->geometry_id_buffer, 0, 0);
             mesh_args_offset += mesh_args_size;
         }
 
         // Write the geometry data arguments
-        const auto &m = meshes[i];
         for (const auto &g : m->geometries) {
-            auto argument_encoder = geom_args_encoder_builder.encoder_for_buffer(
-                *geometry_args_buffer, geom_args_offset);
-            argument_encoder->set_buffer(*g.vertex_buf, 0, 0);
-            argument_encoder->set_buffer(*g.index_buf, 0, 1);
+            auto encoder = geom_args_encoder_builder.encoder_for_buffer(*geometry_args_buffer,
+                                                                        geom_args_offset);
+            encoder->set_buffer(*g.vertex_buf, 0, 0);
+            encoder->set_buffer(*g.index_buf, 0, 1);
 
             geom_args_offset += geom_args_size;
         }

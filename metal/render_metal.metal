@@ -9,14 +9,19 @@ using namespace raytracing;
 struct Geometry {
     device packed_float3 *vertices [[id(0)]];
     device packed_uint3 *indices [[id(1)]];
-    // Can you have null pointers if it doesn't have some attribute?
-    // Seems like it should be possible to do in the argument buffer, just make
-    // the stride big enough for the case that it does have all parameters
-    // and leave them unset
 };
 
 struct Mesh {
     device uint32_t *geometries [[id(0)]];
+};
+
+struct Instance {
+    float4x4 inverse_transform [[id(0)]];
+    device uint32_t *material_ids [[id(1)]];
+};
+
+struct DisneyMaterial {
+    packed_float3 base_color [[id(0)]];
 };
 
 kernel void raygen(uint2 tid [[thread_position_in_grid]],
@@ -26,7 +31,9 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
                    device Geometry *geometries [[buffer(2)]],
                    device Mesh *meshes [[buffer(3)]],
                    device MTLAccelerationStructureInstanceDescriptor *instances [[buffer(4)]],
-                   device float4x4 *instance_inverse_transforms [[buffer(5)]])
+                   device Instance *instance_data_buf [[buffer(5)]],
+                   device packed_float3 *material_colors [[buffer(6)]])
+// device DisneyMaterial *materials [[buffer(6)]])
 {
     const float2 pixel = float2(tid);
     const float2 d = (pixel + 0.5f) / float2(view_params.fb_dims);
@@ -51,6 +58,7 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
         // within that mesh to find the intersected triangle
         device const MTLAccelerationStructureInstanceDescriptor &instance =
             instances[hit_result.instance_id];
+        device const Instance &instance_data = instance_data_buf[hit_result.instance_id];
         device const Mesh &mesh = meshes[instance.accelerationStructureIndex];
         device const Geometry &geom = geometries[mesh.geometries[hit_result.geometry_id]];
 
@@ -59,8 +67,7 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
         const float3 vb = geom.vertices[indices.y];
         const float3 vc = geom.vertices[indices.z];
 
-        float4x4 normal_transform =
-            transpose(instance_inverse_transforms[hit_result.instance_id]);
+        float4x4 normal_transform = transpose(instance_data.inverse_transform);
 
         // Transform the normal into world space
         float3 normal = normalize(cross(vb - va, vc - va));
@@ -71,7 +78,12 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
                                           hit_result.triangle_barycentric_coord.x,
                                           hit_result.triangle_barycentric_coord.y);
 
-        float3 color = (normal + 1.f) * 0.5f;
+        const uint32_t material_id =
+            instance_data.material_ids[instance.accelerationStructureIndex];
+
+        float3 color = float3(material_id / 32.0);  // material_colors[material_id];
+        // float3 color = materials[material_id].base_color;
+        // float3 color = (normal + 1.f) * 0.5f;
         render_target.write(float4(color, 1.f), tid);
     } else {
         render_target.write(float4(0.f), tid);
