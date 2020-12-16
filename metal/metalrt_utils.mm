@@ -354,7 +354,7 @@ void BVH::enqueue_compaction(Context &context,
     bvh = compact_as;
 }
 
-BottomLevelBVH::BottomLevelBVH(std::vector<Geometry> &geometries,
+BottomLevelBVH::BottomLevelBVH(const std::vector<Geometry> &geometries,
                                std::shared_ptr<Buffer> &geometry_id_buffer)
     : geometries(geometries), geometry_id_buffer(geometry_id_buffer)
 {
@@ -394,7 +394,7 @@ void BottomLevelBVH::enqueue_build(Context &context,
     [geom_descs release];
 }
 
-TopLevelBVH::TopLevelBVH(std::vector<Instance> &instances,
+TopLevelBVH::TopLevelBVH(const std::vector<Instance> &instances,
                          std::vector<std::shared_ptr<BottomLevelBVH>> &meshes)
     : instances(instances), meshes(meshes)
 {

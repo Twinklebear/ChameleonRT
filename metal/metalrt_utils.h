@@ -209,7 +209,7 @@ struct BottomLevelBVH : BVH {
 
     BottomLevelBVH() = default;
 
-    BottomLevelBVH(std::vector<Geometry> &geometries,
+    BottomLevelBVH(const std::vector<Geometry> &geometries,
                    std::shared_ptr<Buffer> &geometry_id_buffer);
 
     void enqueue_build(Context &context,
@@ -222,7 +222,7 @@ struct TopLevelBVH : BVH {
 
     std::shared_ptr<Buffer> instance_buffer;
 
-    TopLevelBVH(std::vector<Instance> &instances,
+    TopLevelBVH(const std::vector<Instance> &instances,
                 std::vector<std::shared_ptr<BottomLevelBVH>> &meshes);
 
     void enqueue_build(Context &context,
