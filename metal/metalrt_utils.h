@@ -55,31 +55,6 @@ struct ComputePipeline {
     ~ComputePipeline();
 };
 
-struct Texture2D {
-private:
-    glm::uvec2 tex_dims;
-    MTLPixelFormat format;
-
-public:
-    id<MTLTexture> texture = nullptr;
-
-    Texture2D() = default;
-
-    Texture2D(Context &context,
-              const uint32_t width,
-              const uint32_t height,
-              MTLPixelFormat format,
-              MTLTextureUsage usage);
-
-    ~Texture2D();
-
-    const glm::uvec2 &dims() const;
-
-    void get_bytes(void *out) const;
-
-    size_t pixel_size() const;
-};
-
 struct Heap {
     id<MTLHeap> heap = nullptr;
 
@@ -118,6 +93,40 @@ public:
     size_t size() const;
 };
 
+struct Texture2D {
+private:
+    glm::uvec2 tex_dims;
+    MTLPixelFormat format;
+
+public:
+    id<MTLTexture> texture = nullptr;
+
+    Texture2D() = default;
+
+    Texture2D(Context &context,
+              const uint32_t width,
+              const uint32_t height,
+              MTLPixelFormat format,
+              MTLTextureUsage usage);
+
+    // Allocate the texture from the passed heap
+    Texture2D(Heap &heap,
+              const uint32_t width,
+              const uint32_t height,
+              MTLPixelFormat format,
+              MTLTextureUsage usage);
+
+    ~Texture2D();
+
+    const glm::uvec2 &dims() const;
+
+    void readback(void *out) const;
+
+    void upload(const void *data) const;
+
+    size_t pixel_size() const;
+};
+
 struct HeapBuilder {
 private:
     id<MTLDevice> device = nullptr;
@@ -130,6 +139,11 @@ public:
 
     HeapBuilder &add_buffer(const size_t size, const MTLResourceOptions options);
 
+    HeapBuilder &add_texture2d(const uint32_t width,
+                               const uint32_t height,
+                               MTLPixelFormat format,
+                               MTLTextureUsage usage);
+
     std::shared_ptr<Heap> build();
 };
 
@@ -141,6 +155,8 @@ struct ArgumentEncoder {
     ~ArgumentEncoder();
 
     void set_buffer(Buffer &buffer, const size_t offset, const size_t index);
+
+    void set_texture(Texture2D &texture, const size_t index);
 
     // TODO: Could do some template here and type validation
     void *constant_data_at(const size_t index);
@@ -157,6 +173,8 @@ public:
     ~ArgumentEncoderBuilder();
 
     ArgumentEncoderBuilder &add_buffer(const size_t index, const MTLArgumentAccess access);
+
+    ArgumentEncoderBuilder &add_texture(const size_t index, const MTLArgumentAccess access);
 
     ArgumentEncoderBuilder &add_constant(const size_t index, const MTLDataType type);
 

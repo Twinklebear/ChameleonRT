@@ -1,4 +1,5 @@
 #include "render_metal.h"
+#include <chrono>
 #include <iostream>
 #include <stdexcept>
 #include <Metal/Metal.h>
@@ -32,8 +33,11 @@ void RenderMetal::initialize(const int fb_width, const int fb_height)
     frame_id = 0;
     img.resize(fb_width * fb_height);
 
-    render_target = std::make_shared<metal::Texture2D>(
-        *context, fb_width, fb_height, MTLPixelFormatRGBA8Unorm, MTLTextureUsageShaderWrite);
+    render_target = std::make_shared<metal::Texture2D>(*context,
+                                                       fb_width,
+                                                       fb_height,
+                                                       MTLPixelFormatRGBA8Unorm_sRGB,
+                                                       MTLTextureUsageShaderWrite);
 }
 
 void RenderMetal::set_scene(const Scene &scene)
@@ -131,6 +135,25 @@ void RenderMetal::set_scene(const Scene &scene)
         material_colors[i] = scene.materials[i].base_color;
     }
     material_buffer->mark_modified();
+
+    textures = upload_textures(scene.textures);
+
+    // Pass the handles of the textures through an argument buffer
+    metal::ArgumentEncoderBuilder tex_args_encoder_builder(*context);
+    tex_args_encoder_builder.add_texture(0, MTLArgumentAccessReadOnly);
+    const size_t tex_args_size = tex_args_encoder_builder.encoded_length();
+
+    texture_arg_buffer = std::make_shared<metal::Buffer>(
+        *context, tex_args_size * textures.size(), MTLResourceStorageModeManaged);
+
+    size_t tex_args_offset = 0;
+    for (const auto &t : textures) {
+        auto encoder =
+            tex_args_encoder_builder.encoder_for_buffer(*texture_arg_buffer, tex_args_offset);
+        encoder->set_texture(*t, 0);
+        tex_args_offset += tex_args_size;
+    }
+    texture_arg_buffer->mark_modified();
 }
 
 RenderStats RenderMetal::render(const glm::vec3 &pos,
@@ -140,6 +163,7 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
                                 const bool camera_changed,
                                 const bool readback_framebuffer)
 {
+    using namespace std::chrono;
     RenderStats stats;
 
     if (camera_changed) {
@@ -148,6 +172,7 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
 
     ViewParams view_params = compute_view_parameters(pos, dir, up, fovy);
 
+    auto start = high_resolution_clock::now();
     id<MTLCommandBuffer> command_buffer = context->command_buffer();
     id<MTLComputeCommandEncoder> command_encoder = [command_buffer computeCommandEncoder];
 
@@ -171,6 +196,7 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
     [command_encoder setBuffer:bvh->instance_buffer->buffer offset:0 atIndex:4];
     [command_encoder setBuffer:instance_args_buffer->buffer offset:0 atIndex:5];
     [command_encoder setBuffer:material_buffer->buffer offset:0 atIndex:6];
+    [command_encoder setBuffer:texture_arg_buffer->buffer offset:0 atIndex:7];
 
     [command_encoder setComputePipelineState:pipeline->pipeline];
 
@@ -182,9 +208,11 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
     [command_encoder endEncoding];
     [command_buffer commit];
     [command_buffer waitUntilCompleted];
+    auto end = high_resolution_clock::now();
+    stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
 
     if (readback_framebuffer || !native_display) {
-        render_target->get_bytes(img.data());
+        render_target->readback(img.data());
     }
 
     [command_encoder release];
@@ -235,7 +263,6 @@ std::shared_ptr<metal::Heap> RenderMetal::allocate_heap(const Scene &scene)
                             MTLResourceStorageModePrivate)
                 .add_buffer(sizeof(glm::uvec3) * g.indices.size(),
                             MTLResourceStorageModePrivate);
-            /*
             if (!g.normals.empty()) {
                 heap_builder.add_buffer(sizeof(glm::vec3) * g.normals.size(),
                                         MTLResourceStorageModePrivate);
@@ -244,7 +271,6 @@ std::shared_ptr<metal::Heap> RenderMetal::allocate_heap(const Scene &scene)
                 heap_builder.add_buffer(sizeof(glm::vec2) * g.uvs.size(),
                                         MTLResourceStorageModePrivate);
             }
-            */
         }
     }
 
@@ -252,6 +278,13 @@ std::shared_ptr<metal::Heap> RenderMetal::allocate_heap(const Scene &scene)
     for (const auto &i : scene.instances) {
         heap_builder.add_buffer(sizeof(uint32_t) * i.material_ids.size(),
                                 MTLResourceStorageModePrivate);
+    }
+
+    // Reserve space for the texture data in the heap
+    for (const auto &t : scene.textures) {
+        MTLPixelFormat format =
+            t.color_space == LINEAR ? MTLPixelFormatRGBA8Unorm : MTLPixelFormatRGBA8Unorm_sRGB;
+        heap_builder.add_texture2d(t.width, t.height, format, MTLTextureUsageShaderRead);
     }
 
     return heap_builder.build();
@@ -312,14 +345,38 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
             std::memcpy(index_upload.data(), g.indices.data(), index_upload.size());
             index_upload.mark_modified();
 
-            // TODO: normals and uvs as well
-
             // Allocate the buffers from the heap and copy the data into them
             auto vertex_buffer = std::make_shared<metal::Buffer>(
                 *data_heap, vertex_upload.size(), MTLResourceStorageModePrivate);
 
             auto index_buffer = std::make_shared<metal::Buffer>(
                 *data_heap, index_upload.size(), MTLResourceStorageModePrivate);
+
+            std::shared_ptr<metal::Buffer> normal_upload = nullptr;
+            std::shared_ptr<metal::Buffer> normal_buffer = nullptr;
+            if (!g.normals.empty()) {
+                normal_upload =
+                    std::make_shared<metal::Buffer>(*context,
+                                                    sizeof(glm::vec3) * g.normals.size(),
+                                                    MTLResourceStorageModeManaged);
+                std::memcpy(normal_upload->data(), g.normals.data(), normal_upload->size());
+                normal_upload->mark_modified();
+
+                normal_buffer = std::make_shared<metal::Buffer>(
+                    *data_heap, normal_upload->size(), MTLResourceStorageModePrivate);
+            }
+
+            std::shared_ptr<metal::Buffer> uv_upload = nullptr;
+            std::shared_ptr<metal::Buffer> uv_buffer = nullptr;
+            if (!g.uvs.empty()) {
+                uv_upload = std::make_shared<metal::Buffer>(
+                    *context, sizeof(glm::vec2) * g.uvs.size(), MTLResourceStorageModeManaged);
+                std::memcpy(uv_upload->data(), g.uvs.data(), uv_upload->size());
+                uv_upload->mark_modified();
+
+                uv_buffer = std::make_shared<metal::Buffer>(
+                    *data_heap, uv_upload->size(), MTLResourceStorageModePrivate);
+            }
 
             id<MTLCommandBuffer> command_buffer = context->command_buffer();
             id<MTLBlitCommandEncoder> blit_encoder = command_buffer.blitCommandEncoder;
@@ -336,13 +393,29 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
                        destinationOffset:0
                                     size:index_buffer->size()];
 
+            if (normal_upload) {
+                [blit_encoder copyFromBuffer:normal_upload->buffer
+                                sourceOffset:0
+                                    toBuffer:normal_buffer->buffer
+                           destinationOffset:0
+                                        size:normal_buffer->size()];
+            }
+
+            if (uv_upload) {
+                [blit_encoder copyFromBuffer:uv_upload->buffer
+                                sourceOffset:0
+                                    toBuffer:uv_buffer->buffer
+                           destinationOffset:0
+                                        size:uv_buffer->size()];
+            }
+
             [blit_encoder endEncoding];
             [command_buffer commit];
             [command_buffer waitUntilCompleted];
 
             [command_buffer release];
 
-            geometries.emplace_back(vertex_buffer, index_buffer, nullptr, nullptr);
+            geometries.emplace_back(vertex_buffer, index_buffer, normal_buffer, uv_buffer);
         }
 
         // Build the BLAS
@@ -384,8 +457,11 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
     // Build the argument buffer for each geometry
     metal::ArgumentEncoderBuilder geom_args_encoder_builder(*context);
     geom_args_encoder_builder.add_buffer(0, MTLArgumentAccessReadOnly)
-        .add_buffer(1, MTLArgumentAccessReadOnly);
-    // TODO: also normals, uvs
+        .add_buffer(1, MTLArgumentAccessReadOnly)
+        .add_buffer(2, MTLArgumentAccessReadOnly)
+        .add_buffer(3, MTLArgumentAccessReadOnly)
+        .add_constant(4, MTLDataTypeUInt)
+        .add_constant(5, MTLDataTypeUInt);
 
     const uint32_t geom_args_size = geom_args_encoder_builder.encoded_length();
     geometry_args_buffer = std::make_shared<metal::Buffer>(
@@ -410,6 +486,22 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
             encoder->set_buffer(*g.vertex_buf, 0, 0);
             encoder->set_buffer(*g.index_buf, 0, 1);
 
+            uint32_t *num_normals = reinterpret_cast<uint32_t *>(encoder->constant_data_at(4));
+            if (g.normal_buf) {
+                encoder->set_buffer(*g.normal_buf, 0, 2);
+                *num_normals = g.normal_buf->size() / sizeof(glm::vec3);
+            } else {
+                *num_normals = 0;
+            }
+
+            uint32_t *num_uvs = reinterpret_cast<uint32_t *>(encoder->constant_data_at(5));
+            if (g.uv_buf) {
+                encoder->set_buffer(*g.uv_buf, 0, 3);
+                *num_uvs = g.uv_buf->size() / sizeof(glm::vec2);
+            } else {
+                *num_uvs = 0;
+            }
+
             geom_args_offset += geom_args_size;
         }
     }
@@ -418,3 +510,35 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
 
     return meshes;
 }
+
+std::vector<std::shared_ptr<metal::Texture2D>> RenderMetal::upload_textures(
+    const std::vector<Image> &textures)
+{
+    std::vector<std::shared_ptr<metal::Texture2D>> uploaded_textures;
+    for (const auto &t : textures) {
+        const MTLPixelFormat format =
+            t.color_space == LINEAR ? MTLPixelFormatRGBA8Unorm : MTLPixelFormatRGBA8Unorm_sRGB;
+
+        metal::Texture2D upload(
+            *context, t.width, t.height, format, MTLTextureUsageShaderRead);
+        upload.upload(t.img.data());
+
+        // Allocate a texture from the heap and copy into it
+        auto heap_tex = std::make_shared<metal::Texture2D>(
+            *data_heap, t.width, t.height, format, MTLTextureUsageShaderRead);
+
+        id<MTLCommandBuffer> command_buffer = context->command_buffer();
+        id<MTLBlitCommandEncoder> blit_encoder = command_buffer.blitCommandEncoder;
+
+        [blit_encoder copyFromTexture:upload.texture toTexture:heap_tex->texture];
+
+        [blit_encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+        [command_buffer release];
+
+        uploaded_textures.push_back(heap_tex);
+    }
+    return uploaded_textures;
+}
+

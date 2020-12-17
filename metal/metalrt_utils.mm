@@ -101,50 +101,14 @@ ComputePipeline::~ComputePipeline()
     [pipeline release];
 }
 
-Texture2D::Texture2D(Context &context,
-                     const uint32_t width,
-                     const uint32_t height,
-                     MTLPixelFormat format,
-                     MTLTextureUsage usage)
-    : tex_dims(width, height), format(format)
+Heap::~Heap()
 {
-    MTLTextureDescriptor *tex_desc =
-        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
-                                                           width:width
-                                                          height:height
-                                                       mipmapped:NO];
-    tex_desc.usage = usage;
-    texture = [context.device newTextureWithDescriptor:tex_desc];
-
-    [tex_desc release];
+    [heap release];
 }
 
-Texture2D::~Texture2D()
+size_t Heap::size() const
 {
-    [texture release];
-}
-
-const glm::uvec2 &Texture2D::dims() const
-{
-    return tex_dims;
-}
-
-void Texture2D::get_bytes(void *out) const
-{
-    [texture getBytes:out
-          bytesPerRow:tex_dims.x * pixel_size()
-           fromRegion:MTLRegionMake2D(0, 0, tex_dims.x, tex_dims.y)
-          mipmapLevel:0];
-}
-
-size_t Texture2D::pixel_size() const
-{
-    switch (format) {
-    case MTLPixelFormatRGBA8Unorm:
-        return 4;
-    default:
-        throw std::runtime_error("Unhandled pixel format");
-    }
+    return heap.size;
 }
 
 Buffer::Buffer(Context &context, const size_t size, const MTLResourceOptions options)
@@ -187,14 +151,82 @@ size_t Buffer::size() const
     return buffer.length;
 }
 
-Heap::~Heap()
+Texture2D::Texture2D(Context &context,
+                     const uint32_t width,
+                     const uint32_t height,
+                     MTLPixelFormat format,
+                     MTLTextureUsage usage)
+    : tex_dims(width, height), format(format)
 {
-    [heap release];
+    MTLTextureDescriptor *tex_desc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                           width:width
+                                                          height:height
+                                                       mipmapped:NO];
+    tex_desc.usage = usage;
+    texture = [context.device newTextureWithDescriptor:tex_desc];
+
+    [tex_desc release];
 }
 
-size_t Heap::size() const
+Texture2D::Texture2D(Heap &heap,
+                     const uint32_t width,
+                     const uint32_t height,
+                     MTLPixelFormat format,
+                     MTLTextureUsage usage)
+    : tex_dims(width, height), format(format)
 {
-    return heap.size;
+    MTLTextureDescriptor *tex_desc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                           width:width
+                                                          height:height
+                                                       mipmapped:NO];
+    tex_desc.usage = usage;
+    tex_desc.storageMode = MTLStorageModePrivate;
+    texture = [heap.heap newTextureWithDescriptor:tex_desc];
+
+    [tex_desc release];
+}
+
+Texture2D::~Texture2D()
+{
+    [texture release];
+}
+
+const glm::uvec2 &Texture2D::dims() const
+{
+    return tex_dims;
+}
+
+void Texture2D::readback(void *out) const
+{
+    [texture getBytes:out
+          bytesPerRow:tex_dims.x * pixel_size()
+           fromRegion:MTLRegionMake2D(0, 0, tex_dims.x, tex_dims.y)
+          mipmapLevel:0];
+}
+
+void Texture2D::upload(const void *data) const
+{
+    [texture replaceRegion:MTLRegionMake2D(0, 0, tex_dims.x, tex_dims.y)
+               mipmapLevel:0
+                 withBytes:data
+               bytesPerRow:pixel_size() * tex_dims.x];
+}
+
+size_t Texture2D::pixel_size() const
+{
+    switch (format) {
+    case MTLPixelFormatRGBA8Unorm:
+    case MTLPixelFormatRGBA8Unorm_sRGB:
+        return 4;
+    case MTLPixelFormatR16Unorm:
+        return 2;
+    case MTLPixelFormatRGBA32Float:
+        return 16;
+    default:
+        throw std::runtime_error("Unhandled pixel format");
+    }
 }
 
 HeapBuilder::HeapBuilder(Context &context) : device(context.device)
@@ -218,6 +250,28 @@ HeapBuilder &HeapBuilder::add_buffer(const size_t size, const MTLResourceOptions
     return *this;
 }
 
+HeapBuilder &HeapBuilder::add_texture2d(const uint32_t width,
+                                        const uint32_t height,
+                                        MTLPixelFormat format,
+                                        MTLTextureUsage usage)
+{
+    MTLTextureDescriptor *tex_desc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                           width:width
+                                                          height:height
+                                                       mipmapped:NO];
+    tex_desc.usage = usage;
+    tex_desc.storageMode = MTLStorageModePrivate;
+
+    MTLSizeAndAlign size_align = [device heapTextureSizeAndAlignWithDescriptor:tex_desc];
+
+    descriptor.size += align_to(size_align.size, size_align.align);
+
+    [tex_desc release];
+
+    return *this;
+}
+
 std::shared_ptr<Heap> HeapBuilder::build()
 {
     std::shared_ptr<Heap> heap = std::make_shared<Heap>();
@@ -233,6 +287,11 @@ ArgumentEncoder::~ArgumentEncoder()
 void ArgumentEncoder::set_buffer(Buffer &buffer, const size_t offset, const size_t index)
 {
     [encoder setBuffer:buffer.buffer offset:offset atIndex:index];
+}
+
+void ArgumentEncoder::set_texture(Texture2D &texture, const size_t index)
+{
+    [encoder setTexture:texture.texture atIndex:index];
 }
 
 void *ArgumentEncoder::constant_data_at(const size_t index)
@@ -254,6 +313,19 @@ ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_buffer(const size_t index,
     buf_desc.index = index;
     buf_desc.access = access;
     buf_desc.dataType = MTLDataTypePointer;
+    [arguments addObject:buf_desc];
+
+    [buf_desc release];
+    return *this;
+}
+
+ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_texture(const size_t index,
+                                                            const MTLArgumentAccess access)
+{
+    MTLArgumentDescriptor *buf_desc = [MTLArgumentDescriptor argumentDescriptor];
+    buf_desc.index = index;
+    buf_desc.access = access;
+    buf_desc.dataType = MTLDataTypeTexture;
     [arguments addObject:buf_desc];
 
     [buf_desc release];

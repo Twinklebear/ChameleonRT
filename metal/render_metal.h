@@ -35,6 +35,8 @@ struct RenderMetal : RenderBackend {
     std::shared_ptr<metal::Buffer> instance_args_buffer;
 
     std::shared_ptr<metal::Buffer> material_buffer;
+    std::vector<std::shared_ptr<metal::Texture2D>> textures;
+    std::shared_ptr<metal::Buffer> texture_arg_buffer;
 
     uint32_t frame_id = 0;
     bool native_display = false;
@@ -64,5 +66,8 @@ private:
     std::shared_ptr<metal::Heap> allocate_heap(const Scene &scene);
 
     std::vector<std::shared_ptr<metal::BottomLevelBVH>> build_meshes(const Scene &scene);
+
+    std::vector<std::shared_ptr<metal::Texture2D>> upload_textures(
+        const std::vector<Image> &textures);
 };
 
