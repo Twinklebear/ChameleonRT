@@ -185,6 +185,8 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
     // Also mark all BLAS's used
     // TODO: Seems like we can't do a similar heap thing for the BLAS's to mark
     // them all used at once?
+    // It does seem like this isn't the main cause of the perf impact I see on
+    // San Miguel with many BLAS's vs. not
     for (auto &mesh : bvh->meshes) {
         [command_encoder useResource:mesh->bvh usage:MTLResourceUsageRead];
     }
