@@ -1,6 +1,6 @@
 # ChameleonRT
 
-An example path tracer which runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan/OSPRay).
+An example path tracer which runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan/Metal/OSPRay).
 Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files,
 [tinygltf](https://github.com/syoyo/tinygltf) to load glTF files and, optionally,
 Ingo Wald's [pbrt-parser](https://github.com/ingowald/pbrt-parser) to load PBRTv3 files.
@@ -11,7 +11,7 @@ Sponza and Rungholt models shown below are from Morgan McGuire's [Computer Graph
 
 ## Ray Tracing Backends  
 
-The currently implemented backends are: Embree, DXR, OptiX, and Vulkan.
+The currently implemented backends are: Embree, DXR, OptiX, Vulkan, and Metal.
 When running the program, you can pick which backend you want from
 those you compiled with on the command line. Running the program with no
 arguments will print help information.
@@ -29,7 +29,7 @@ in the GLM cmake/glm directory by passing `-Dglm_DIR=<path>`.
 This CMake file was added as of [Mar. 5, 2020](https://github.com/g-truc/glm/commit/6b458cb173a0924644f429e544577aae29bd571b), and should be available in GLM 0.9.9.8.
 To track and report statistics about the number of rays traced per-second
 run CMake with `-DREPORT_RAY_STATS=ON`. Tracking these statistics can
-impact performance slightly (especially in the Vulkan backend).
+impact performance slightly.
 
 ChameleonRT only supports per-OBJ group/mesh materials, OBJ files using per-face materials
 can be reexported from Blender with the "Material Groups" option enabled.
@@ -98,6 +98,18 @@ You can then pass `-vulkan` to use the Vulkan backend.
 If CMake doesn't find your install of Vulkan you can tell it where it's
 installed with `-DVULKAN_SDK`. This path should be to the specific version
 of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.2.162.0/`
+
+### Metal
+
+Dependencies: [Metal](https://developer.apple.com/metal/) on a macOS device that supports ray tracing.
+
+To build the Metal backend run CMake with:
+
+```
+cmake .. -DENABLE_METAL=ON
+```
+
+You can then pass `-metal` to use the Metal backend.
 
 ### OSPRay
 
