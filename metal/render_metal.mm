@@ -13,12 +13,9 @@
 RenderMetal::RenderMetal(std::shared_ptr<metal::Context> ctx) : context(ctx)
 {
     @autoreleasepool {
-        std::cout << "Selected Metal device " << context->device_name() << "\n";
-
         shader_library = std::make_shared<metal::ShaderLibrary>(
             *context, render_metal_metallib, sizeof(render_metal_metallib));
 
-        // Setup the compute pipeline
         pipeline = std::make_shared<metal::ComputePipeline>(
             *context, shader_library->new_function(@"raygen"));
 
@@ -66,8 +63,7 @@ void RenderMetal::set_scene(const Scene &scene)
 {
     @autoreleasepool {
         // Create a heap to hold all the data we'll need to upload
-        data_heap = allocate_heap(scene);
-        std::cout << "Data heap size: " << pretty_print_count(data_heap->size()) << "b\n";
+        allocate_heap(scene);
 
         // Upload the geometry for each mesh and build its BLAS
         std::vector<std::shared_ptr<metal::BottomLevelBVH>> meshes = build_meshes(scene);
@@ -168,7 +164,7 @@ void RenderMetal::set_scene(const Scene &scene)
         std::memcpy(light_buffer->data(), scene.lights.data(), light_buffer->size());
         light_buffer->mark_modified();
 
-        textures = upload_textures(scene.textures);
+        upload_textures(scene.textures);
 
         // Pass the handles of the textures through an argument buffer
         {
@@ -225,8 +221,6 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
         // Also mark all BLAS's used
         // TODO: Seems like we can't do a similar heap thing for the BLAS's to mark
         // them all used at once?
-        // It does seem like this isn't the main cause of the perf impact I see on
-        // San Miguel with many BLAS's vs. not
         for (auto &mesh : bvh->meshes) {
             [command_encoder useResource:mesh->bvh usage:MTLResourceUsageRead];
         }
@@ -298,7 +292,7 @@ ViewParams RenderMetal::compute_view_parameters(const glm::vec3 &pos,
     return view_params;
 }
 
-std::shared_ptr<metal::Heap> RenderMetal::allocate_heap(const Scene &scene)
+void RenderMetal::allocate_heap(const Scene &scene)
 {
     @autoreleasepool {
         metal::HeapBuilder heap_builder(*context);
@@ -338,7 +332,7 @@ std::shared_ptr<metal::Heap> RenderMetal::allocate_heap(const Scene &scene)
             heap_builder.add_texture2d(t.width, t.height, format, MTLTextureUsageShaderRead);
         }
 
-        return heap_builder.build();
+        data_heap = heap_builder.build();
     }
 }
 
@@ -543,12 +537,10 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
     }
 }
 
-std::vector<std::shared_ptr<metal::Texture2D>> RenderMetal::upload_textures(
-    const std::vector<Image> &textures)
+void RenderMetal::upload_textures(const std::vector<Image> &scene_textures)
 {
     @autoreleasepool {
-        std::vector<std::shared_ptr<metal::Texture2D>> uploaded_textures;
-        for (const auto &t : textures) {
+        for (const auto &t : scene_textures) {
             const MTLPixelFormat format = t.color_space == LINEAR
                                               ? MTLPixelFormatRGBA8Unorm
                                               : MTLPixelFormatRGBA8Unorm_sRGB;
@@ -570,9 +562,8 @@ std::vector<std::shared_ptr<metal::Texture2D>> RenderMetal::upload_textures(
             [command_buffer commit];
             [command_buffer waitUntilCompleted];
 
-            uploaded_textures.push_back(heap_tex);
+            textures.push_back(heap_tex);
         }
-        return uploaded_textures;
     }
 }
 

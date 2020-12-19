@@ -15,7 +15,6 @@ Context::Context()
     // Find a Metal device that supports ray tracing
     NSArray<id<MTLDevice>> *devices = MTLCopyAllDevices();
     for (id<MTLDevice> d in devices) {
-        std::cout << "device name: " << [d.name UTF8String] << "\n";
         if (d.supportsRaytracing && (!device || !d.isLowPower)) {
             device = d;
         }
@@ -322,11 +321,6 @@ void BVH::build(Context &context,
 {
     MTLAccelerationStructureSizes accel_sizes =
         [context.device accelerationStructureSizesWithDescriptor:desc];
-    /*
-    std::cout << "Acceleration structure sizes:\n"
-              << "\tstructure size: " << accel_sizes.accelerationStructureSize << "b\n"
-              << "\tscratch size: " << accel_sizes.buildScratchBufferSize << "b\n";
-              */
 
     bvh = [context.device
         newAccelerationStructureWithSize:accel_sizes.accelerationStructureSize];
@@ -353,7 +347,6 @@ void BVH::enqueue_compaction(Context &context,
                              id<MTLAccelerationStructureCommandEncoder> command_encoder)
 {
     const uint32_t compact_size = *reinterpret_cast<uint32_t *>(compacted_size_buffer->data());
-    // std::cout << "Compacted size: " << compact_size << "\n";
     id<MTLAccelerationStructure> compact_as =
         [context.device newAccelerationStructureWithSize:compact_size];
     [command_encoder copyAndCompactAccelerationStructure:bvh

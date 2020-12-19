@@ -70,11 +70,10 @@ private:
                                        const glm::vec3 &up,
                                        const float fovy);
 
-    std::shared_ptr<metal::Heap> allocate_heap(const Scene &scene);
+    void allocate_heap(const Scene &scene);
 
     std::vector<std::shared_ptr<metal::BottomLevelBVH>> build_meshes(const Scene &scene);
 
-    std::vector<std::shared_ptr<metal::Texture2D>> upload_textures(
-        const std::vector<Image> &textures);
+    void upload_textures(const std::vector<Image> &textures);
 };
 
