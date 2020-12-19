@@ -16,13 +16,10 @@ struct Geometry {
     uint32_t num_uvs [[id(5)]];
 };
 
-struct Mesh {
-    device uint32_t *geometries [[id(0)]];
-};
-
 struct Instance {
     float4x4 inverse_transform [[id(0)]];
-    device uint32_t *material_ids [[id(1)]];
+    device uint32_t *geometries [[id(1)]];
+    device uint32_t *material_ids [[id(2)]];
 };
 
 struct DisneyMaterial {
@@ -40,11 +37,10 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
                    constant ViewParams &view_params [[buffer(0)]],
                    instance_acceleration_structure scene [[buffer(1)]],
                    device Geometry *geometries [[buffer(2)]],
-                   device Mesh *meshes [[buffer(3)]],
-                   device MTLAccelerationStructureInstanceDescriptor *instances [[buffer(4)]],
-                   device Instance *instance_data_buf [[buffer(5)]],
-                   device packed_float3 *material_colors [[buffer(6)]],
-                   device Texture *textures [[buffer(7)]])
+                   device MTLAccelerationStructureInstanceDescriptor *instances [[buffer(3)]],
+                   device Instance *instance_data_buf [[buffer(4)]],
+                   device packed_float3 *material_colors [[buffer(5)]],
+                   device Texture *textures [[buffer(6)]])
 {
     const float2 pixel = float2(tid);
     const float2 d = (pixel + 0.5f) / float2(view_params.fb_dims);
@@ -67,13 +63,13 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
     hit_result = traversal.intersect(ray, scene);
 
     if (hit_result.type != intersection_type::none) {
-        // Find the instance we hit, the mesh associated with it and the geometry
-        // within that mesh to find the intersected triangle
+        // Find the instance we hit and look up the geometry we hit within
+        // that instance to find the triangle
         device const MTLAccelerationStructureInstanceDescriptor &instance =
             instances[hit_result.instance_id];
         device const Instance &instance_data = instance_data_buf[hit_result.instance_id];
-        device const Mesh &mesh = meshes[instance.accelerationStructureIndex];
-        device const Geometry &geom = geometries[mesh.geometries[hit_result.geometry_id]];
+        device const Geometry &geom =
+            geometries[instance_data.geometries[hit_result.geometry_id]];
 
         const uint3 idx = geom.indices[hit_result.primitive_id];
         const float3 va = geom.vertices[idx.x];

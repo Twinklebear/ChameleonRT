@@ -28,7 +28,6 @@ struct RenderMetal : RenderBackend {
 
     std::shared_ptr<metal::Heap> data_heap;
     std::shared_ptr<metal::Buffer> geometry_args_buffer;
-    std::shared_ptr<metal::Buffer> mesh_args_buffer;
 
     std::shared_ptr<metal::TopLevelBVH> bvh;
     std::vector<std::shared_ptr<metal::Buffer>> instance_material_ids;

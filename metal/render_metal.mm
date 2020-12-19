@@ -104,11 +104,12 @@ void RenderMetal::set_scene(const Scene &scene)
     }
 
     // Build the argument buffer for the instance. Each instance is passed its
-    // inverse object transform (not provided by Metal), and a buffer of material IDs
-    // for each of its mesh's geometries
+    // inverse object transform (not provided by Metal), the list of geometry IDs
+    // that make up its mesh, and a list of material IDs for each geometry
     metal::ArgumentEncoderBuilder instance_args_encoder_builder(*context);
     instance_args_encoder_builder.add_constant(0, MTLDataTypeFloat4x4)
-        .add_buffer(1, MTLArgumentAccessReadOnly);
+        .add_buffer(1, MTLArgumentAccessReadOnly)
+        .add_buffer(2, MTLArgumentAccessReadOnly);
     const size_t instance_args_size = instance_args_encoder_builder.encoded_length();
 
     instance_args_buffer = std::make_shared<metal::Buffer>(
@@ -121,7 +122,9 @@ void RenderMetal::set_scene(const Scene &scene)
         glm::mat4 *inverse_tfm = reinterpret_cast<glm::mat4 *>(encoder->constant_data_at(0));
         *inverse_tfm = glm::inverse(scene.instances[i].transform);
 
-        encoder->set_buffer(*instance_material_ids[i], 0, 1);
+        const auto &mesh = bvh->meshes[scene.instances[i].mesh_id];
+        encoder->set_buffer(*mesh->geometry_id_buffer, 0, 1);
+        encoder->set_buffer(*instance_material_ids[i], 0, 2);
 
         instance_args_offset += instance_args_size;
     }
@@ -192,13 +195,11 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
     }
 
     [command_encoder setBuffer:geometry_args_buffer->buffer offset:0 atIndex:2];
-    [command_encoder setBuffer:mesh_args_buffer->buffer offset:0 atIndex:3];
+    [command_encoder setBuffer:bvh->instance_buffer->buffer offset:0 atIndex:3];
+    [command_encoder setBuffer:instance_args_buffer->buffer offset:0 atIndex:4];
+    [command_encoder setBuffer:material_buffer->buffer offset:0 atIndex:5];
+    [command_encoder setBuffer:texture_arg_buffer->buffer offset:0 atIndex:6];
     [command_encoder useHeap:data_heap->heap];
-
-    [command_encoder setBuffer:bvh->instance_buffer->buffer offset:0 atIndex:4];
-    [command_encoder setBuffer:instance_args_buffer->buffer offset:0 atIndex:5];
-    [command_encoder setBuffer:material_buffer->buffer offset:0 atIndex:6];
-    [command_encoder setBuffer:texture_arg_buffer->buffer offset:0 atIndex:7];
 
     [command_encoder setComputePipelineState:pipeline->pipeline];
 
@@ -448,14 +449,6 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
         meshes.push_back(mesh);
     }
 
-    // Build the argument buffer for the mesh geometry IDs
-    metal::ArgumentEncoderBuilder mesh_args_encoder_builder(*context);
-    mesh_args_encoder_builder.add_buffer(0, MTLArgumentAccessReadOnly);
-
-    const uint32_t mesh_args_size = mesh_args_encoder_builder.encoded_length();
-    mesh_args_buffer = std::make_shared<metal::Buffer>(
-        *context, mesh_args_size * meshes.size(), MTLResourceStorageModeManaged);
-
     // Build the argument buffer for each geometry
     metal::ArgumentEncoderBuilder geom_args_encoder_builder(*context);
     geom_args_encoder_builder.add_buffer(0, MTLArgumentAccessReadOnly)
@@ -470,17 +463,8 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
         *context, geom_args_size * total_geometries, MTLResourceStorageModeManaged);
 
     // Write the geometry arguments to the buffer
-    size_t mesh_args_offset = 0;
     size_t geom_args_offset = 0;
     for (const auto &m : meshes) {
-        // Write the mesh geometry ID buffer
-        {
-            auto encoder = mesh_args_encoder_builder.encoder_for_buffer(*mesh_args_buffer,
-                                                                        mesh_args_offset);
-            encoder->set_buffer(*m->geometry_id_buffer, 0, 0);
-            mesh_args_offset += mesh_args_size;
-        }
-
         // Write the geometry data arguments
         for (const auto &g : m->geometries) {
             auto encoder = geom_args_encoder_builder.encoder_for_buffer(*geometry_args_buffer,
@@ -507,7 +491,6 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
             geom_args_offset += geom_args_size;
         }
     }
-    mesh_args_buffer->mark_modified();
     geometry_args_buffer->mark_modified();
 
     return meshes;
