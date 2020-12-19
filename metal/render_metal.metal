@@ -3,6 +3,7 @@
 #include <simd/simd.h>
 #include "shader_types.h"
 #include "util/texture_channel_mask.h"
+#include "disney_bsdf.metal"
 
 using namespace metal;
 using namespace raytracing;
@@ -22,10 +23,6 @@ struct Instance {
     device uint32_t *material_ids [[id(2)]];
 };
 
-struct DisneyMaterial {
-    packed_float3 base_color [[id(0)]];
-};
-
 // Not sure if there's a cleaner way to pass a buffer of texture handles,
 // Metal didn't like device texture2d<float> *textures as a buffer parameter
 struct Texture {
@@ -39,7 +36,7 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
                    device Geometry *geometries [[buffer(2)]],
                    device MTLAccelerationStructureInstanceDescriptor *instances [[buffer(3)]],
                    device Instance *instance_data_buf [[buffer(4)]],
-                   device packed_float3 *material_colors [[buffer(5)]],
+                   device DisneyMaterial *materials [[buffer(5)]],
                    device Texture *textures [[buffer(6)]])
 {
     const float2 pixel = float2(tid);
@@ -96,7 +93,7 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
         }
 
         const uint32_t material_id = instance_data.material_ids[hit_result.geometry_id];
-        float3 color = material_colors[material_id];
+        float3 color = materials[material_id].base_color;
         const uint32_t mask = as_type<uint32_t>(color.x);
         if (IS_TEXTURED_PARAM(mask)) {
             const uint32_t tex_id = GET_TEXTURE_ID(mask);

@@ -106,38 +106,97 @@ void RenderMetal::set_scene(const Scene &scene)
     // Build the argument buffer for the instance. Each instance is passed its
     // inverse object transform (not provided by Metal), the list of geometry IDs
     // that make up its mesh, and a list of material IDs for each geometry
-    metal::ArgumentEncoderBuilder instance_args_encoder_builder(*context);
-    instance_args_encoder_builder.add_constant(0, MTLDataTypeFloat4x4)
-        .add_buffer(1, MTLArgumentAccessReadOnly)
-        .add_buffer(2, MTLArgumentAccessReadOnly);
-    const size_t instance_args_size = instance_args_encoder_builder.encoded_length();
+    {
+        metal::ArgumentEncoderBuilder args_builder(*context);
+        args_builder.add_constant(0, MTLDataTypeFloat4x4)
+            .add_buffer(1, MTLArgumentAccessReadOnly)
+            .add_buffer(2, MTLArgumentAccessReadOnly);
 
-    instance_args_buffer = std::make_shared<metal::Buffer>(
-        *context, scene.instances.size() * instance_args_size, MTLResourceStorageModeManaged);
+        const size_t instance_args_size = args_builder.encoded_length();
 
-    size_t instance_args_offset = 0;
-    for (size_t i = 0; i < scene.instances.size(); ++i) {
-        auto encoder = instance_args_encoder_builder.encoder_for_buffer(*instance_args_buffer,
-                                                                        instance_args_offset);
-        glm::mat4 *inverse_tfm = reinterpret_cast<glm::mat4 *>(encoder->constant_data_at(0));
-        *inverse_tfm = glm::inverse(scene.instances[i].transform);
+        instance_args_buffer =
+            std::make_shared<metal::Buffer>(*context,
+                                            scene.instances.size() * instance_args_size,
+                                            MTLResourceStorageModeManaged);
 
-        const auto &mesh = bvh->meshes[scene.instances[i].mesh_id];
-        encoder->set_buffer(*mesh->geometry_id_buffer, 0, 1);
-        encoder->set_buffer(*instance_material_ids[i], 0, 2);
+        size_t offset = 0;
+        for (size_t i = 0; i < scene.instances.size(); ++i) {
+            auto encoder = args_builder.encoder_for_buffer(*instance_args_buffer, offset);
+            glm::mat4 *inverse_tfm =
+                reinterpret_cast<glm::mat4 *>(encoder->constant_data_at(0));
+            *inverse_tfm = glm::inverse(scene.instances[i].transform);
 
-        instance_args_offset += instance_args_size;
+            const auto &mesh = bvh->meshes[scene.instances[i].mesh_id];
+            encoder->set_buffer(*mesh->geometry_id_buffer, 0, 1);
+            encoder->set_buffer(*instance_material_ids[i], 0, 2);
+
+            offset += instance_args_size;
+        }
+        instance_args_buffer->mark_modified();
     }
-    instance_args_buffer->mark_modified();
 
     // Upload the material data
-    material_buffer = std::make_shared<metal::Buffer>(
-        *context, sizeof(glm::vec3) * scene.materials.size(), MTLResourceStorageModeManaged);
-    glm::vec3 *material_colors = reinterpret_cast<glm::vec3 *>(material_buffer->data());
-    for (size_t i = 0; i < scene.materials.size(); ++i) {
-        material_colors[i] = scene.materials[i].base_color;
+    {
+        metal::ArgumentEncoderBuilder args_builder(*context);
+        args_builder.add_constant(0, MTLDataTypeFloat3);
+        for (int i = 1; i <= 11; ++i) {
+            args_builder.add_constant(i, MTLDataTypeFloat);
+        }
+
+        const size_t material_args_size = args_builder.encoded_length();
+        std::cout << "Material arg size: " << material_args_size << "\n";
+
+        material_buffer =
+            std::make_shared<metal::Buffer>(*context,
+                                            material_args_size * scene.materials.size(),
+                                            MTLResourceStorageModeManaged);
+        // I think the layout should match to be able to memcpy here, but not sure if that's
+        // reliable in general
+        size_t offset = 0;
+        for (const auto &m : scene.materials) {
+            auto encoder = args_builder.encoder_for_buffer(*material_buffer, offset);
+            glm::vec3 *base_color =
+                reinterpret_cast<glm::vec3 *>(encoder->constant_data_at(0));
+            *base_color = m.base_color;
+
+            float *metallic = reinterpret_cast<float *>(encoder->constant_data_at(1));
+            *metallic = m.metallic;
+
+            float *specular = reinterpret_cast<float *>(encoder->constant_data_at(2));
+            *specular = m.specular;
+
+            float *roughness = reinterpret_cast<float *>(encoder->constant_data_at(3));
+            *roughness = m.roughness;
+
+            float *specular_tint = reinterpret_cast<float *>(encoder->constant_data_at(4));
+            *specular_tint = m.specular_tint;
+
+            float *anisotropy = reinterpret_cast<float *>(encoder->constant_data_at(5));
+            *anisotropy = m.anisotropy;
+
+            float *sheen = reinterpret_cast<float *>(encoder->constant_data_at(6));
+            *sheen = m.sheen;
+
+            float *sheen_tint = reinterpret_cast<float *>(encoder->constant_data_at(7));
+            *sheen_tint = m.sheen_tint;
+
+            float *clearcoat = reinterpret_cast<float *>(encoder->constant_data_at(8));
+            *clearcoat = m.clearcoat;
+
+            float *clearcoat_gloss = reinterpret_cast<float *>(encoder->constant_data_at(9));
+            *clearcoat_gloss = m.clearcoat_gloss;
+
+            float *ior = reinterpret_cast<float *>(encoder->constant_data_at(10));
+            *ior = m.ior;
+
+            float *specular_transmission =
+                reinterpret_cast<float *>(encoder->constant_data_at(11));
+            *specular_transmission = m.specular_transmission;
+
+            offset += material_args_size;
+        }
+        material_buffer->mark_modified();
     }
-    material_buffer->mark_modified();
 
     textures = upload_textures(scene.textures);
 
