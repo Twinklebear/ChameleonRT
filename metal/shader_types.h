@@ -9,5 +9,6 @@ struct ViewParams {
     simd::float4 cam_dir_top_left;
     simd::uint2 fb_dims;
     uint32_t frame_id;
+    uint32_t num_lights;
 };
 

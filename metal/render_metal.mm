@@ -38,6 +38,9 @@ void RenderMetal::initialize(const int fb_width, const int fb_height)
                                                        fb_height,
                                                        MTLPixelFormatRGBA8Unorm_sRGB,
                                                        MTLTextureUsageShaderWrite);
+
+    accum_buffer = std::make_shared<metal::Texture2D>(
+        *context, fb_width, fb_height, MTLPixelFormatRGBA32Float, MTLTextureUsageShaderWrite);
 }
 
 void RenderMetal::set_scene(const Scene &scene)
@@ -192,6 +195,7 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
     id<MTLComputeCommandEncoder> command_encoder = [command_buffer computeCommandEncoder];
 
     [command_encoder setTexture:render_target->texture atIndex:0];
+    [command_encoder setTexture:accum_buffer->texture atIndex:1];
 
     // Embed the view params in the command buffer
     [command_encoder setBytes:&view_params length:sizeof(ViewParams) atIndex:0];
@@ -260,6 +264,7 @@ ViewParams RenderMetal::compute_view_parameters(const glm::vec3 &pos,
         simd::float4{dir_top_left.x, dir_top_left.y, dir_top_left.z, 0.f};
     view_params.fb_dims = simd::uint2{fb_dims.x, fb_dims.y};
     view_params.frame_id = frame_id;
+    view_params.num_lights = light_buffer->size() / sizeof(QuadLight);
 
     return view_params;
 }

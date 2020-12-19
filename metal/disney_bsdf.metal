@@ -21,7 +21,7 @@ using namespace metal;
  */
 
 struct DisneyMaterial {
-    packed_float3 base_color;
+    float3 base_color;
     float metallic;
 
     float specular;
@@ -36,12 +36,11 @@ struct DisneyMaterial {
 
     float ior;
     float specular_transmission;
-    float2 pad1;
 };
 
-bool same_hemisphere(device const float3 &w_o,
-                     device const float3 &w_i,
-                     device const float3 &n)
+bool same_hemisphere(thread const float3 &w_o,
+                     thread const float3 &w_i,
+                     thread const float3 &n)
 {
     return dot(w_o, n) * dot(w_i, n) > 0.f;
 }
@@ -145,21 +144,21 @@ float smith_shadowing_ggx_aniso(float n_dot_o, float o_dot_x, float o_dot_y, flo
 
 // Sample a reflection direction the hemisphere oriented along n and spanned by v_x, v_y using
 // the random samples in s
-float3 sample_lambertian_dir(device const float3 &n,
-                             device const float3 &v_x,
-                             device const float3 &v_y,
-                             const float2 s)
+float3 sample_lambertian_dir(thread const float3 &n,
+                             thread const float3 &v_x,
+                             thread const float3 &v_y,
+                             thread const float2 &s)
 {
     const float3 hemi_dir = normalize(cos_sample_hemisphere(s));
     return hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n;
 }
 
 // Sample the microfacet normal vectors for the various microfacet distributions
-float3 sample_gtr_1_h(device const float3 &n,
-                      device const float3 &v_x,
-                      device const float3 &v_y,
+float3 sample_gtr_1_h(thread const float3 &n,
+                      thread const float3 &v_x,
+                      thread const float3 &v_y,
                       float alpha,
-                      const float2 s)
+                      thread const float2 &s)
 {
     float phi_h = 2.f * M_PI_F * s.x;
     float alpha_sqr = alpha * alpha;
@@ -170,11 +169,11 @@ float3 sample_gtr_1_h(device const float3 &n,
     return hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n;
 }
 
-float3 sample_gtr_2_h(device const float3 &n,
-                      device const float3 &v_x,
-                      device const float3 &v_y,
+float3 sample_gtr_2_h(thread const float3 &n,
+                      thread const float3 &v_x,
+                      thread const float3 &v_y,
                       float alpha,
-                      const float2 s)
+                      thread const float2 &s)
 {
     float phi_h = 2.f * M_PI_F * s.x;
     float cos_theta_h_sqr = (1.f - s.y) / (1.f + (alpha * alpha - 1.f) * s.y);
@@ -184,11 +183,11 @@ float3 sample_gtr_2_h(device const float3 &n,
     return hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n;
 }
 
-float3 sample_gtr_2_aniso_h(device const float3 &n,
-                            device const float3 &v_x,
-                            device const float3 &v_y,
+float3 sample_gtr_2_aniso_h(thread const float3 &n,
+                            thread const float3 &v_x,
+                            thread const float3 &v_y,
                             const float2 alpha,
-                            const float2 s)
+                            thread const float2 &s)
 {
     float x = 2.f * M_PI_F * s.x;
     float3 w_h =
@@ -196,7 +195,7 @@ float3 sample_gtr_2_aniso_h(device const float3 &n,
     return normalize(w_h);
 }
 
-float lambertian_pdf(device const float3 &w_i, device const float3 &n)
+float lambertian_pdf(thread const float3 &w_i, thread const float3 &n)
 {
     float d = dot(w_i, n);
     if (d > 0.f) {
@@ -205,9 +204,9 @@ float lambertian_pdf(device const float3 &w_i, device const float3 &n)
     return 0.f;
 }
 
-float gtr_1_pdf(device const float3 &w_o,
-                device const float3 &w_i,
-                device const float3 &n,
+float gtr_1_pdf(thread const float3 &w_o,
+                thread const float3 &w_i,
+                thread const float3 &n,
                 float alpha)
 {
     if (!same_hemisphere(w_o, w_i, n)) {
@@ -219,9 +218,9 @@ float gtr_1_pdf(device const float3 &w_o,
     return d * cos_theta_h / (4.f * dot(w_o, w_h));
 }
 
-float gtr_2_pdf(device const float3 &w_o,
-                device const float3 &w_i,
-                device const float3 &n,
+float gtr_2_pdf(thread const float3 &w_o,
+                thread const float3 &w_i,
+                thread const float3 &n,
                 float alpha)
 {
     if (!same_hemisphere(w_o, w_i, n)) {
@@ -233,9 +232,9 @@ float gtr_2_pdf(device const float3 &w_o,
     return d * cos_theta_h / (4.f * dot(w_o, w_h));
 }
 
-float gtr_2_transmission_pdf(device const float3 &w_o,
-                             device const float3 &w_i,
-                             device const float3 &n,
+float gtr_2_transmission_pdf(thread const float3 &w_o,
+                             thread const float3 &w_i,
+                             thread const float3 &n,
                              float alpha,
                              float ior)
 {
@@ -254,11 +253,11 @@ float gtr_2_transmission_pdf(device const float3 &w_o,
     return d * cos_theta_h * abs(dwh_dwi);
 }
 
-float gtr_2_aniso_pdf(device const float3 &w_o,
-                      device const float3 &w_i,
-                      device const float3 &n,
-                      device const float3 &v_x,
-                      device const float3 &v_y,
+float gtr_2_aniso_pdf(thread const float3 &w_o,
+                      thread const float3 &w_i,
+                      thread const float3 &n,
+                      thread const float3 &v_x,
+                      thread const float3 &v_y,
                       const float2 alpha)
 {
     if (!same_hemisphere(w_o, w_i, n)) {
@@ -270,10 +269,10 @@ float gtr_2_aniso_pdf(device const float3 &w_o,
     return d * cos_theta_h / (4.f * dot(w_o, w_h));
 }
 
-float3 disney_diffuse(device const DisneyMaterial &mat,
-                      device const float3 &n,
-                      device const float3 &w_o,
-                      device const float3 &w_i)
+float3 disney_diffuse(thread const DisneyMaterial &mat,
+                      thread const float3 &n,
+                      thread const float3 &w_o,
+                      thread const float3 &w_i)
 {
     float3 w_h = normalize(w_i + w_o);
     float n_dot_o = abs(dot(w_o, n));
@@ -285,10 +284,10 @@ float3 disney_diffuse(device const DisneyMaterial &mat,
     return mat.base_color * M_1_PI_F * mix(1.f, fd90, fi) * mix(1.f, fd90, fo);
 }
 
-float3 disney_microfacet_isotropic(device const DisneyMaterial &mat,
-                                   device const float3 &n,
-                                   device const float3 &w_o,
-                                   device const float3 &w_i)
+float3 disney_microfacet_isotropic(thread const DisneyMaterial &mat,
+                                   thread const float3 &n,
+                                   thread const float3 &w_o,
+                                   thread const float3 &w_i)
 {
     float3 w_h = normalize(w_i + w_o);
     float lum = luminance(mat.base_color);
@@ -305,10 +304,10 @@ float3 disney_microfacet_isotropic(device const DisneyMaterial &mat,
     return d * f * g;
 }
 
-float3 disney_microfacet_transmission_isotropic(device const DisneyMaterial &mat,
-                                                device const float3 &n,
-                                                device const float3 &w_o,
-                                                device const float3 &w_i)
+float3 disney_microfacet_transmission_isotropic(thread const DisneyMaterial &mat,
+                                                thread const float3 &n,
+                                                thread const float3 &w_o,
+                                                thread const float3 &w_i)
 {
     float o_dot_n = dot(w_o, n);
     float i_dot_n = dot(w_i, n);
@@ -336,12 +335,12 @@ float3 disney_microfacet_transmission_isotropic(device const DisneyMaterial &mat
     return mat.base_color * c * (1.f - f) * g * d;
 }
 
-float3 disney_microfacet_anisotropic(device const DisneyMaterial &mat,
-                                     device const float3 &n,
-                                     device const float3 &w_o,
-                                     device const float3 &w_i,
-                                     device const float3 &v_x,
-                                     device const float3 &v_y)
+float3 disney_microfacet_anisotropic(thread const DisneyMaterial &mat,
+                                     thread const float3 &n,
+                                     thread const float3 &w_o,
+                                     thread const float3 &w_i,
+                                     thread const float3 &v_x,
+                                     thread const float3 &v_y)
 {
     float3 w_h = normalize(w_i + w_o);
     float lum = luminance(mat.base_color);
@@ -361,10 +360,10 @@ float3 disney_microfacet_anisotropic(device const DisneyMaterial &mat,
     return d * f * g;
 }
 
-float disney_clear_coat(device const DisneyMaterial &mat,
-                        device const float3 &n,
-                        device const float3 &w_o,
-                        device const float3 &w_i)
+float disney_clear_coat(thread const DisneyMaterial &mat,
+                        thread const float3 &n,
+                        thread const float3 &w_o,
+                        thread const float3 &w_i)
 {
     float3 w_h = normalize(w_i + w_o);
     float alpha = mix(0.1f, 0.001f, mat.clearcoat_gloss);
@@ -375,10 +374,10 @@ float disney_clear_coat(device const DisneyMaterial &mat,
     return 0.25 * mat.clearcoat * d * f * g;
 }
 
-float3 disney_sheen(device const DisneyMaterial &mat,
-                    device const float3 &n,
-                    device const float3 &w_o,
-                    device const float3 &w_i)
+float3 disney_sheen(thread const DisneyMaterial &mat,
+                    thread const float3 &n,
+                    thread const float3 &w_o,
+                    thread const float3 &w_i)
 {
     float3 w_h = normalize(w_i + w_o);
     float lum = luminance(mat.base_color);
@@ -388,12 +387,12 @@ float3 disney_sheen(device const DisneyMaterial &mat,
     return f * mat.sheen * sheen_color;
 }
 
-float3 disney_brdf(device const DisneyMaterial &mat,
-                   device const float3 &n,
-                   device const float3 &w_o,
-                   device const float3 &w_i,
-                   device const float3 &v_x,
-                   device const float3 &v_y)
+float3 disney_brdf(thread const DisneyMaterial &mat,
+                   thread const float3 &n,
+                   thread const float3 &w_o,
+                   thread const float3 &w_i,
+                   thread const float3 &v_x,
+                   thread const float3 &v_y)
 {
     if (!same_hemisphere(w_o, w_i, n)) {
         if (mat.specular_transmission > 0.f) {
@@ -416,12 +415,12 @@ float3 disney_brdf(device const DisneyMaterial &mat,
            gloss + coat;
 }
 
-float disney_pdf(device const DisneyMaterial &mat,
-                 device const float3 &n,
-                 device const float3 &w_o,
-                 device const float3 &w_i,
-                 device const float3 &v_x,
-                 device const float3 &v_y)
+float disney_pdf(thread const DisneyMaterial &mat,
+                 thread const float3 &n,
+                 thread const float3 &w_o,
+                 thread const float3 &w_i,
+                 thread const float3 &v_x,
+                 thread const float3 &v_y)
 {
     float alpha = max(0.001, mat.roughness * mat.roughness);
     float aspect = sqrt(1.f - mat.anisotropy * 0.9f);
@@ -450,14 +449,14 @@ float disney_pdf(device const DisneyMaterial &mat,
 /* Sample a component of the Disney BRDF, returns the sampled BRDF color,
  * ray reflection direction (w_i) and sample PDF.
  */
-float3 sample_disney_brdf(device const DisneyMaterial &mat,
-                          device const float3 &n,
-                          device const float3 &w_o,
-                          device const float3 &v_x,
-                          device const float3 &v_y,
-                          device LCGRand &rng,
-                          device float3 &w_i,
-                          device float &pdf)
+float3 sample_disney_brdf(thread const DisneyMaterial &mat,
+                          thread const float3 &n,
+                          thread const float3 &w_o,
+                          thread const float3 &v_x,
+                          thread const float3 &v_y,
+                          thread LCGRand &rng,
+                          thread float3 &w_i,
+                          thread float &pdf)
 {
     int component = 0;
     if (mat.specular_transmission == 0.f) {

@@ -17,7 +17,7 @@ struct QuadLight {
     float4 v_y;
 };
 
-float3 sample_quad_light_position(device const QuadLight &light, float2 samples)
+float3 sample_quad_light_position(thread const QuadLight &light, float2 samples)
 {
     return samples.x * light.v_x.xyz * light.v_x.w + samples.y * light.v_y.xyz * light.v_y.w +
            light.position.xyz;
@@ -26,10 +26,10 @@ float3 sample_quad_light_position(device const QuadLight &light, float2 samples)
 /* Compute the PDF of sampling the sampled point p light with the ray specified by orig and
  * dir, assuming the light is not occluded
  */
-float quad_light_pdf(device const QuadLight &light,
-                     device const float3 &p,
-                     device const float3 &orig,
-                     device const float3 &dir)
+float quad_light_pdf(thread const QuadLight &light,
+                     thread const float3 &p,
+                     thread const float3 &orig,
+                     thread const float3 &dir)
 {
     float surface_area = light.v_x.w * light.v_y.w;
     float3 to_pt = p - dir;
@@ -41,11 +41,11 @@ float quad_light_pdf(device const QuadLight &light,
     return dist_sqr / (n_dot_w * surface_area);
 }
 
-bool quad_intersect(device const QuadLight &light,
-                    device const float3 &orig,
-                    device const float3 &dir,
-                    device float &t,
-                    device float3 &light_pos)
+bool quad_intersect(thread const QuadLight &light,
+                    thread const float3 &orig,
+                    thread const float3 &dir,
+                    thread float &t,
+                    thread float3 &light_pos)
 {
     float denom = dot(dir, light.normal.xyz);
     if (denom >= EPSILON) {

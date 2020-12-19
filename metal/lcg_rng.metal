@@ -40,7 +40,7 @@ uint32_t murmur_hash3_finalize(uint32_t hash)
     return hash;
 }
 
-uint32_t lcg_random(device LCGRand &rng)
+uint32_t lcg_random(thread LCGRand &rng)
 {
     const uint32_t m = 1664525;
     const uint32_t n = 1013904223;
@@ -48,7 +48,7 @@ uint32_t lcg_random(device LCGRand &rng)
     return rng.state;
 }
 
-float lcg_randomf(device LCGRand &rng)
+float lcg_randomf(thread LCGRand &rng)
 {
     return ldexp((float)lcg_random(rng), -32);
 }

@@ -17,8 +17,8 @@ float linear_to_srgb(float x)
     return 1.055f * pow(x, 1.f / 2.4f) - 0.055f;
 }
 
-template<typename V>
-float luminance(device const V &c)
+template <typename V>
+float luminance(thread const V &c)
 {
     return 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z;
 }
@@ -28,7 +28,7 @@ float pow2(float x)
     return x * x;
 }
 
-void ortho_basis(device float3 &v_x, device float3 &v_y, device const float3 &n)
+void ortho_basis(thread float3 &v_x, thread float3 &v_y, thread const float3 &n)
 {
     v_y = float3(0.f);
 
