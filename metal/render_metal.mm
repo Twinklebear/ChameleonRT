@@ -1,6 +1,7 @@
 #include "render_metal.h"
 #include <chrono>
 #include <iostream>
+#include <numeric>
 #include <stdexcept>
 #include <Metal/Metal.h>
 #include "metalrt_utils.h"
@@ -52,6 +53,12 @@ void RenderMetal::initialize(const int fb_width, const int fb_height)
                                                           fb_height,
                                                           MTLPixelFormatRGBA32Float,
                                                           MTLTextureUsageShaderWrite);
+
+#ifdef REPORT_RAY_STATS
+        ray_stats_readback.resize(fb_width * fb_height);
+        ray_stats = std::make_shared<metal::Texture2D>(
+            *context, fb_width, fb_height, MTLPixelFormatR16Uint, MTLTextureUsageShaderWrite);
+#endif
     }
 }
 
@@ -207,6 +214,9 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
 
         [command_encoder setTexture:render_target->texture atIndex:0];
         [command_encoder setTexture:accum_buffer->texture atIndex:1];
+#ifdef REPORT_RAY_STATS
+        [command_encoder setTexture:ray_stats->texture atIndex:2];
+#endif
 
         // Embed the view params in the command buffer
         [command_encoder setBytes:&view_params length:sizeof(ViewParams) atIndex:0];
@@ -245,6 +255,16 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
         if (readback_framebuffer || !native_display) {
             render_target->readback(img.data());
         }
+#if REPORT_RAY_STATS
+        ray_stats->readback(ray_stats_readback.data());
+
+        const uint64_t total_rays = std::accumulate(
+            ray_stats_readback.begin(),
+            ray_stats_readback.end(),
+            uint64_t(0),
+            [](const uint64_t &total, const uint16_t &c) { return total + c; });
+        stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
+#endif
 
         ++frame_id;
         return stats;

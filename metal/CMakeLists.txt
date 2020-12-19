@@ -13,6 +13,11 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror=objc-method-access -fobjc-arc -fobjc-weak")
 
+set(METAL_COMPILE_DEFNS "")
+if (REPORT_RAY_STATS)
+    set(METAL_COMPILE_DEFNS "REPORT_RAY_STATS=1")
+endif()
+
 add_metal_embed_library(metal_shaders
     render_metal.metal
     disney_bsdf.metal
@@ -21,8 +26,10 @@ add_metal_embed_library(metal_shaders
     util.metal
     shader_types.h
     INCLUDE_DIRECTORIES
-        ${CMAKE_CURRENT_LIST_DIR}
-        ${PROJECT_SOURCE_DIR})
+    ${CMAKE_CURRENT_LIST_DIR}
+    ${PROJECT_SOURCE_DIR}
+    COMPILE_DEFINITIONS
+    ${METAL_COMPILE_DEFNS})
 
 add_metal_embed_library(metaldisplay_shaders
     metaldisplay.metal)
@@ -44,4 +51,9 @@ target_link_libraries(render_metal
     ${METAL_LIB}
     metal_shaders
     metaldisplay_shaders)
+
+if (REPORT_RAY_STATS)
+	target_compile_options(render_metal PUBLIC
+		-DREPORT_RAY_STATS=1)
+endif()
 

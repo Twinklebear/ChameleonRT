@@ -182,7 +182,7 @@ size_t Texture2D::pixel_size() const
     case MTLPixelFormatRGBA8Unorm_sRGB:
     case MTLPixelFormatBGRA8Unorm:
         return 4;
-    case MTLPixelFormatR16Unorm:
+    case MTLPixelFormatR16Uint:
         return 2;
     case MTLPixelFormatRGBA32Float:
         return 16;

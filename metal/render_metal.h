@@ -25,6 +25,10 @@ struct RenderMetal : RenderBackend {
     std::shared_ptr<metal::ComputePipeline> pipeline;
 
     std::shared_ptr<metal::Texture2D> render_target, accum_buffer;
+#ifdef REPORT_RAY_STATS
+    std::shared_ptr<metal::Texture2D> ray_stats;
+    std::vector<uint16_t> ray_stats_readback;
+#endif
 
     std::shared_ptr<metal::Heap> data_heap;
     std::shared_ptr<metal::Buffer> geometry_args_buffer;

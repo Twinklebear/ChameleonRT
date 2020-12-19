@@ -191,6 +191,9 @@ float3 miss_shader(thread const float3 &dir)
 kernel void raygen(uint2 tid [[thread_position_in_grid]],
                    texture2d<float, access::write> render_target [[texture(0)]],
                    texture2d<float, access::read_write> accum_buffer [[texture(1)]],
+#ifdef REPORT_RAY_STATS
+                   texture2d<uint, access::write> ray_stats [[texture(2)]],
+#endif
                    constant ViewParams &view_params [[buffer(0)]],
                    instance_acceleration_structure scene [[buffer(1)]],
                    const device Geometry *geometries [[buffer(2)]],
@@ -326,5 +329,8 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
                                linear_to_srgb(accum_color.z),
                                1.f),
                         tid);
+#ifdef REPORT_RAY_STATS
+    ray_stats.write(ray_count, tid);
+#endif
 }
 
