@@ -21,17 +21,15 @@ namespace vkrt {
 
 extern PFN_vkCmdTraceRaysKHR CmdTraceRaysKHR;
 extern PFN_vkDestroyAccelerationStructureKHR DestroyAccelerationStructureKHR;
-extern PFN_vkBindAccelerationStructureMemoryKHR BindAccelerationStructureMemoryKHR;
 extern PFN_vkGetRayTracingShaderGroupHandlesKHR GetRayTracingShaderGroupHandlesKHR;
 extern PFN_vkCmdWriteAccelerationStructuresPropertiesKHR
     CmdWriteAccelerationStructuresPropertiesKHR;
 extern PFN_vkCreateAccelerationStructureKHR CreateAccelerationStructureKHR;
-extern PFN_vkGetAccelerationStructureMemoryRequirementsKHR
-    GetAccelerationStructureMemoryRequirementsKHR;
-extern PFN_vkCmdBuildAccelerationStructureKHR CmdBuildAccelerationStructureKHR;
+extern PFN_vkCmdBuildAccelerationStructuresKHR CmdBuildAccelerationStructuresKHR;
 extern PFN_vkCmdCopyAccelerationStructureKHR CmdCopyAccelerationStructureKHR;
 extern PFN_vkCreateRayTracingPipelinesKHR CreateRayTracingPipelinesKHR;
 extern PFN_vkGetAccelerationStructureDeviceAddressKHR GetAccelerationStructureDeviceAddressKHR;
+extern PFN_vkGetAccelerationStructureBuildSizesKHR GetAccelerationStructureBuildSizesKHR;
 
 class Device {
     VkInstance vk_instance = VK_NULL_HANDLE;
@@ -42,7 +40,8 @@ class Device {
     uint32_t graphics_queue_index = -1;
 
     VkPhysicalDeviceMemoryProperties mem_props = {};
-    VkPhysicalDeviceRayTracingPropertiesKHR rt_props = {};
+    VkPhysicalDeviceAccelerationStructurePropertiesKHR as_props = {};
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR rt_pipeline_props = {};
 
 public:
     Device(const std::vector<std::string> &instance_extensions = std::vector<std::string>{},
@@ -72,7 +71,10 @@ public:
     VkDeviceMemory alloc(size_t nbytes, uint32_t type_filter, VkMemoryPropertyFlags props);
 
     const VkPhysicalDeviceMemoryProperties &memory_properties() const;
-    const VkPhysicalDeviceRayTracingPropertiesKHR &raytracing_properties() const;
+    const VkPhysicalDeviceAccelerationStructurePropertiesKHR &
+    acceleration_structure_properties() const;
+    const VkPhysicalDeviceRayTracingPipelinePropertiesKHR &raytracing_pipeline_properties()
+        const;
 
 private:
     void make_instance(const std::vector<std::string> &extensions);

@@ -30,13 +30,11 @@ struct Geometry {
 class TriangleMesh {
     Device *device = nullptr;
     std::vector<VkAccelerationStructureGeometryKHR> geom_descs;
-    std::vector<VkAccelerationStructureCreateGeometryTypeInfoKHR> create_geom_descs;
 
     VkBuildAccelerationStructureFlagBitsKHR build_flags =
         (VkBuildAccelerationStructureFlagBitsKHR)0;
 
-    VkDeviceMemory bvh_mem, compacted_mem;
-    std::shared_ptr<Buffer> scratch;
+    std::shared_ptr<Buffer> bvh_buf, scratch_buf, compacted_buf;
     VkQueryPool query_pool = VK_NULL_HANDLE;
     VkAccelerationStructureKHR compacted_bvh = VK_NULL_HANDLE;
 
@@ -83,10 +81,8 @@ class TopLevelBVH {
     Device *device = nullptr;
     VkBuildAccelerationStructureFlagBitsKHR build_flags =
         (VkBuildAccelerationStructureFlagBitsKHR)0;
-    VkAccelerationStructureCreateGeometryTypeInfoKHR accel_info = {};
 
-    VkDeviceMemory bvh_mem = VK_NULL_HANDLE;
-    std::shared_ptr<Buffer> scratch;
+    std::shared_ptr<Buffer> bvh_buf, scratch_buf;
 
 public:
     std::shared_ptr<Buffer> instance_buf;
@@ -192,9 +188,9 @@ struct ShaderBindingTable {
     uint8_t *sbt_mapping = nullptr;
 
     std::shared_ptr<Buffer> sbt;
-    VkStridedBufferRegionKHR raygen = {};
-    VkStridedBufferRegionKHR miss = {};
-    VkStridedBufferRegionKHR hitgroup = {};
+    VkStridedDeviceAddressRegionKHR raygen = {};
+    VkStridedDeviceAddressRegionKHR miss = {};
+    VkStridedDeviceAddressRegionKHR hitgroup = {};
 
     void map_sbt();
 

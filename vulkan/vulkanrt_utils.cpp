@@ -20,9 +20,12 @@ Geometry::Geometry(std::shared_ptr<Buffer> verts,
     geom_desc.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
     geom_desc.flags = geom_flags;
 
+    geom_desc.geometry.triangles.sType =
+        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
     geom_desc.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
     geom_desc.geometry.triangles.vertexData.deviceAddress = vertex_buf->device_address();
     geom_desc.geometry.triangles.vertexStride = sizeof(glm::vec3);
+    geom_desc.geometry.triangles.maxVertex = num_vertices();
 
     geom_desc.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
     geom_desc.geometry.triangles.indexData.deviceAddress = index_buf->device_address();
@@ -50,110 +53,90 @@ TriangleMesh::TriangleMesh(Device &dev, std::vector<Geometry> geoms, uint32_t bu
                    geometries.end(),
                    std::back_inserter(geom_descs),
                    [](const Geometry &g) { return g.geom_desc; });
-
-    std::transform(
-        geometries.begin(),
-        geometries.end(),
-        std::back_inserter(create_geom_descs),
-        [](const Geometry &g) {
-            VkAccelerationStructureCreateGeometryTypeInfoKHR geom_info = {};
-            geom_info.sType =
-                VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_GEOMETRY_TYPE_INFO_KHR;
-            geom_info.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-            geom_info.maxPrimitiveCount = g.num_triangles();
-            geom_info.indexType = g.geom_desc.geometry.triangles.indexType;
-            geom_info.maxVertexCount = g.num_vertices();
-            geom_info.vertexFormat = g.geom_desc.geometry.triangles.vertexFormat;
-            geom_info.allowsTransforms = false;
-            return geom_info;
-        });
-
-    VkAccelerationStructureCreateInfoKHR create_info = {};
-    create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-    create_info.compactedSize = 0;
-    create_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-    create_info.flags = build_flags;
-    create_info.maxGeometryCount = create_geom_descs.size();
-    create_info.pGeometryInfos = create_geom_descs.data();
-    create_info.deviceAddress = NULL;
-    CHECK_VULKAN(
-        CreateAccelerationStructureKHR(device->logical_device(), &create_info, nullptr, &bvh));
 }
 
 TriangleMesh::~TriangleMesh()
 {
     if (bvh != VK_NULL_HANDLE) {
         DestroyAccelerationStructureKHR(device->logical_device(), bvh, nullptr);
-        vkFreeMemory(device->logical_device(), bvh_mem, nullptr);
     }
 }
 
 void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
 {
     // Determine how much memory the acceleration structure will need
-    VkAccelerationStructureMemoryRequirementsInfoKHR mem_info = {};
-    mem_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_KHR;
-    mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_KHR;
-    mem_info.buildType = VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR;
-    mem_info.accelerationStructure = bvh;
+    VkAccelerationStructureBuildGeometryInfoKHR build_info = {};
+    build_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    build_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+    build_info.flags = build_flags;
+    build_info.geometryCount = geom_descs.size();
+    build_info.pGeometries = geom_descs.data();
 
-    VkMemoryRequirements2 mem_reqs = {};
-    mem_reqs.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-    GetAccelerationStructureMemoryRequirementsKHR(
-        device->logical_device(), &mem_info, &mem_reqs);
+    std::vector<uint32_t> primitive_counts;
+    std::transform(geometries.begin(),
+                   geometries.end(),
+                   std::back_inserter(primitive_counts),
+                   [](const Geometry &g) { return g.num_triangles(); });
 
-    // Allocate space for the build output
-    bvh_mem = device->alloc(mem_reqs.memoryRequirements.size,
-                            mem_reqs.memoryRequirements.memoryTypeBits,
-                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VkAccelerationStructureBuildSizesInfoKHR build_size_info = {};
+    build_size_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+    GetAccelerationStructureBuildSizesKHR(device->logical_device(),
+                                          VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+                                          &build_info,
+                                          primitive_counts.data(),
+                                          &build_size_info);
 
-    // Allocate scratch space for the build
-    mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_KHR;
-    GetAccelerationStructureMemoryRequirementsKHR(
-        device->logical_device(), &mem_info, &mem_reqs);
-    scratch = Buffer::device(
+    std::cout << "BLAS needs non-compacted output space: "
+              << build_size_info.accelerationStructureSize
+              << "b and scratch of: " << build_size_info.buildScratchSize << "b\n";
+
+    bvh_buf = Buffer::device(*device,
+                             build_size_info.accelerationStructureSize,
+                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                 VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR);
+
+    scratch_buf = Buffer::device(
         *device,
-        mem_reqs.memoryRequirements.size,
+        build_size_info.buildScratchSize,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
-    // Bind the build output mem to the BVH
-    VkBindAccelerationStructureMemoryInfoKHR bind_mem_info = {};
-    bind_mem_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_KHR;
-    bind_mem_info.accelerationStructure = bvh;
-    bind_mem_info.memory = bvh_mem;
-    CHECK_VULKAN(
-        BindAccelerationStructureMemoryKHR(device->logical_device(), 1, &bind_mem_info));
+    // Create the acceleration structure
+    VkAccelerationStructureCreateInfoKHR as_create_info = {};
+    as_create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+    as_create_info.buffer = bvh_buf->handle();
+    as_create_info.size = build_size_info.accelerationStructureSize;
+    as_create_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+    CHECK_VULKAN(CreateAccelerationStructureKHR(
+        device->logical_device(), &as_create_info, nullptr, &bvh));
 
+    // Enqueue the acceleration structure build
     VkAccelerationStructureBuildGeometryInfoKHR accel_build_info = {};
     accel_build_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
     accel_build_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
     accel_build_info.flags = build_flags;
-    accel_build_info.update = false;
-    accel_build_info.srcAccelerationStructure = VK_NULL_HANDLE;
+    accel_build_info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
     accel_build_info.dstAccelerationStructure = bvh;
-    accel_build_info.geometryArrayOfPointers = false;
     accel_build_info.geometryCount = geom_descs.size();
-    VkAccelerationStructureGeometryKHR *geom_descs_ptr = geom_descs.data();
-    accel_build_info.ppGeometries = &geom_descs_ptr;
-    accel_build_info.scratchData.deviceAddress = scratch->device_address();
+    accel_build_info.pGeometries = geom_descs.data();
+    accel_build_info.scratchData.deviceAddress = scratch_buf->device_address();
 
-    std::vector<VkAccelerationStructureBuildOffsetInfoKHR> build_offset_info;
-    std::transform(create_geom_descs.begin(),
-                   create_geom_descs.end(),
+    std::vector<VkAccelerationStructureBuildRangeInfoKHR> build_offset_info;
+    std::transform(geometries.begin(),
+                   geometries.end(),
                    std::back_inserter(build_offset_info),
-                   [](const VkAccelerationStructureCreateGeometryTypeInfoKHR &gt) {
-                       VkAccelerationStructureBuildOffsetInfoKHR offset = {};
-                       offset.primitiveCount = gt.maxPrimitiveCount;
+                   [](const Geometry &g) {
+                       VkAccelerationStructureBuildRangeInfoKHR offset = {};
+                       offset.primitiveCount = g.num_triangles();
                        offset.primitiveOffset = 0;
                        offset.firstVertex = 0;
                        offset.transformOffset = 0;
-
                        return offset;
                    });
 
-    VkAccelerationStructureBuildOffsetInfoKHR *build_info_ptr = build_offset_info.data();
+    VkAccelerationStructureBuildRangeInfoKHR *build_offset_info_ptr = build_offset_info.data();
     // Enqueue the build commands into the command buffer
-    CmdBuildAccelerationStructureKHR(cmd_buf, 1, &accel_build_info, &build_info_ptr);
+    CmdBuildAccelerationStructuresKHR(cmd_buf, 1, &accel_build_info, &build_offset_info_ptr);
 
     // Memory barrier to have subsequent commands wait on build completion
     VkMemoryBarrier barrier = {};
@@ -211,42 +194,21 @@ void TriangleMesh::enqueue_compaction(VkCommandBuffer &cmd_buf)
                                        sizeof(uint64_t),
                                        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT));
 
-    // Same memory type requirements as the original structure, just less space needed
-    VkAccelerationStructureMemoryRequirementsInfoKHR mem_info = {};
-    mem_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_KHR;
-    mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_KHR;
-    mem_info.buildType = VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR;
-    mem_info.accelerationStructure = bvh;
+    std::cout << "Compacted size: " << compacted_size << "b\n";
+    compacted_buf = Buffer::device(*device,
+                                   compacted_size,
+                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR);
 
-    VkMemoryRequirements2 mem_reqs = {};
-    mem_reqs.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-    GetAccelerationStructureMemoryRequirementsKHR(
-        device->logical_device(), &mem_info, &mem_reqs);
-    compacted_size = align_to(compacted_size, mem_reqs.memoryRequirements.alignment);
-
-    compacted_mem = device->alloc(compacted_size,
-                                  mem_reqs.memoryRequirements.memoryTypeBits,
-                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    VkAccelerationStructureCreateInfoKHR create_info = {};
-    create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-    create_info.compactedSize = 0;
-    create_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-    create_info.flags = build_flags;
-    create_info.maxGeometryCount = create_geom_descs.size();
-    create_info.pGeometryInfos = create_geom_descs.data();
-    create_info.deviceAddress = NULL;
-
+    // Create the compacted acceleration structure
+    VkAccelerationStructureCreateInfoKHR as_create_info = {};
+    as_create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+    as_create_info.buffer = compacted_buf->handle();
+    as_create_info.size = compacted_size;
+    as_create_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
     CHECK_VULKAN(CreateAccelerationStructureKHR(
-        device->logical_device(), &create_info, nullptr, &compacted_bvh));
-
-    // Bind the compacted mem to the compacted BVH handle
-    VkBindAccelerationStructureMemoryInfoKHR bind_mem_info = {};
-    bind_mem_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_KHR;
-    bind_mem_info.accelerationStructure = compacted_bvh;
-    bind_mem_info.memory = compacted_mem;
-    CHECK_VULKAN(
-        BindAccelerationStructureMemoryKHR(device->logical_device(), 1, &bind_mem_info));
+        device->logical_device(), &as_create_info, nullptr, &compacted_bvh));
 
     VkCopyAccelerationStructureInfoKHR copy_info = {};
     copy_info.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
@@ -258,7 +220,7 @@ void TriangleMesh::enqueue_compaction(VkCommandBuffer &cmd_buf)
 
 void TriangleMesh::finalize()
 {
-    scratch = nullptr;
+    scratch_buf = nullptr;
 
     // Compaction is done, so swap the old handle with the compacted one and free the old
     // output memory
@@ -267,13 +229,11 @@ void TriangleMesh::finalize()
         query_pool = VK_NULL_HANDLE;
 
         DestroyAccelerationStructureKHR(device->logical_device(), bvh, nullptr);
-        vkFreeMemory(device->logical_device(), bvh_mem, nullptr);
 
         bvh = compacted_bvh;
-        bvh_mem = compacted_mem;
+        bvh_buf = compacted_buf;
 
         compacted_bvh = VK_NULL_HANDLE;
-        compacted_mem = VK_NULL_HANDLE;
     }
     VkAccelerationStructureDeviceAddressInfoKHR addr_info = {};
     addr_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
@@ -290,98 +250,87 @@ TopLevelBVH::TopLevelBVH(Device &dev,
       instance_buf(inst_buf),
       instances(instances)
 {
-    accel_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_GEOMETRY_TYPE_INFO_KHR;
-    accel_info.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-    accel_info.maxPrimitiveCount = instances.size();
-
-    VkAccelerationStructureCreateInfoKHR create_info = {};
-    create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-    create_info.compactedSize = 0;
-    create_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-    create_info.flags = build_flags;
-    create_info.maxGeometryCount = 1;
-    create_info.pGeometryInfos = &accel_info;
-    create_info.deviceAddress = NULL;
-    CHECK_VULKAN(
-        CreateAccelerationStructureKHR(device->logical_device(), &create_info, nullptr, &bvh));
 }
 
 TopLevelBVH::~TopLevelBVH()
 {
     if (bvh != VK_NULL_HANDLE) {
         DestroyAccelerationStructureKHR(device->logical_device(), bvh, nullptr);
-        vkFreeMemory(device->logical_device(), bvh_mem, nullptr);
     }
 }
 
 void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
 {
-    // Determine how much memory the acceleration structure will need
-    VkAccelerationStructureMemoryRequirementsInfoKHR mem_info = {};
-    mem_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_KHR;
-    mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_KHR;
-    mem_info.buildType = VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR;
-    mem_info.accelerationStructure = bvh;
-
-    VkMemoryRequirements2 mem_reqs = {};
-    mem_reqs.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-    GetAccelerationStructureMemoryRequirementsKHR(
-        device->logical_device(), &mem_info, &mem_reqs);
-    // Allocate space for the build output
-    bvh_mem = device->alloc(mem_reqs.memoryRequirements.size,
-                            mem_reqs.memoryRequirements.memoryTypeBits,
-                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-    // Determine how much additional memory we need for the build
-    mem_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_KHR;
-    GetAccelerationStructureMemoryRequirementsKHR(
-        device->logical_device(), &mem_info, &mem_reqs);
-    scratch = Buffer::device(
-        *device,
-        mem_reqs.memoryRequirements.size,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-
-    // Bind the build output mem to the BVH
-    VkBindAccelerationStructureMemoryInfoKHR bind_mem_info = {};
-    bind_mem_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_KHR;
-    bind_mem_info.accelerationStructure = bvh;
-    bind_mem_info.memory = bvh_mem;
-    CHECK_VULKAN(
-        BindAccelerationStructureMemoryKHR(device->logical_device(), 1, &bind_mem_info));
-
     VkAccelerationStructureGeometryKHR instance_desc = {};
     instance_desc.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
     instance_desc.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
     instance_desc.flags = 0;
-
     instance_desc.geometry.instances.sType =
         VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
     instance_desc.geometry.instances.arrayOfPointers = false;
     instance_desc.geometry.instances.data.deviceAddress = instance_buf->device_address();
 
+    // Determine how much memory the acceleration structure will need
+    VkAccelerationStructureBuildGeometryInfoKHR build_info = {};
+    build_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    build_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    build_info.flags = build_flags;
+    build_info.geometryCount = 1;
+    build_info.pGeometries = &instance_desc;
+
+    const uint32_t instance_desc_count = 1;
+    VkAccelerationStructureBuildSizesInfoKHR build_size_info = {};
+    build_size_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+    GetAccelerationStructureBuildSizesKHR(device->logical_device(),
+                                          VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+                                          &build_info,
+                                          &instance_desc_count,
+                                          &build_size_info);
+
+    std::cout << "TLAS needs non-compacted output space: "
+              << build_size_info.accelerationStructureSize
+              << "b and scratch of: " << build_size_info.buildScratchSize << "b\n";
+
+    bvh_buf = Buffer::device(*device,
+                             build_size_info.accelerationStructureSize,
+                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                 VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR);
+
+    scratch_buf = Buffer::device(
+        *device,
+        build_size_info.buildScratchSize,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+
+    // Create the acceleration structure
+    VkAccelerationStructureCreateInfoKHR as_create_info = {};
+    as_create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+    as_create_info.buffer = bvh_buf->handle();
+    as_create_info.size = build_size_info.accelerationStructureSize;
+    as_create_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    CHECK_VULKAN(CreateAccelerationStructureKHR(
+        device->logical_device(), &as_create_info, nullptr, &bvh));
+
+    // Enqueue the acceleration structure build
     VkAccelerationStructureBuildGeometryInfoKHR accel_build_info = {};
     accel_build_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
     accel_build_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
     accel_build_info.flags = build_flags;
-    accel_build_info.update = false;
-    accel_build_info.srcAccelerationStructure = VK_NULL_HANDLE;
+    accel_build_info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
     accel_build_info.dstAccelerationStructure = bvh;
-    accel_build_info.geometryArrayOfPointers = false;
     accel_build_info.geometryCount = 1;
+    accel_build_info.pGeometries = &instance_desc;
+    accel_build_info.scratchData.deviceAddress = scratch_buf->device_address();
 
-    VkAccelerationStructureGeometryKHR *geom_descs_ptr = &instance_desc;
-    accel_build_info.ppGeometries = &geom_descs_ptr;
-    accel_build_info.scratchData.deviceAddress = scratch->device_address();
-
-    VkAccelerationStructureBuildOffsetInfoKHR build_offset_info = {};
+    VkAccelerationStructureBuildRangeInfoKHR build_offset_info = {};
     build_offset_info.primitiveCount = instances.size();
     build_offset_info.primitiveOffset = 0;
     build_offset_info.firstVertex = 0;
     build_offset_info.transformOffset = 0;
-    VkAccelerationStructureBuildOffsetInfoKHR *build_offset_info_ptr = &build_offset_info;
 
+    VkAccelerationStructureBuildRangeInfoKHR *build_offset_info_ptr = &build_offset_info;
     // Enqueue the build commands into the command buffer
-    CmdBuildAccelerationStructureKHR(cmd_buf, 1, &accel_build_info, &build_offset_info_ptr);
+    CmdBuildAccelerationStructuresKHR(cmd_buf, 1, &accel_build_info, &build_offset_info_ptr);
 
     // Enqueue a barrier on the build
     VkMemoryBarrier barrier = {};
@@ -405,7 +354,7 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
 
 void TopLevelBVH::finalize()
 {
-    scratch = nullptr;
+    scratch_buf = nullptr;
     VkAccelerationStructureDeviceAddressInfoKHR addr_info = {};
     addr_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
     addr_info.accelerationStructure = bvh;
@@ -414,7 +363,7 @@ void TopLevelBVH::finalize()
 
 size_t TopLevelBVH::num_instances() const
 {
-    return accel_info.maxPrimitiveCount;
+    return instances.size();
 }
 
 const uint8_t *RTPipeline::shader_ident(const std::string &name) const
@@ -504,7 +453,7 @@ RTPipeline RTPipelineBuilder::build(Device &device)
 
     RTPipeline pipeline;
 
-    pipeline.ident_size = device.raytracing_properties().shaderGroupHandleSize;
+    pipeline.ident_size = device.raytracing_pipeline_properties().shaderGroupHandleSize;
     for (const auto &sg : shaders) {
         VkPipelineShaderStageCreateInfo ss_ci = {};
         ss_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -542,11 +491,10 @@ RTPipeline RTPipelineBuilder::build(Device &device)
     pipeline_create_info.pStages = shader_info.data();
     pipeline_create_info.groupCount = group_info.size();
     pipeline_create_info.pGroups = group_info.data();
-    pipeline_create_info.maxRecursionDepth = recursion_depth;
+    pipeline_create_info.maxPipelineRayRecursionDepth = recursion_depth;
     pipeline_create_info.layout = layout;
-    pipeline_create_info.libraries.sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR;
-    pipeline_create_info.libraries.libraryCount = 0;
     CHECK_VULKAN(CreateRayTracingPipelinesKHR(device.logical_device(),
+                                              VK_NULL_HANDLE,
                                               VK_NULL_HANDLE,
                                               1,
                                               &pipeline_create_info,
@@ -615,70 +563,70 @@ SBTBuilder &SBTBuilder::add_hitgroup(const ShaderRecord &sr)
 
 ShaderBindingTable SBTBuilder::build(Device &device)
 {
+    const uint32_t group_handle_size =
+        device.raytracing_pipeline_properties().shaderGroupHandleSize;
+    const uint32_t group_alignment =
+        device.raytracing_pipeline_properties().shaderGroupBaseAlignment;
+
     ShaderBindingTable sbt;
-    sbt.raygen.stride =
-        align_to(device.raytracing_properties().shaderGroupHandleSize + raygen.param_size,
-                 device.raytracing_properties().shaderGroupHandleSize);
+    sbt.raygen.stride = align_to(group_handle_size + raygen.param_size, group_handle_size);
     sbt.raygen.size = sbt.raygen.stride;
 
-    sbt.miss.offset =
-        align_to(sbt.raygen.size, device.raytracing_properties().shaderGroupBaseAlignment);
+    const uint32_t miss_offset = align_to(sbt.raygen.size, group_alignment);
 
     sbt.miss.stride = 0;
     for (const auto &m : miss_records) {
         sbt.miss.stride = std::max(
-            sbt.miss.stride,
-            align_to(device.raytracing_properties().shaderGroupHandleSize + m.param_size,
-                     device.raytracing_properties().shaderGroupHandleSize));
+            sbt.miss.stride, align_to(group_handle_size + m.param_size, group_handle_size));
     }
     sbt.miss.size = sbt.miss.stride * miss_records.size();
 
-    sbt.hitgroup.offset = align_to(sbt.miss.offset + sbt.miss.size,
-                                   device.raytracing_properties().shaderGroupBaseAlignment);
+    const uint32_t hitgroup_offset = align_to(miss_offset + sbt.miss.size, group_alignment);
     sbt.hitgroup.stride = 0;
     for (const auto &h : hitgroups) {
-        sbt.hitgroup.stride = std::max(
-            sbt.hitgroup.stride,
-            align_to(device.raytracing_properties().shaderGroupHandleSize + h.param_size,
-                     device.raytracing_properties().shaderGroupHandleSize));
+        sbt.hitgroup.stride =
+            std::max(sbt.hitgroup.stride,
+                     align_to(group_handle_size + h.param_size, group_handle_size));
     }
     sbt.hitgroup.size = sbt.hitgroup.stride * hitgroups.size();
 
-    const size_t sbt_size = align_to(sbt.hitgroup.offset + sbt.hitgroup.size,
-                                     device.raytracing_properties().shaderGroupBaseAlignment);
+    const size_t sbt_size = align_to(hitgroup_offset + sbt.hitgroup.size, group_alignment);
     sbt.upload_sbt = Buffer::host(device, sbt_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    sbt.sbt =
-        Buffer::host(device,
-                     sbt_size,
-                     VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+    sbt.sbt = Buffer::device(device,
+                             sbt_size,
+                             VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
+                                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
-    sbt.raygen.buffer = sbt.sbt->handle();
-    sbt.miss.buffer = sbt.sbt->handle();
-    sbt.hitgroup.buffer = sbt.sbt->handle();
+    sbt.raygen.deviceAddress = sbt.sbt->device_address();
+    sbt.miss.deviceAddress = sbt.sbt->device_address() + miss_offset;
+    sbt.hitgroup.deviceAddress = sbt.sbt->device_address() + hitgroup_offset;
 
     sbt.map_sbt();
 
-    const size_t ident_size = device.raytracing_properties().shaderGroupHandleSize;
     size_t offset = 0;
     // Copy the shader identifier and record where to write the parameters
-    std::memcpy(sbt.sbt_mapping, pipeline->shader_ident(raygen.shader_name), ident_size);
-    sbt.sbt_param_offsets[raygen.name] = ident_size;
+    std::memcpy(
+        sbt.sbt_mapping, pipeline->shader_ident(raygen.shader_name), group_handle_size);
+    sbt.sbt_param_offsets[raygen.name] = group_handle_size;
 
-    offset = sbt.miss.offset;
+    offset = miss_offset;
     for (const auto &m : miss_records) {
         // Copy the shader identifier and record where to write the parameters
-        std::memcpy(
-            sbt.sbt_mapping + offset, pipeline->shader_ident(m.shader_name), ident_size);
-        sbt.sbt_param_offsets[m.name] = offset + ident_size;
+        std::memcpy(sbt.sbt_mapping + offset,
+                    pipeline->shader_ident(m.shader_name),
+                    group_handle_size);
+        sbt.sbt_param_offsets[m.name] = offset + group_handle_size;
         offset += sbt.miss.stride;
     }
 
-    offset = sbt.hitgroup.offset;
+    offset = hitgroup_offset;
     for (const auto &hg : hitgroups) {
         // Copy the shader identifier and record where to write the parameters
-        std::memcpy(
-            sbt.sbt_mapping + offset, pipeline->shader_ident(hg.shader_name), ident_size);
-        sbt.sbt_param_offsets[hg.name] = offset + ident_size;
+        std::memcpy(sbt.sbt_mapping + offset,
+                    pipeline->shader_ident(hg.shader_name),
+                    group_handle_size);
+        sbt.sbt_param_offsets[hg.name] = offset + group_handle_size;
         offset += sbt.hitgroup.stride;
     }
 

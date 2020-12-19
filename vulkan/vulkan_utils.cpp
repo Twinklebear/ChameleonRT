@@ -12,18 +12,16 @@ static const std::array<const char *, 1> validation_layers = {"VK_LAYER_KHRONOS_
 
 PFN_vkCmdTraceRaysKHR CmdTraceRaysKHR = nullptr;
 PFN_vkDestroyAccelerationStructureKHR DestroyAccelerationStructureKHR = nullptr;
-PFN_vkBindAccelerationStructureMemoryKHR BindAccelerationStructureMemoryKHR = nullptr;
 PFN_vkGetRayTracingShaderGroupHandlesKHR GetRayTracingShaderGroupHandlesKHR = nullptr;
 PFN_vkCmdWriteAccelerationStructuresPropertiesKHR CmdWriteAccelerationStructuresPropertiesKHR =
     nullptr;
 PFN_vkCreateAccelerationStructureKHR CreateAccelerationStructureKHR = nullptr;
-PFN_vkGetAccelerationStructureMemoryRequirementsKHR
-    GetAccelerationStructureMemoryRequirementsKHR = nullptr;
-PFN_vkCmdBuildAccelerationStructureKHR CmdBuildAccelerationStructureKHR = nullptr;
+PFN_vkCmdBuildAccelerationStructuresKHR CmdBuildAccelerationStructuresKHR = nullptr;
 PFN_vkCmdCopyAccelerationStructureKHR CmdCopyAccelerationStructureKHR = nullptr;
 PFN_vkCreateRayTracingPipelinesKHR CreateRayTracingPipelinesKHR = nullptr;
 PFN_vkGetAccelerationStructureDeviceAddressKHR GetAccelerationStructureDeviceAddressKHR =
     nullptr;
+PFN_vkGetAccelerationStructureBuildSizesKHR GetAccelerationStructureBuildSizesKHR = nullptr;
 
 void load_khr_ray_tracing(VkDevice &device)
 {
@@ -31,9 +29,6 @@ void load_khr_ray_tracing(VkDevice &device)
         vkGetDeviceProcAddr(device, "vkCmdTraceRaysKHR"));
     DestroyAccelerationStructureKHR = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(
         vkGetDeviceProcAddr(device, "vkDestroyAccelerationStructureKHR"));
-    BindAccelerationStructureMemoryKHR =
-        reinterpret_cast<PFN_vkBindAccelerationStructureMemoryKHR>(
-            vkGetDeviceProcAddr(device, "vkBindAccelerationStructureMemoryKHR"));
     GetRayTracingShaderGroupHandlesKHR =
         reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(
             vkGetDeviceProcAddr(device, "vkGetRayTracingShaderGroupHandlesKHR"));
@@ -42,12 +37,9 @@ void load_khr_ray_tracing(VkDevice &device)
             vkGetDeviceProcAddr(device, "vkCmdWriteAccelerationStructuresPropertiesKHR"));
     CreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(
         vkGetDeviceProcAddr(device, "vkCreateAccelerationStructureKHR"));
-    GetAccelerationStructureMemoryRequirementsKHR =
-        reinterpret_cast<PFN_vkGetAccelerationStructureMemoryRequirementsKHR>(
-            vkGetDeviceProcAddr(device, "vkGetAccelerationStructureMemoryRequirementsKHR"));
-    CmdBuildAccelerationStructureKHR =
-        reinterpret_cast<PFN_vkCmdBuildAccelerationStructureKHR>(
-            vkGetDeviceProcAddr(device, "vkCmdBuildAccelerationStructureKHR"));
+    CmdBuildAccelerationStructuresKHR =
+        reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(
+            vkGetDeviceProcAddr(device, "vkCmdBuildAccelerationStructuresKHR"));
     CmdCopyAccelerationStructureKHR = reinterpret_cast<PFN_vkCmdCopyAccelerationStructureKHR>(
         vkGetDeviceProcAddr(device, "vkCmdCopyAccelerationStructureKHR"));
     CreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(
@@ -55,6 +47,9 @@ void load_khr_ray_tracing(VkDevice &device)
     GetAccelerationStructureDeviceAddressKHR =
         reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(
             vkGetDeviceProcAddr(device, "vkGetAccelerationStructureDeviceAddressKHR"));
+    GetAccelerationStructureBuildSizesKHR =
+        reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(
+            vkGetDeviceProcAddr(device, "vkGetAccelerationStructureBuildSizesKHR"));
 }
 
 Device::Device(const std::vector<std::string> &instance_extensions,
@@ -69,12 +64,24 @@ Device::Device(const std::vector<std::string> &instance_extensions,
     // Query the properties we'll use frequently
     vkGetPhysicalDeviceMemoryProperties(vk_physical_device, &mem_props);
 
-    rt_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PROPERTIES_KHR;
-    VkPhysicalDeviceProperties2 props = {};
-    props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-    props.pNext = &rt_props;
-    props.properties = {};
-    vkGetPhysicalDeviceProperties2(vk_physical_device, &props);
+    {
+        as_props.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+        VkPhysicalDeviceProperties2 props = {};
+        props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        props.pNext = &as_props;
+        props.properties = {};
+        vkGetPhysicalDeviceProperties2(vk_physical_device, &props);
+    }
+    {
+        rt_pipeline_props.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+        VkPhysicalDeviceProperties2 props = {};
+        props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        props.pNext = &rt_pipeline_props;
+        props.properties = {};
+        vkGetPhysicalDeviceProperties2(vk_physical_device, &props);
+    }
 }
 
 Device::~Device()
@@ -91,7 +98,8 @@ Device::Device(Device &&d)
       device(d.device),
       queue(d.queue),
       mem_props(d.mem_props),
-      rt_props(d.rt_props)
+      as_props(d.as_props),
+      rt_pipeline_props(rt_pipeline_props)
 {
     d.vk_instance = VK_NULL_HANDLE;
     d.vk_physical_device = VK_NULL_HANDLE;
@@ -110,7 +118,8 @@ Device &Device::operator=(Device &&d)
     device = d.device;
     queue = d.queue;
     mem_props = d.mem_props;
-    rt_props = d.rt_props;
+    as_props = d.as_props;
+    rt_pipeline_props = d.rt_pipeline_props;
 
     d.vk_instance = VK_NULL_HANDLE;
     d.vk_physical_device = VK_NULL_HANDLE;
@@ -191,9 +200,15 @@ const VkPhysicalDeviceMemoryProperties &Device::memory_properties() const
     return mem_props;
 }
 
-const VkPhysicalDeviceRayTracingPropertiesKHR &Device::raytracing_properties() const
+const VkPhysicalDeviceAccelerationStructurePropertiesKHR &
+Device::acceleration_structure_properties() const
 {
-    return rt_props;
+    return as_props;
+}
+const VkPhysicalDeviceRayTracingPipelinePropertiesKHR &Device::raytracing_pipeline_properties()
+    const
+{
+    return rt_pipeline_props;
 }
 
 void Device::make_instance(const std::vector<std::string> &extensions)
@@ -247,13 +262,20 @@ void Device::select_physical_device()
                                                       VkExtensionProperties{});
         vkEnumerateDeviceExtensionProperties(d, nullptr, &extension_count, extensions.data());
 
-        // Check for RTX support on this device
-        auto fnd = std::find_if(
+        // Check for ray tracing support on this device. We need the acceleration structure
+        // and ray pipeline extensions
+        auto khr_accel_struct = std::find_if(
             extensions.begin(), extensions.end(), [](const VkExtensionProperties &e) {
-                return std::strcmp(e.extensionName, VK_KHR_RAY_TRACING_EXTENSION_NAME) == 0;
+                return std::strcmp(e.extensionName,
+                                   VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) == 0;
+            });
+        auto khr_ray_pipeline = std::find_if(
+            extensions.begin(), extensions.end(), [](const VkExtensionProperties &e) {
+                return std::strcmp(e.extensionName,
+                                   VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME) == 0;
             });
 
-        if (fnd != extensions.end()) {
+        if (khr_accel_struct != extensions.end() && khr_ray_pipeline != extensions.end()) {
             vk_physical_device = d;
             break;
         }
@@ -302,17 +324,24 @@ void Device::make_logical_device(const std::vector<std::string> &extensions)
     device_buf_addr_features.bufferDeviceAddress = true;
     device_buf_addr_features.pNext = &device_desc_features;
 
-    VkPhysicalDeviceRayTracingFeaturesKHR raytracing_features = {};
-    raytracing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_FEATURES_KHR;
-    raytracing_features.rayTracing = true;
-    raytracing_features.pNext = &device_buf_addr_features;
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR as_features = {};
+    as_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    as_features.accelerationStructure = true;
+    as_features.pNext = &device_buf_addr_features;
+
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rt_pipeline_features = {};
+    rt_pipeline_features.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    rt_pipeline_features.rayTracingPipeline = true;
+    rt_pipeline_features.pNext = &as_features;
 
     VkPhysicalDeviceFeatures2 device_features = {};
     device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    device_features.pNext = &raytracing_features;
+    device_features.pNext = &rt_pipeline_features;
 
     std::vector<const char *> device_extensions = {
-        VK_KHR_RAY_TRACING_EXTENSION_NAME,
+        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME};
 

@@ -290,7 +290,8 @@ void RenderVulkan::set_scene(const Scene &scene)
                 submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
                 submit_info.commandBufferCount = 1;
                 submit_info.pCommandBuffers = &command_buffer;
-                CHECK_VULKAN(vkQueueSubmit(device->graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+                CHECK_VULKAN(
+                    vkQueueSubmit(device->graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
                 CHECK_VULKAN(vkQueueWaitIdle(device->graphics_queue()));
 
                 vkResetCommandPool(device->logical_device(),
@@ -977,8 +978,8 @@ void RenderVulkan::record_command_buffers()
                             0,
                             nullptr);
 
-    VkStridedBufferRegionKHR callable_table = {};
-    callable_table.buffer = VK_NULL_HANDLE;
+    VkStridedDeviceAddressRegionKHR callable_table = {};
+    callable_table.deviceAddress = VK_NULL_HANDLE;
 
     vkrt::CmdTraceRaysKHR(render_cmd_buf,
                           &shader_table.raygen,
