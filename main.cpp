@@ -118,7 +118,6 @@ int main(int argc, const char **argv)
             continue;
         }
 #endif
-        /*
         // Disabled while debugging ImGui issue
 #if ENABLE_METAL
         if (args[i] == "-metal") {
@@ -126,7 +125,6 @@ int main(int argc, const char **argv)
             continue;
         }
 #endif
-        */
     }
 
     if (display_frontend == "gl") {
