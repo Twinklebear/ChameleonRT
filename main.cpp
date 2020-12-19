@@ -34,6 +34,7 @@
 #include "vulkan/vkdisplay.h"
 #endif
 #if ENABLE_METAL
+#include "metal/metaldisplay.h"
 #include "metal/render_metal.h"
 #endif
 
@@ -117,6 +118,15 @@ int main(int argc, const char **argv)
             continue;
         }
 #endif
+        /*
+        // Disabled while debugging ImGui issue
+#if ENABLE_METAL
+        if (args[i] == "-metal") {
+            display_frontend = "mtl";
+            continue;
+        }
+#endif
+        */
     }
 
     if (display_frontend == "gl") {
@@ -156,7 +166,11 @@ int main(int argc, const char **argv)
             display = std::make_unique<VKDisplay>(window);
         }
 #endif
-
+#ifdef ENABLE_METAL
+        else if (display_frontend == "mtl") {
+            display = std::make_unique<MetalDisplay>(window);
+        }
+#endif
         run_app(args, window, display.get());
     }
 
@@ -178,6 +192,9 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #endif
 #ifdef ENABLE_VULKAN
     VKDisplay *vk_display = dynamic_cast<VKDisplay *>(display);
+#endif
+#ifdef ENABLE_METAL
+    MetalDisplay *mtl_display = dynamic_cast<MetalDisplay *>(display);
 #endif
     GLDisplay *gl_display = dynamic_cast<GLDisplay *>(display);
     bool display_is_native = false;
@@ -251,6 +268,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             if (vk_display) {
                 display_is_native = true;
                 renderer =
+                    // TODO: just make true now
                     std::make_unique<RenderVulkan>(vk_display->device, display_is_native);
             } else {
                 renderer = std::make_unique<RenderVulkan>();
@@ -260,8 +278,12 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #endif
 #if ENABLE_METAL
         else if (args[i] == "-metal") {
-            // TODO: native metal display
-            renderer = std::make_unique<RenderMetal>();
+            if (mtl_display) {
+                display_is_native = true;
+                renderer = std::make_unique<RenderMetal>(mtl_display->context);
+            } else {
+                renderer = std::make_unique<RenderMetal>();
+            }
             backend_arg = args[i];
         }
 #endif
@@ -476,6 +498,12 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             if (vk_display) {
                 RenderVulkan *render_vk = reinterpret_cast<RenderVulkan *>(renderer.get());
                 vk_display->display_native(render_vk->render_target);
+            }
+#endif
+#ifdef ENABLE_METAL
+            if (mtl_display) {
+                RenderMetal *render_mtl = reinterpret_cast<RenderMetal *>(renderer.get());
+                mtl_display->display_native(render_mtl->render_target);
             }
 #endif
 #ifdef ENABLE_OPTIX
