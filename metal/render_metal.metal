@@ -249,12 +249,6 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
         const float3 vb = geom.vertices[idx.y];
         const float3 vc = geom.vertices[idx.z];
 
-        float4x4 normal_transform = transpose(instance_data.inverse_transform);
-
-        // Transform the normal into world space
-        float3 normal = normalize(cross(vb - va, vc - va));
-        normal = normalize((normal_transform * float4(normal, 0.f)).xyz);
-
         const float3 bary = float3(hit_result.triangle_barycentric_coord.x,
                                    hit_result.triangle_barycentric_coord.y,
                                    1.f - hit_result.triangle_barycentric_coord.x -
@@ -267,6 +261,21 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
             const float2 uvc = geom.uvs[idx.z];
             uv = bary.z * uva + bary.x * uvb + bary.y * uvc;
         }
+
+
+        float3 normal = normalize(cross(vb - va, vc - va));
+        /*
+        if (geom.num_normals > 0) {
+            const float3 na = geom.normals[idx.x];
+            const float3 nb = geom.normals[idx.y];
+            const float3 nc = geom.normals[idx.z];
+            normal = normalize(bary.z * na + bary.x * nb + bary.y * nc);
+        }
+        */
+
+        // Transform the normal into world space
+        float4x4 normal_transform = transpose(instance_data.inverse_transform);
+        normal = normalize((normal_transform * float4(normal, 0.f)).xyz);
 
         const uint32_t material_id = instance_data.material_ids[hit_result.geometry_id];
 
