@@ -136,67 +136,13 @@ void RenderMetal::set_scene(const Scene &scene)
     }
 
     // Upload the material data
-    {
-        metal::ArgumentEncoderBuilder args_builder(*context);
-        args_builder.add_constant(0, MTLDataTypeFloat3);
-        for (int i = 1; i <= 11; ++i) {
-            args_builder.add_constant(i, MTLDataTypeFloat);
-        }
 
-        const size_t material_args_size = args_builder.encoded_length();
-        std::cout << "Material arg size: " << material_args_size << "\n";
-
-        material_buffer =
-            std::make_shared<metal::Buffer>(*context,
-                                            material_args_size * scene.materials.size(),
-                                            MTLResourceStorageModeManaged);
-        // I think the layout should match to be able to memcpy here, but not sure if that's
-        // reliable in general
-        size_t offset = 0;
-        for (const auto &m : scene.materials) {
-            auto encoder = args_builder.encoder_for_buffer(*material_buffer, offset);
-            glm::vec3 *base_color =
-                reinterpret_cast<glm::vec3 *>(encoder->constant_data_at(0));
-            *base_color = m.base_color;
-
-            float *metallic = reinterpret_cast<float *>(encoder->constant_data_at(1));
-            *metallic = m.metallic;
-
-            float *specular = reinterpret_cast<float *>(encoder->constant_data_at(2));
-            *specular = m.specular;
-
-            float *roughness = reinterpret_cast<float *>(encoder->constant_data_at(3));
-            *roughness = m.roughness;
-
-            float *specular_tint = reinterpret_cast<float *>(encoder->constant_data_at(4));
-            *specular_tint = m.specular_tint;
-
-            float *anisotropy = reinterpret_cast<float *>(encoder->constant_data_at(5));
-            *anisotropy = m.anisotropy;
-
-            float *sheen = reinterpret_cast<float *>(encoder->constant_data_at(6));
-            *sheen = m.sheen;
-
-            float *sheen_tint = reinterpret_cast<float *>(encoder->constant_data_at(7));
-            *sheen_tint = m.sheen_tint;
-
-            float *clearcoat = reinterpret_cast<float *>(encoder->constant_data_at(8));
-            *clearcoat = m.clearcoat;
-
-            float *clearcoat_gloss = reinterpret_cast<float *>(encoder->constant_data_at(9));
-            *clearcoat_gloss = m.clearcoat_gloss;
-
-            float *ior = reinterpret_cast<float *>(encoder->constant_data_at(10));
-            *ior = m.ior;
-
-            float *specular_transmission =
-                reinterpret_cast<float *>(encoder->constant_data_at(11));
-            *specular_transmission = m.specular_transmission;
-
-            offset += material_args_size;
-        }
-        material_buffer->mark_modified();
-    }
+    material_buffer =
+        std::make_shared<metal::Buffer>(*context,
+                                        sizeof(DisneyMaterial) * scene.materials.size(),
+                                        MTLResourceStorageModeManaged);
+    std::memcpy(material_buffer->data(), scene.materials.data(), material_buffer->size());
+    material_buffer->mark_modified();
 
     textures = upload_textures(scene.textures);
 

@@ -21,21 +21,21 @@ using namespace metal;
  */
 
 struct DisneyMaterial {
-    packed_float3 base_color [[id(0)]];
-    float metallic [[id(1)]];
+    packed_float3 base_color;
+    float metallic;
 
-    float specular [[id(2)]];
-    float roughness [[id(3)]];
-    float specular_tint [[id(4)]];
-    float anisotropy [[id(5)]];
+    float specular;
+    float roughness;
+    float specular_tint;
+    float anisotropy;
 
-    float sheen [[id(6)]];
-    float sheen_tint [[id(7)]];
-    float clearcoat [[id(8)]];
-    float clearcoat_gloss [[id(9)]];
+    float sheen;
+    float sheen_tint;
+    float clearcoat;
+    float clearcoat_gloss;
 
-    float ior [[id(10)]];
-    float specular_transmission [[id(11)]];
+    float ior;
+    float specular_transmission;
     float2 pad1;
 };
 
