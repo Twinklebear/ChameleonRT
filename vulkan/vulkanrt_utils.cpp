@@ -86,10 +86,6 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
                                           primitive_counts.data(),
                                           &build_size_info);
 
-    std::cout << "BLAS needs non-compacted output space: "
-              << build_size_info.accelerationStructureSize
-              << "b and scratch of: " << build_size_info.buildScratchSize << "b\n";
-
     bvh_buf = Buffer::device(*device,
                              build_size_info.accelerationStructureSize,
                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
@@ -194,7 +190,6 @@ void TriangleMesh::enqueue_compaction(VkCommandBuffer &cmd_buf)
                                        sizeof(uint64_t),
                                        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT));
 
-    std::cout << "Compacted size: " << compacted_size << "b\n";
     compacted_buf = Buffer::device(*device,
                                    compacted_size,
                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
@@ -286,10 +281,6 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
                                           &build_info,
                                           &instance_desc_count,
                                           &build_size_info);
-
-    std::cout << "TLAS needs non-compacted output space: "
-              << build_size_info.accelerationStructureSize
-              << "b and scratch of: " << build_size_info.buildScratchSize << "b\n";
 
     bvh_buf = Buffer::device(*device,
                              build_size_info.accelerationStructureSize,
