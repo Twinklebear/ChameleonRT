@@ -57,7 +57,7 @@ Embree directory.
 
 ### OptiX
 
-Dependencies: [OptiX 7](https://developer.nvidia.com/optix), [CUDA 10](https://developer.nvidia.com/cuda-zone).
+Dependencies: [OptiX 7.2](https://developer.nvidia.com/optix), [CUDA 11](https://developer.nvidia.com/cuda-zone).
 
 To build the OptiX backend run CMake with:
 
@@ -85,7 +85,7 @@ You can then pass `-dxr` to use the DXR backend.
 
 ### Vulkan KHR Ray Tracing
 
-Dependencies: [Vulkan](https://vulkan.lunarg.com/) (version 1.2 or higher)
+Dependencies: [Vulkan](https://vulkan.lunarg.com/) (SDK 1.2.162 or higher)
 
 To build the Vulkan backend run CMake with:
 
@@ -97,7 +97,7 @@ You can then pass `-vulkan` to use the Vulkan backend.
 
 If CMake doesn't find your install of Vulkan you can tell it where it's
 installed with `-DVULKAN_SDK`. This path should be to the specific version
-of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.2.135.0/`
+of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.2.162.0/`
 
 ### OSPRay
 
