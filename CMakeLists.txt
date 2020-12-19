@@ -19,8 +19,21 @@ add_subdirectory(util)
 
 option(ENABLE_OSPRAY "Build the OSPRay rendering backend. Requires OSPRay" OFF)
 option(ENABLE_EMBREE "Build the Embree + TBB + ISPC rendering backend. Requires Embree, TBB and ISPC" OFF)
-option(ENABLE_OPTIX "Build the OptiX rendering backend. Requires OptiX and CUDA" OFF)
-option(ENABLE_VULKAN "Build the Vulkan rendering backend. Requires Vulkan" OFF)
+
+include(CMakeDependentOption)
+
+cmake_dependent_option(ENABLE_OPTIX "Build the OptiX rendering backend. Requires OptiX and CUDA" OFF
+    "NOT APPLE" OFF)
+
+cmake_dependent_option(ENABLE_VULKAN "Build the Vulkan rendering backend. Requires Vulkan" OFF
+    "NOT APPLE" OFF)
+
+cmake_dependent_option(ENABLE_DXR "Build the DXR rendering backend" OFF
+    "WIN32" OFF)
+
+cmake_dependent_option(ENABLE_METAL "Build the Metal rendering backend" OFF
+    "APPLE" OFF)
+
 option(REPORT_RAY_STATS "Track and report rays/second. May incur a slight rendering performance penalty" OFF)
 
 if (ENABLE_OSPRAY)
@@ -34,28 +47,30 @@ if (ENABLE_EMBREE)
 endif()
 
 if (ENABLE_OPTIX)
-	add_definitions(-DENABLE_OPTIX)
-	add_subdirectory(optix)
-endif()
-
-if (WIN32) 
-	option(ENABLE_DXR "Build the DXR rendering backend" OFF)
-	if (ENABLE_DXR)
-		add_definitions(-DENABLE_DXR)
-		add_subdirectory(dxr)
-	endif()
-else()
-	set(ENABLE_DXR "OFF")
+    add_definitions(-DENABLE_OPTIX)
+    add_subdirectory(optix)
 endif()
 
 if (ENABLE_VULKAN)
-	add_definitions(-DENABLE_VULKAN)
-	add_subdirectory(vulkan)
+    add_definitions(-DENABLE_VULKAN)
+    add_subdirectory(vulkan)
 endif()
 
-if (NOT ENABLE_OSPRAY AND NOT ENABLE_EMBREE AND NOT ENABLE_OPTIX AND NOT ENABLE_DXR AND NOT ENABLE_VULKAN)
-	message(FATAL_ERROR "At least one rendering backend (OSPRAY, EMBREE, OPTIX, DXR) must be selected\n"
-		"Enable at least one of: ENABLE_OSPRAY, ENABLE_EMBREE, ENABLE_OPTIX, ENABLE_DXR") 
+if (ENABLE_DXR)
+    add_definitions(-DENABLE_DXR)
+    add_subdirectory(dxr)
+endif()
+
+if (ENABLE_METAL)
+    add_definitions(-DENABLE_METAL)
+    add_subdirectory(metal)
+endif()
+
+if (NOT ENABLE_OSPRAY AND NOT ENABLE_EMBREE AND NOT ENABLE_OPTIX
+        AND NOT ENABLE_VULKAN AND NOT ENABLE_DXR AND NOT ENABLE_METAL)
+    message(FATAL_ERROR
+        "At least one backend (OSPRay, Embree, OptiX, Vulkan DXR, Metal) must be selected\n"
+        "Enable at least one of: ENABLE_OSPRAY, ENABLE_EMBREE, ENABLE_OPTIX, ENABLE_VULKAN, ENABLE_DXR, ENABLE_METAL") 
 endif()
 
 add_executable(chameleonrt main.cpp)
@@ -80,11 +95,15 @@ if (ENABLE_OPTIX)
 	target_link_libraries(chameleonrt PUBLIC render_optix)
 endif()
 
+if (ENABLE_VULKAN)
+	target_link_libraries(chameleonrt PUBLIC render_vulkan)
+endif()
+
 if (ENABLE_DXR)
 	target_link_libraries(chameleonrt PUBLIC render_dxr)
 endif()
 
-if (ENABLE_VULKAN)
-	target_link_libraries(chameleonrt PUBLIC render_vulkan)
+if (ENABLE_METAL)
+    target_link_libraries(chameleonrt PUBLIC render_metal)
 endif()
 

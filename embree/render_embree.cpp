@@ -21,11 +21,8 @@ RenderEmbree::RenderEmbree()
 #ifndef __aarch64__
     _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
     _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
-    const std::string embree_cfg = "";
-#else
-    const std::string embree_cfg = "set_affinity=0,frequency_level=simd256";
 #endif
-    device = rtcNewDevice(embree_cfg.c_str());
+    device = rtcNewDevice(nullptr);
 }
 
 RenderEmbree::~RenderEmbree()

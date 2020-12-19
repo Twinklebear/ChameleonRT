@@ -33,6 +33,10 @@
 #include "vulkan/render_vulkan.h"
 #include "vulkan/vkdisplay.h"
 #endif
+#if ENABLE_METAL
+#include "metal/metaldisplay.h"
+#include "metal/render_metal.h"
+#endif
 
 const std::string USAGE =
     "Usage: <backend> <obj_file> [options]\n"
@@ -46,11 +50,14 @@ const std::string USAGE =
 #if ENABLE_EMBREE
     "\t-embree    Render with Embree\n"
 #endif
+#if ENABLE_VULKAN
+    "\t-vulkan    Render with Vulkan Ray Tracing\n"
+#endif
 #if ENABLE_DXR
     "\t-dxr       Render with DirectX Ray Tracing\n"
 #endif
-#if ENABLE_VULKAN
-    "\t-vulkan    Render with Vulkan Ray Tracing\n"
+#if ENABLE_METAL
+    "\t-metal     Render with Metal Ray Tracing\n"
 #endif
     "Options:\n"
     "\t-eye <x> <y> <z>       Set the camera position\n"
@@ -111,6 +118,13 @@ int main(int argc, const char **argv)
             continue;
         }
 #endif
+        // Disabled while debugging ImGui issue
+#if ENABLE_METAL
+        if (args[i] == "-metal") {
+            display_frontend = "mtl";
+            continue;
+        }
+#endif
     }
 
     if (display_frontend == "gl") {
@@ -150,7 +164,11 @@ int main(int argc, const char **argv)
             display = std::make_unique<VKDisplay>(window);
         }
 #endif
-
+#ifdef ENABLE_METAL
+        else if (display_frontend == "mtl") {
+            display = std::make_unique<MetalDisplay>(window);
+        }
+#endif
         run_app(args, window, display.get());
     }
 
@@ -172,6 +190,9 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #endif
 #ifdef ENABLE_VULKAN
     VKDisplay *vk_display = dynamic_cast<VKDisplay *>(display);
+#endif
+#ifdef ENABLE_METAL
+    MetalDisplay *mtl_display = dynamic_cast<MetalDisplay *>(display);
 #endif
     GLDisplay *gl_display = dynamic_cast<GLDisplay *>(display);
     bool display_is_native = false;
@@ -212,12 +233,20 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         }
 #if ENABLE_OSPRAY
         else if (args[i] == "-ospray") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             renderer = std::make_unique<RenderOSPRay>();
             backend_arg = args[i];
         }
 #endif
 #if ENABLE_OPTIX
         else if (args[i] == "-optix") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             display_is_native = gl_display != nullptr;
             renderer = std::make_unique<RenderOptiX>(display_is_native);
             backend_arg = args[i];
@@ -225,12 +254,20 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #endif
 #if ENABLE_EMBREE
         else if (args[i] == "-embree") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             renderer = std::make_unique<RenderEmbree>();
             backend_arg = args[i];
         }
 #endif
 #if ENABLE_DXR
         else if (args[i] == "-dxr") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             if (dx_display) {
                 display_is_native = true;
                 renderer = std::make_unique<RenderDXR>(dx_display->device, display_is_native);
@@ -242,12 +279,31 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #endif
 #if ENABLE_VULKAN
         else if (args[i] == "-vulkan") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             if (vk_display) {
                 display_is_native = true;
                 renderer =
                     std::make_unique<RenderVulkan>(vk_display->device, display_is_native);
             } else {
                 renderer = std::make_unique<RenderVulkan>();
+            }
+            backend_arg = args[i];
+        }
+#endif
+#if ENABLE_METAL
+        else if (args[i] == "-metal") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
+            if (mtl_display) {
+                display_is_native = true;
+                renderer = std::make_unique<RenderMetal>(mtl_display->context);
+            } else {
+                renderer = std::make_unique<RenderMetal>();
             }
             backend_arg = args[i];
         }
@@ -463,6 +519,12 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             if (vk_display) {
                 RenderVulkan *render_vk = reinterpret_cast<RenderVulkan *>(renderer.get());
                 vk_display->display_native(render_vk->render_target);
+            }
+#endif
+#ifdef ENABLE_METAL
+            if (mtl_display) {
+                RenderMetal *render_mtl = reinterpret_cast<RenderMetal *>(renderer.get());
+                mtl_display->display_native(render_mtl->render_target);
             }
 #endif
 #ifdef ENABLE_OPTIX
