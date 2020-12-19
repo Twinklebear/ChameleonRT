@@ -37,6 +37,8 @@ struct RenderMetal : RenderBackend {
     std::vector<std::shared_ptr<metal::Texture2D>> textures;
     std::shared_ptr<metal::Buffer> texture_arg_buffer;
 
+    std::shared_ptr<metal::Buffer> light_buffer;
+
     uint32_t frame_id = 0;
     bool native_display = false;
 

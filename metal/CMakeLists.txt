@@ -17,6 +17,7 @@ add_metal_embed_library(metal_shaders
     render_metal.metal
     disney_bsdf.metal
     lcg_rng.metal
+    lights.metal
     shader_types.h
     INCLUDE_DIRECTORIES
         ${CMAKE_CURRENT_LIST_DIR}

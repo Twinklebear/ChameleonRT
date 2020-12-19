@@ -136,7 +136,6 @@ void RenderMetal::set_scene(const Scene &scene)
     }
 
     // Upload the material data
-
     material_buffer =
         std::make_shared<metal::Buffer>(*context,
                                         sizeof(DisneyMaterial) * scene.materials.size(),
@@ -144,22 +143,30 @@ void RenderMetal::set_scene(const Scene &scene)
     std::memcpy(material_buffer->data(), scene.materials.data(), material_buffer->size());
     material_buffer->mark_modified();
 
+    // Upload the lights data
+    light_buffer = std::make_shared<metal::Buffer>(
+        *context, sizeof(QuadLight) * scene.lights.size(), MTLResourceStorageModeManaged);
+    std::memcpy(light_buffer->data(), scene.lights.data(), light_buffer->size());
+    light_buffer->mark_modified();
+
     textures = upload_textures(scene.textures);
 
     // Pass the handles of the textures through an argument buffer
-    metal::ArgumentEncoderBuilder tex_args_encoder_builder(*context);
-    tex_args_encoder_builder.add_texture(0, MTLArgumentAccessReadOnly);
-    const size_t tex_args_size = tex_args_encoder_builder.encoded_length();
+    {
+        metal::ArgumentEncoderBuilder args_builder(*context);
+        args_builder.add_texture(0, MTLArgumentAccessReadOnly);
+        const size_t tex_args_size = args_builder.encoded_length();
 
-    texture_arg_buffer = std::make_shared<metal::Buffer>(
-        *context, tex_args_size * textures.size(), MTLResourceStorageModeManaged);
+        texture_arg_buffer = std::make_shared<metal::Buffer>(
+            *context, tex_args_size * textures.size(), MTLResourceStorageModeManaged);
 
-    size_t tex_args_offset = 0;
-    for (const auto &t : textures) {
-        auto encoder =
-            tex_args_encoder_builder.encoder_for_buffer(*texture_arg_buffer, tex_args_offset);
-        encoder->set_texture(*t, 0);
-        tex_args_offset += tex_args_size;
+        size_t tex_args_offset = 0;
+        for (const auto &t : textures) {
+            auto encoder =
+                args_builder.encoder_for_buffer(*texture_arg_buffer, tex_args_offset);
+            encoder->set_texture(*t, 0);
+            tex_args_offset += tex_args_size;
+        }
     }
     texture_arg_buffer->mark_modified();
 }
@@ -204,6 +211,7 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
     [command_encoder setBuffer:instance_args_buffer->buffer offset:0 atIndex:4];
     [command_encoder setBuffer:material_buffer->buffer offset:0 atIndex:5];
     [command_encoder setBuffer:texture_arg_buffer->buffer offset:0 atIndex:6];
+    [command_encoder setBuffer:light_buffer->buffer offset:0 atIndex:7];
     [command_encoder useHeap:data_heap->heap];
 
     [command_encoder setComputePipelineState:pipeline->pipeline];

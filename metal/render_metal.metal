@@ -1,9 +1,12 @@
 #include <metal_common>
 #include <metal_stdlib>
 #include <simd/simd.h>
-#include "shader_types.h"
-#include "util/texture_channel_mask.h"
 #include "disney_bsdf.metal"
+#include "lcg_rng.metal"
+#include "lights.metal"
+#include "shader_types.h"
+#include "util.metal"
+#include "util/texture_channel_mask.h"
 
 using namespace metal;
 using namespace raytracing;
@@ -37,7 +40,8 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
                    device MTLAccelerationStructureInstanceDescriptor *instances [[buffer(3)]],
                    device Instance *instance_data_buf [[buffer(4)]],
                    device DisneyMaterial *materials [[buffer(5)]],
-                   device Texture *textures [[buffer(6)]])
+                   device Texture *textures [[buffer(6)]],
+                   device QuadLight *lights [[buffer(7)]])
 {
     const float2 pixel = float2(tid);
     const float2 d = (pixel + 0.5f) / float2(view_params.fb_dims);
