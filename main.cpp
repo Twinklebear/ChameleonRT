@@ -233,12 +233,20 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         }
 #if ENABLE_OSPRAY
         else if (args[i] == "-ospray") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             renderer = std::make_unique<RenderOSPRay>();
             backend_arg = args[i];
         }
 #endif
 #if ENABLE_OPTIX
         else if (args[i] == "-optix") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             display_is_native = gl_display != nullptr;
             renderer = std::make_unique<RenderOptiX>(display_is_native);
             backend_arg = args[i];
@@ -246,12 +254,20 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #endif
 #if ENABLE_EMBREE
         else if (args[i] == "-embree") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             renderer = std::make_unique<RenderEmbree>();
             backend_arg = args[i];
         }
 #endif
 #if ENABLE_DXR
         else if (args[i] == "-dxr") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             if (dx_display) {
                 display_is_native = true;
                 renderer = std::make_unique<RenderDXR>(dx_display->device, display_is_native);
@@ -263,10 +279,13 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #endif
 #if ENABLE_VULKAN
         else if (args[i] == "-vulkan") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             if (vk_display) {
                 display_is_native = true;
                 renderer =
-                    // TODO: just make true now
                     std::make_unique<RenderVulkan>(vk_display->device, display_is_native);
             } else {
                 renderer = std::make_unique<RenderVulkan>();
@@ -276,6 +295,10 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 #endif
 #if ENABLE_METAL
         else if (args[i] == "-metal") {
+            if (renderer) {
+                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
+                continue;
+            }
             if (mtl_display) {
                 display_is_native = true;
                 renderer = std::make_unique<RenderMetal>(mtl_display->context);
