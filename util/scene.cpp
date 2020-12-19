@@ -171,8 +171,10 @@ void Scene::load_obj(const std::string &file)
         DisneyMaterial d;
         d.base_color = glm::vec3(m.diffuse[0], m.diffuse[1], m.diffuse[2]);
         d.specular = glm::clamp(m.shininess / 500.f, 0.f, 1.f);
-        d.roughness = 1.f - d.specular;
-        d.specular_transmission = glm::clamp(1.f - m.dissolve, 0.f, 1.f);
+        d.roughness = glm::clamp(1.f - d.specular, 0.f, 1.f);
+        // Note: need to debug the transmissive materials
+        d.specular_transmission = 0.f;
+        // d.specular_transmission = glm::clamp(1.f - m.dissolve, 0.f, 1.f);
 
         if (!m.diffuse_texname.empty()) {
             std::string path = m.diffuse_texname;
