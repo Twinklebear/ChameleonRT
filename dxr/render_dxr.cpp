@@ -60,6 +60,7 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
     frame_id = 0;
     img.resize(fb_width * fb_height);
 
+    // TODO: render to srgb texture?
     render_target = dxr::Texture2D::default(device.Get(),
                                             glm::uvec2(fb_width, fb_height),
                                             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
