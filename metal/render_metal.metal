@@ -321,6 +321,10 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
     const float3 accum_color = (illum + view_params.frame_id * accum_buffer.read(tid).xyz) /
                                (view_params.frame_id + 1);
     accum_buffer.write(float4(accum_color, 1.f), tid);
-    render_target.write(float4(accum_color, 1.f), tid);
+    render_target.write(float4(linear_to_srgb(accum_color.x),
+                               linear_to_srgb(accum_color.y),
+                               linear_to_srgb(accum_color.z),
+                               1.f),
+                        tid);
 }
 

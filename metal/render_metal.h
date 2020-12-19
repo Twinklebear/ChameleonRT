@@ -42,6 +42,8 @@ struct RenderMetal : RenderBackend {
     uint32_t frame_id = 0;
     bool native_display = false;
 
+    RenderMetal(std::shared_ptr<metal::Context> context);
+
     RenderMetal();
 
     std::string name() override;

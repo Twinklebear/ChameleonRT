@@ -11,21 +11,27 @@ if (NOT METAL_LIB)
     message(FATAL_ERROR "Metal not found")
 endif()
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror=objc-method-access")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror=objc-method-access -fobjc-arc -fobjc-weak")
 
 add_metal_embed_library(metal_shaders
     render_metal.metal
     disney_bsdf.metal
     lcg_rng.metal
     lights.metal
+    util.metal
     shader_types.h
     INCLUDE_DIRECTORIES
         ${CMAKE_CURRENT_LIST_DIR}
         ${PROJECT_SOURCE_DIR})
 
+add_metal_embed_library(metaldisplay_shaders
+    metaldisplay.metal)
+
 add_library(render_metal
     render_metal.mm
-    metalrt_utils.mm)
+    metaldisplay.mm
+    metalrt_utils.mm
+    imgui_impl_metal.mm)
 
 set_target_properties(render_metal PROPERTIES
     CXX_STANDARD 14
@@ -36,5 +42,6 @@ target_link_libraries(render_metal
     util
     ${QUARTZ_CORE}
     ${METAL_LIB}
-    metal_shaders)
+    metal_shaders
+    metaldisplay_shaders)
 

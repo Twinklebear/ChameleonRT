@@ -15,6 +15,7 @@ Context::Context()
     // Find a Metal device that supports ray tracing
     NSArray<id<MTLDevice>> *devices = MTLCopyAllDevices();
     for (id<MTLDevice> d in devices) {
+        std::cout << "device name: " << [d.name UTF8String] << "\n";
         if (d.supportsRaytracing && (!device || !d.isLowPower)) {
             device = d;
         }
@@ -25,14 +26,6 @@ Context::Context()
     }
 
     command_queue = [device newCommandQueue];
-
-    [devices release];
-}
-
-Context::~Context()
-{
-    [device release];
-    [command_queue release];
 }
 
 std::string Context::device_name() const
@@ -58,12 +51,6 @@ ShaderLibrary::ShaderLibrary(Context &context, const void *data, const size_t da
     }
 }
 
-ShaderLibrary::~ShaderLibrary()
-{
-    [library release];
-    [library_data release];
-}
-
 id<MTLFunction> ShaderLibrary::new_function(NSString *name)
 {
     return [library newFunctionWithName:name];
@@ -85,8 +72,6 @@ ComputePipeline::ComputePipeline(Context &context, id<MTLFunction> shader)
             [err.localizedDescription UTF8String] << "\n";
         throw std::runtime_error("Failed to create compute pipeline");
     }
-
-    [pipeline_desc release];
 }
 
 MTLSize ComputePipeline::recommended_thread_group_size() const
@@ -94,16 +79,6 @@ MTLSize ComputePipeline::recommended_thread_group_size() const
     const size_t width = pipeline.threadExecutionWidth;
     const size_t height = pipeline.maxTotalThreadsPerThreadgroup / width;
     return MTLSizeMake(width, height, 1);
-}
-
-ComputePipeline::~ComputePipeline()
-{
-    [pipeline release];
-}
-
-Heap::~Heap()
-{
-    [heap release];
 }
 
 size_t Heap::size() const
@@ -121,11 +96,6 @@ Buffer::Buffer(Heap &heap, const size_t size, const MTLResourceOptions options)
     : options(options)
 {
     buffer = [heap.heap newBufferWithLength:size options:options];
-}
-
-Buffer::~Buffer()
-{
-    [buffer release];
 }
 
 void *Buffer::data()
@@ -165,8 +135,6 @@ Texture2D::Texture2D(Context &context,
                                                        mipmapped:NO];
     tex_desc.usage = usage;
     texture = [context.device newTextureWithDescriptor:tex_desc];
-
-    [tex_desc release];
 }
 
 Texture2D::Texture2D(Heap &heap,
@@ -184,13 +152,6 @@ Texture2D::Texture2D(Heap &heap,
     tex_desc.usage = usage;
     tex_desc.storageMode = MTLStorageModePrivate;
     texture = [heap.heap newTextureWithDescriptor:tex_desc];
-
-    [tex_desc release];
-}
-
-Texture2D::~Texture2D()
-{
-    [texture release];
 }
 
 const glm::uvec2 &Texture2D::dims() const
@@ -219,6 +180,7 @@ size_t Texture2D::pixel_size() const
     switch (format) {
     case MTLPixelFormatRGBA8Unorm:
     case MTLPixelFormatRGBA8Unorm_sRGB:
+    case MTLPixelFormatBGRA8Unorm:
         return 4;
     case MTLPixelFormatR16Unorm:
         return 2;
@@ -234,11 +196,6 @@ HeapBuilder::HeapBuilder(Context &context) : device(context.device)
     descriptor = [MTLHeapDescriptor new];
     descriptor.storageMode = MTLStorageModePrivate;
     descriptor.size = 0;
-}
-
-HeapBuilder::~HeapBuilder()
-{
-    [descriptor release];
 }
 
 HeapBuilder &HeapBuilder::add_buffer(const size_t size, const MTLResourceOptions options)
@@ -267,8 +224,6 @@ HeapBuilder &HeapBuilder::add_texture2d(const uint32_t width,
 
     descriptor.size += align_to(size_align.size, size_align.align);
 
-    [tex_desc release];
-
     return *this;
 }
 
@@ -277,11 +232,6 @@ std::shared_ptr<Heap> HeapBuilder::build()
     std::shared_ptr<Heap> heap = std::make_shared<Heap>();
     heap->heap = [device newHeapWithDescriptor:descriptor];
     return heap;
-}
-
-ArgumentEncoder::~ArgumentEncoder()
-{
-    [encoder release];
 }
 
 void ArgumentEncoder::set_buffer(Buffer &buffer, const size_t offset, const size_t index)
@@ -301,11 +251,6 @@ void *ArgumentEncoder::constant_data_at(const size_t index)
 
 ArgumentEncoderBuilder::ArgumentEncoderBuilder(Context &context) : device(context.device) {}
 
-ArgumentEncoderBuilder::~ArgumentEncoderBuilder()
-{
-    [arguments release];
-}
-
 ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_buffer(const size_t index,
                                                            const MTLArgumentAccess access)
 {
@@ -315,7 +260,6 @@ ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_buffer(const size_t index,
     buf_desc.dataType = MTLDataTypePointer;
     [arguments addObject:buf_desc];
 
-    [buf_desc release];
     return *this;
 }
 
@@ -328,7 +272,6 @@ ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_texture(const size_t index,
     buf_desc.dataType = MTLDataTypeTexture;
     [arguments addObject:buf_desc];
 
-    [buf_desc release];
     return *this;
 }
 
@@ -341,7 +284,6 @@ ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_constant(const size_t index,
     buf_desc.dataType = type;
     [arguments addObject:buf_desc];
 
-    [buf_desc release];
     return *this;
 }
 
@@ -349,7 +291,6 @@ size_t ArgumentEncoderBuilder::encoded_length() const
 {
     id<MTLArgumentEncoder> encoder = [device newArgumentEncoderWithArguments:arguments];
     const size_t length = encoder.encodedLength;
-    [encoder release];
     return length;
 }
 
@@ -421,7 +362,6 @@ void BVH::enqueue_compaction(Context &context,
     // Cleanup temporary build buffers and non-compact BVH
     compacted_size_buffer = nullptr;
     scratch_buffer = nullptr;
-    [bvh release];
 
     bvh = compact_as;
 }
@@ -453,7 +393,6 @@ void BottomLevelBVH::enqueue_build(Context &context,
         g_desc.opaque = YES;
 
         [geom_descs addObject:g_desc];
-        [g_desc release];
     }
 
     MTLPrimitiveAccelerationStructureDescriptor *bvh_desc =
@@ -461,9 +400,6 @@ void BottomLevelBVH::enqueue_build(Context &context,
     bvh_desc.geometryDescriptors = geom_descs;
 
     build(context, command_encoder, bvh_desc);
-
-    [bvh_desc release];
-    [geom_descs release];
 }
 
 TopLevelBVH::TopLevelBVH(const std::vector<Instance> &instances,
@@ -516,9 +452,6 @@ void TopLevelBVH::enqueue_build(Context &context,
     tlas_desc.instanceDescriptorStride = sizeof(MTLAccelerationStructureInstanceDescriptor);
 
     build(context, command_encoder, tlas_desc);
-
-    [tlas_desc release];
-    [blas_array release];
 }
 
 };

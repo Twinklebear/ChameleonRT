@@ -5,13 +5,6 @@
 #include <simd/simd.h>
 #include "mesh.h"
 
-// TODO: Need to manually manage lifetimes, since I'm not
-// sure if ARC will play very well with being used from a
-// C++ class called from outside?
-#if __has_feature(objc_arc)
-#error "The Metal renderer uses manual reference counting"
-#endif
-
 namespace metal {
 
 struct Context {
@@ -19,8 +12,6 @@ struct Context {
     id<MTLCommandQueue> command_queue = nullptr;
 
     Context();
-
-    ~Context();
 
     std::string device_name() const;
 
@@ -38,8 +29,6 @@ public:
 
     ShaderLibrary(Context &context, const void *data, const size_t data_size);
 
-    ~ShaderLibrary();
-
     id<MTLFunction> new_function(NSString *name);
 };
 
@@ -51,8 +40,6 @@ struct ComputePipeline {
     ComputePipeline(Context &context, id<MTLFunction> shader);
 
     MTLSize recommended_thread_group_size() const;
-
-    ~ComputePipeline();
 };
 
 struct Heap {
@@ -60,8 +47,6 @@ struct Heap {
 
     // Construct heaps using the HeapBuilder
     Heap() = default;
-
-    ~Heap();
 
     size_t size() const;
 };
@@ -79,8 +64,6 @@ public:
 
     // Allocate the buffer from the passed heap
     Buffer(Heap &heap, const size_t size, const MTLResourceOptions options);
-
-    ~Buffer();
 
     void *data();
 
@@ -116,8 +99,6 @@ public:
               MTLPixelFormat format,
               MTLTextureUsage usage);
 
-    ~Texture2D();
-
     const glm::uvec2 &dims() const;
 
     void readback(void *out) const;
@@ -135,8 +116,6 @@ private:
 public:
     HeapBuilder(Context &context);
 
-    ~HeapBuilder();
-
     HeapBuilder &add_buffer(const size_t size, const MTLResourceOptions options);
 
     HeapBuilder &add_texture2d(const uint32_t width,
@@ -151,8 +130,6 @@ struct ArgumentEncoder {
     id<MTLArgumentEncoder> encoder = nullptr;
 
     ArgumentEncoder() = default;
-
-    ~ArgumentEncoder();
 
     void set_buffer(Buffer &buffer, const size_t offset, const size_t index);
 
@@ -169,8 +146,6 @@ private:
 
 public:
     ArgumentEncoderBuilder(Context &context);
-
-    ~ArgumentEncoderBuilder();
 
     ArgumentEncoderBuilder &add_buffer(const size_t index, const MTLArgumentAccess access);
 
