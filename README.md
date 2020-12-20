@@ -1,6 +1,6 @@
 # ChameleonRT
 
-An example path tracer which runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan/Metal/OSPRay).
+An example path tracer that runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan/Metal/OSPRay).
 Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files,
 [tinygltf](https://github.com/syoyo/tinygltf) to load glTF files and, optionally,
 Ingo Wald's [pbrt-parser](https://github.com/ingowald/pbrt-parser) to load PBRTv3 files.
