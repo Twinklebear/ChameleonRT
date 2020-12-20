@@ -39,7 +39,7 @@ struct RenderDXR : RenderBackend {
     std::vector<uint16_t> ray_counts;
 #endif
 
-    RenderDXR(Microsoft::WRL::ComPtr<ID3D12Device5> device, bool native_display);
+    RenderDXR(Microsoft::WRL::ComPtr<ID3D12Device5> device);
 
     RenderDXR();
 

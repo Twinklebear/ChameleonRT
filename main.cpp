@@ -270,7 +270,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             }
             if (dx_display) {
                 display_is_native = true;
-                renderer = std::make_unique<RenderDXR>(dx_display->device, display_is_native);
+                renderer = std::make_unique<RenderDXR>(dx_display->device);
             } else {
                 renderer = std::make_unique<RenderDXR>();
             }
@@ -286,7 +286,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             if (vk_display) {
                 display_is_native = true;
                 renderer =
-                    std::make_unique<RenderVulkan>(vk_display->device, display_is_native);
+                    std::make_unique<RenderVulkan>(vk_display->device);
             } else {
                 renderer = std::make_unique<RenderVulkan>();
             }

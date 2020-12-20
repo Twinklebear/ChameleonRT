@@ -9,8 +9,8 @@
 #include "util.h"
 #include <glm/ext.hpp>
 
-RenderVulkan::RenderVulkan(std::shared_ptr<vkrt::Device> dev, bool native_display)
-    : device(dev), native_display(native_display)
+RenderVulkan::RenderVulkan(std::shared_ptr<vkrt::Device> dev)
+    : device(dev), native_display(true)
 {
     command_pool = device->make_command_pool(VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
     {
@@ -48,7 +48,10 @@ RenderVulkan::RenderVulkan(std::shared_ptr<vkrt::Device> dev, bool native_displa
                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 }
 
-RenderVulkan::RenderVulkan() : RenderVulkan(std::make_shared<vkrt::Device>(), false) {}
+RenderVulkan::RenderVulkan() : RenderVulkan(std::make_shared<vkrt::Device>())
+{
+    native_display = false;
+}
 
 RenderVulkan::~RenderVulkan()
 {

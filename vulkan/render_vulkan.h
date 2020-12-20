@@ -61,7 +61,7 @@ struct RenderVulkan : RenderBackend {
     size_t frame_id = 0;
     bool native_display = false;
 
-    RenderVulkan(std::shared_ptr<vkrt::Device> device, bool native_display);
+    RenderVulkan(std::shared_ptr<vkrt::Device> device);
 
     RenderVulkan();
 

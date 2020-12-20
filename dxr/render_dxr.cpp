@@ -15,13 +15,13 @@
 
 using Microsoft::WRL::ComPtr;
 
-RenderDXR::RenderDXR(Microsoft::WRL::ComPtr<ID3D12Device5> device, bool native_display)
-    : device(device), native_display(native_display)
+RenderDXR::RenderDXR(Microsoft::WRL::ComPtr<ID3D12Device5> device)
+    : device(device), native_display(true)
 {
     create_device_objects();
 }
 
-RenderDXR::RenderDXR()
+RenderDXR::RenderDXR() : native_display(false)
 {
     // Enable debugging for D3D12
 #ifdef _DEBUG
