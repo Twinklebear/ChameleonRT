@@ -390,13 +390,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
                               << " -up " << up.x << " " << up.y << " " << up.z << " -fov "
                               << fov_y << "\n";
                 } else if (event.key.keysym.sym == SDLK_s) {
-                    std::cout << "Image saved to " << image_output << "\n";
-                    stbi_write_png(image_output.c_str(),
-                                   win_width,
-                                   win_height,
-                                   4,
-                                   renderer->img.data(),
-                                   4 * win_width);
+                    save_image = true;
                 }
             }
             if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE &&
