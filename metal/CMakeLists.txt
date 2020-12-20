@@ -29,7 +29,9 @@ add_metal_embed_library(metal_shaders
     ${CMAKE_CURRENT_LIST_DIR}
     ${PROJECT_SOURCE_DIR}
     COMPILE_DEFINITIONS
-    ${METAL_COMPILE_DEFNS})
+    ${METAL_COMPILE_DEFNS}
+    COMPILE_OPTIONS
+    -O3 -ffast-math)
 
 add_metal_embed_library(metaldisplay_shaders
     metaldisplay.metal)
