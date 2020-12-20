@@ -101,7 +101,7 @@ of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.2.162.0/`
 
 ### Metal
 
-Dependencies: [Metal](https://developer.apple.com/metal/) and a macOS device that supports ray tracing.
+Dependencies: [Metal](https://developer.apple.com/metal/) and a macOS 11+ device that supports ray tracing.
 
 To build the Metal backend run CMake with:
 
