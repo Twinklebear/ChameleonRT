@@ -11,6 +11,12 @@
 #include "util.h"
 #include <glm/ext.hpp>
 
+#ifdef AO_RENDERER
+const static std::wstring RAY_GEN_NAME = L"AoRayGen";
+#else
+const static std::wstring RAY_GEN_NAME = L"RayGen";
+#endif
+
 #define NUM_RAY_TYPES 2
 
 using Microsoft::WRL::ComPtr;
@@ -514,9 +520,10 @@ void RenderDXR::create_device_objects()
 
 void RenderDXR::build_raytracing_pipeline()
 {
-    dxr::ShaderLibrary shader_library(render_dxr_dxil,
-                                      sizeof(render_dxr_dxil),
-                                      {L"RayGen", L"Miss", L"ClosestHit", L"ShadowMiss"});
+    dxr::ShaderLibrary shader_library(
+        render_dxr_dxil,
+        sizeof(render_dxr_dxil),
+        {L"RayGen", L"AoRayGen", L"Miss", L"ClosestHit", L"ShadowMiss"});
 
     // Create the root signature for our ray gen shader
     dxr::RootSignature raygen_root_sig =
@@ -538,9 +545,10 @@ void RenderDXR::build_raytracing_pipeline()
     dxr::RTPipelineBuilder rt_pipeline_builder =
         dxr::RTPipelineBuilder()
             .add_shader_library(shader_library)
-            .set_ray_gen(L"RayGen")
+            .set_ray_gen(RAY_GEN_NAME.c_str())
             .add_miss_shader(L"Miss")
             .add_miss_shader(L"ShadowMiss")
+            .set_shader_root_sig({L"AoRayGen"}, raygen_root_sig)
             .set_shader_root_sig({L"RayGen"}, raygen_root_sig)
             .configure_shader_payload(
                 shader_library.export_names(), 8 * sizeof(float), 2 * sizeof(float))
@@ -589,8 +597,8 @@ void RenderDXR::build_shader_binding_table()
 {
     rt_pipeline.map_shader_table();
     {
-        uint8_t *map = rt_pipeline.shader_record(L"RayGen");
-        const dxr::RootSignature *sig = rt_pipeline.shader_signature(L"RayGen");
+        uint8_t *map = rt_pipeline.shader_record(RAY_GEN_NAME.c_str());
+        const dxr::RootSignature *sig = rt_pipeline.shader_signature(RAY_GEN_NAME.c_str());
 
         const uint32_t num_lights = light_buf.size() / sizeof(QuadLight);
         std::memcpy(map + sig->offset("SceneParams"), &num_lights, sizeof(uint32_t));

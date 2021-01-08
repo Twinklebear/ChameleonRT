@@ -2,6 +2,8 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 find_package(D3D12 REQUIRED)
 
+option(AO_RENDERER "Build the AO renderer instead of path tracer" OFF)
+
 set(HLSL_COMPILE_DEFNS "")
 if (REPORT_RAY_STATS)
 	set(HLSL_COMPILE_DEFNS "REPORT_RAY_STATS=1")
@@ -30,6 +32,11 @@ set_target_properties(render_dxr PROPERTIES
 if (REPORT_RAY_STATS)
 	target_compile_options(render_dxr PUBLIC
 		-DREPORT_RAY_STATS=1)
+endif()
+
+if (AO_RENDERER)
+	target_compile_options(render_dxr PUBLIC
+        -DAO_RENDERER=1)
 endif()
 
 target_include_directories(render_dxr PUBLIC

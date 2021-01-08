@@ -249,6 +249,80 @@ void RayGen() {
 #endif
 }
 
+[shader("raygeneration")] 
+void AoRayGen() {
+    const uint2 pixel = DispatchRaysIndex().xy;
+    const float2 dims = float2(DispatchRaysDimensions().xy);
+    LCGRand rng = get_rng(frame_id);
+    const float2 d = (pixel + float2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
+
+    RayDesc ray;
+    ray.Origin = cam_pos.xyz;
+    ray.Direction = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
+    ray.TMin = 0;
+    ray.TMax = 1e20f;
+
+    uint ray_count = 0;
+
+    HitInfo payload;
+    payload.color_dist = float4(0, 0, 0, -1);
+    TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
+#ifdef REPORT_RAY_STATS
+    ++ray_count;
+#endif
+
+    // If we hit an object, trace AO samples to compute AO, otherwise leave
+    // occlusion as 1 to make the background block
+    float occlusion = 1.f;
+    if (payload.color_dist.w > 0) {
+        const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
+
+        float3 v_x, v_y;
+        float3 v_z = payload.normal.xyz;
+        if (dot(-ray.Direction, v_z) < 0.0) {
+            v_z = -v_z;
+        }
+        ortho_basis(v_x, v_y, v_z);
+
+        OcclusionHitInfo shadow_hit;
+        RayDesc shadow_ray;
+        shadow_ray.Origin = hit_p;
+        shadow_ray.TMin = EPSILON;
+        shadow_ray.TMax = 1e20f;
+
+        const uint32_t occlusion_flags = RAY_FLAG_FORCE_OPAQUE
+            | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+            | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
+
+        const int max_ao_rays = 8;
+        int ao_hit_count = 0;
+        for (int i = 0; i < 8; ++i) {
+            float2 samples = float2(lcg_randomf(rng), lcg_randomf(rng));
+            shadow_ray.Direction = sample_lambertian_dir(v_z, v_x, v_y, samples);
+            shadow_hit.hit = 1;
+            TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, shadow_ray, shadow_hit);
+#ifdef REPORT_RAY_STATS
+            ++ray_count;
+#endif
+            ao_hit_count += shadow_hit.hit;
+        }
+        occlusion = float(ao_hit_count) / float(max_ao_rays);
+    }
+
+    const float occlusion_amount = 1.f - occlusion;
+    const float3 occlusion_color = float3(occlusion_amount, occlusion_amount, occlusion_amount);
+    const float4 accum_color = (float4(occlusion_color, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
+    accum_buffer[pixel] = accum_color;
+
+    output[pixel] = float4(linear_to_srgb(accum_color.r),
+            linear_to_srgb(accum_color.g),
+            linear_to_srgb(accum_color.b), 1.f);
+
+#ifdef REPORT_RAY_STATS
+    ray_stats[pixel] = ray_count;
+#endif
+}
+
 [shader("miss")]
 void Miss(inout HitInfo payload : SV_RayPayload) {
     payload.color_dist.w = -1.f;
