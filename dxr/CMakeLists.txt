@@ -4,9 +4,15 @@ find_package(D3D12 REQUIRED)
 
 option(AO_RENDERER "Build the AO renderer instead of path tracer" OFF)
 
+option(OGCH_SHADOWS "Use the Occlusion Group with Closest Hit Method" OFF)
+
 set(HLSL_COMPILE_DEFNS "")
 if (REPORT_RAY_STATS)
 	set(HLSL_COMPILE_DEFNS "REPORT_RAY_STATS=1")
+endif()
+
+if (OGCH_SHADOWS)
+    set(HLSL_COMPILE_DEFNS "${HLSL_COMPILE_DEFNS};OGCH_SHADOWS=1")
 endif()
 
 add_dxil_embed_library(dxr_shaders render_dxr.hlsl util.hlsl
@@ -37,6 +43,11 @@ endif()
 if (AO_RENDERER)
 	target_compile_options(render_dxr PUBLIC
         -DAO_RENDERER=1)
+endif()
+
+if (OGCH_SHADOWS)
+    target_compile_options(render_dxr PUBLIC
+        -DOGCH_SHADOWS=1)
 endif()
 
 target_include_directories(render_dxr PUBLIC

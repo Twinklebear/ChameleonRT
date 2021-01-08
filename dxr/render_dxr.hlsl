@@ -107,10 +107,11 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
     shadow_ray.Origin = hit_p;
     shadow_ray.TMin = EPSILON;
 
-    const uint32_t occlusion_flags = RAY_FLAG_FORCE_OPAQUE
-        | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
-        | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
-
+    uint32_t occlusion_flags = RAY_FLAG_FORCE_OPAQUE
+        | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH;
+#ifndef OGCH_SHADOWS
+    occlusion_flags = occlusion_flags | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
+#endif
     // Sample the light to compute an incident light ray to this point
     {
         float3 light_pos = sample_quad_light_position(light,
@@ -125,7 +126,13 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
         shadow_hit.hit = 1;
         shadow_ray.Direction = light_dir;
         shadow_ray.TMax = light_dist;
+
+#ifdef OGCH_SHADOWS
+        TraceRay(scene, occlusion_flags, 0xff, 1, 2, OCCLUSION_RAY, shadow_ray, shadow_hit);
+#else
         TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, shadow_ray, shadow_hit);
+#endif
+
 #ifdef REPORT_RAY_STATS
         ++ray_count;
 #endif
@@ -153,7 +160,12 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
                 shadow_hit.hit = 1;
                 shadow_ray.Direction = w_i;
                 shadow_ray.TMax = light_dist;
+#ifdef OGCH_SHADOWS
+                TraceRay(scene, occlusion_flags, 0xff, 1, 2, OCCLUSION_RAY, shadow_ray, shadow_hit);
+#else
                 TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, shadow_ray, shadow_hit);
+#endif
+
 #ifdef REPORT_RAY_STATS
                 ++ray_count;
 #endif
@@ -188,7 +200,13 @@ void RayGen() {
     do {
         HitInfo payload;
         payload.color_dist = float4(0, 0, 0, -1);
+
+#ifdef OGCH_SHADOWS
+        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 2, PRIMARY_RAY, ray, payload);
+#else
         TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
+#endif
+
 #ifdef REPORT_RAY_STATS
         ++ray_count;
 #endif
@@ -266,7 +284,13 @@ void AoRayGen() {
 
     HitInfo payload;
     payload.color_dist = float4(0, 0, 0, -1);
+
+#ifdef OGCH_SHADOWS
+    TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 2, PRIMARY_RAY, ray, payload);
+#else
     TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
+#endif
+
 #ifdef REPORT_RAY_STATS
     ++ray_count;
 #endif
@@ -290,17 +314,24 @@ void AoRayGen() {
         shadow_ray.TMin = EPSILON;
         shadow_ray.TMax = 1e20f;
 
-        const uint32_t occlusion_flags = RAY_FLAG_FORCE_OPAQUE
-            | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
-            | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
+        uint32_t occlusion_flags = RAY_FLAG_FORCE_OPAQUE
+            | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH;
+#ifndef OGCH_SHADOWS
+        occlusion_flags = occlusion_flags | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
+#endif
 
-        const int max_ao_rays = 8;
+        const int max_ao_rays = 32;
         int ao_hit_count = 0;
-        for (int i = 0; i < 8; ++i) {
+        for (int i = 0; i < max_ao_rays; ++i) {
             float2 samples = float2(lcg_randomf(rng), lcg_randomf(rng));
             shadow_ray.Direction = sample_lambertian_dir(v_z, v_x, v_y, samples);
+#ifdef OGCH_SHADOWS
+            TraceRay(scene, occlusion_flags, 0xff, 1, 2, OCCLUSION_RAY, shadow_ray, shadow_hit);
+#else
             shadow_hit.hit = 1;
             TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, shadow_ray, shadow_hit);
+#endif
+
 #ifdef REPORT_RAY_STATS
             ++ray_count;
 #endif
@@ -344,6 +375,11 @@ void Miss(inout HitInfo payload : SV_RayPayload) {
 [shader("miss")]
 void ShadowMiss(inout OcclusionHitInfo occlusion : SV_RayPayload) {
     occlusion.hit = 0;
+}
+
+[shader("closesthit")]
+void OGCHClosestHit(inout OcclusionHitInfo occlusion : SV_RayPayload, Attributes attrib) {
+    occlusion.hit = 1;
 }
 
 // Per-mesh parameters for the closest hit

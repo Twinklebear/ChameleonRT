@@ -523,7 +523,7 @@ void RenderDXR::build_raytracing_pipeline()
     dxr::ShaderLibrary shader_library(
         render_dxr_dxil,
         sizeof(render_dxr_dxil),
-        {L"RayGen", L"AoRayGen", L"Miss", L"ClosestHit", L"ShadowMiss"});
+        {L"RayGen", L"AoRayGen", L"Miss", L"ClosestHit", L"ShadowMiss", L"OGCHClosestHit"});
 
     // Create the root signature for our ray gen shader
     dxr::RootSignature raygen_root_sig =
@@ -567,6 +567,14 @@ void RenderDXR::build_raytracing_pipeline()
 
             rt_pipeline_builder.add_hit_group(
                 {dxr::HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit")});
+
+#ifdef OGCH_SHADOWS
+            const std::wstring miss_hg_name =
+                L"MissGroup_inst" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
+
+            rt_pipeline_builder.add_hit_group({dxr::HitGroup(
+                miss_hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"OGCHClosestHit")});
+#endif
         }
     }
     rt_pipeline_builder.set_shader_root_sig(hg_names, hitgroup_root_sig);
