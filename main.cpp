@@ -371,7 +371,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
     double benchmark_time_stats = 0.f;
     double benchmark_rays_per_second = 0.f;
     size_t benchmark_frame_count = 0;
-    const size_t frames_per_camera = 150;
+    const size_t frames_per_camera = 100;
 
     size_t frame_id = 0;
     float render_time = 0.f;
