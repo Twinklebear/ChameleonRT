@@ -207,6 +207,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
     size_t camera_id = 0;
     std::string backend_arg;
     std::string validation_img_prefix;
+    bool benchmark_path = false;
     for (size_t i = 1; i < args.size(); ++i) {
         if (args[i] == "-eye") {
             eye.x = std::stof(args[++i]);
@@ -228,6 +229,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             got_camera_args = true;
         } else if (args[i] == "-camera") {
             camera_id = std::stol(args[++i]);
+        } else if (args[i] == "-camera-path") {
+            benchmark_path = true;
         } else if (args[i] == "-validation") {
             validation_img_prefix = args[++i];
         }
@@ -285,8 +288,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             }
             if (vk_display) {
                 display_is_native = true;
-                renderer =
-                    std::make_unique<RenderVulkan>(vk_display->device);
+                renderer = std::make_unique<RenderVulkan>(vk_display->device);
             } else {
                 renderer = std::make_unique<RenderVulkan>();
             }
@@ -327,6 +329,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
     display->resize(win_width, win_height);
     renderer->initialize(win_width, win_height);
 
+    std::vector<Camera> cameras;
     std::string scene_info;
     {
         Scene scene(scene_file);
@@ -354,6 +357,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             up = scene.cameras[camera_id].up;
             fov_y = scene.cameras[camera_id].fov_y;
         }
+        cameras = scene.cameras;
     }
 
     ArcballCamera camera(eye, center, up);
@@ -427,6 +431,19 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
                 display->resize(win_width, win_height);
                 renderer->initialize(win_width, win_height);
             }
+        }
+
+        // TODO: this will be > a few hundred for benchmarking,
+        // then log the stats out
+        if (benchmark_path && frame_id > 1 && camera_id + 1 < cameras.size()) {
+            camera_id += 1;
+            eye = cameras[camera_id].position;
+            center = cameras[camera_id].center;
+            up = cameras[camera_id].up;
+            fov_y = cameras[camera_id].fov_y;
+
+            camera = ArcballCamera(eye, center, up);
+            camera_changed = true;
         }
 
         if (camera_changed) {
