@@ -25,6 +25,16 @@ RenderDXR::RenderDXR(Microsoft::WRL::ComPtr<ID3D12Device5> device)
     : device(device), native_display(true)
 {
     create_device_objects();
+
+#if AO_RENDERER
+    std::cout << "AO_RENDERER\n";
+#endif
+#if OGCH_SHADOWS
+    std::cout << "OGCH_SHADOWS\n";
+#endif
+#if OGAH_SHADOWS
+    std::cout << "OGAH_SHADOWS\n";
+#endif
 }
 
 RenderDXR::RenderDXR() : native_display(false)
@@ -579,7 +589,7 @@ void RenderDXR::build_raytracing_pipeline()
                 std::to_wstring(j)
 #if OGCH_SHADOWS
                     rt_pipeline_builder.add_hit_group({dxr::HitGroup(
-                        miss_hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"OGCHClosestHit")})
+                        miss_hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"OGCHClosestHit")});
 #else
                     rt_pipeline_builder.add_hit_group(
                         {dxr::HitGroup(miss_hg_name,

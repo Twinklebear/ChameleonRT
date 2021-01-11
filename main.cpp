@@ -368,6 +368,11 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
     const std::string image_output = "chameleonrt.png";
     const std::string display_frontend = display->name();
 
+    double benchmark_time_stats = 0.f;
+    double benchmark_rays_per_second = 0.f;
+    size_t benchmark_frame_count = 0;
+    const size_t frames_per_camera = 20;
+
     size_t frame_id = 0;
     float render_time = 0.f;
     float rays_per_second = 0.f;
@@ -435,15 +440,19 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
 
         // TODO: this will be > a few hundred for benchmarking,
         // then log the stats out
-        if (benchmark_path && frame_id > 1 && camera_id + 1 < cameras.size()) {
-            camera_id += 1;
-            eye = cameras[camera_id].position;
-            center = cameras[camera_id].center;
-            up = cameras[camera_id].up;
-            fov_y = cameras[camera_id].fov_y;
+        if (benchmark_path && frame_id >= frames_per_camera) {
+            if (camera_id + 1 < cameras.size()) {
+                camera_id += 1;
+                eye = cameras[camera_id].position;
+                center = cameras[camera_id].center;
+                up = cameras[camera_id].up;
+                fov_y = cameras[camera_id].fov_y;
 
-            camera = ArcballCamera(eye, center, up);
-            camera_changed = true;
+                camera = ArcballCamera(eye, center, up);
+                camera_changed = true;
+            } else {
+                done = true;
+            }
         }
 
         if (camera_changed) {
@@ -453,6 +462,11 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         const bool need_readback = save_image || !validation_img_prefix.empty();
         RenderStats stats = renderer->render(
             camera.eye(), camera.dir(), camera.up(), fov_y, camera_changed, need_readback);
+        if (frame_id > 10) {
+            benchmark_time_stats += stats.render_time;
+            benchmark_rays_per_second += stats.rays_per_second;
+            ++benchmark_frame_count;
+        }
 
         ++frame_id;
         camera_changed = false;
@@ -547,5 +561,12 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         } else {
             display->display(renderer->img);
         }
+    }
+
+    if (benchmark_path) {
+        std::cout << "Avg. frame time: " << benchmark_time_stats / benchmark_frame_count
+                  << " ms/frame\n"
+                  << "Avg. MRays/s: " << (benchmark_rays_per_second / benchmark_frame_count) / 1e6
+                  << " MRay/s\n";
     }
 }
