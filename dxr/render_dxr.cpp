@@ -586,7 +586,7 @@ void RenderDXR::build_raytracing_pipeline()
 #if OGCH_SHADOWS || OGAH_SHADOWS
             const std::wstring miss_hg_name =
                 L"MissGroup_inst" + std::to_wstring(i) + L"_geom" +
-                std::to_wstring(j)
+                std::to_wstring(j);
 #if OGCH_SHADOWS
                     rt_pipeline_builder.add_hit_group({dxr::HitGroup(
                         miss_hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"OGCHClosestHit")});
