@@ -3,8 +3,12 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 find_package(D3D12 REQUIRED)
 
 option(AO_RENDERER "Build the AO renderer instead of path tracer" OFF)
-
 option(OGCH_SHADOWS "Use the Occlusion Group with Closest Hit Method" OFF)
+option(OGAH_SHADOWS "Use the Occlusion Group with Any Hit + Skip CH Method" OFF)
+
+if (OGCH_SHADOWS AND OGAH_SHADOWS)
+    message(ERROR "OGCH and OGAH are mutually exclusive")
+endif()
 
 set(HLSL_COMPILE_DEFNS "")
 if (REPORT_RAY_STATS)
@@ -13,6 +17,10 @@ endif()
 
 if (OGCH_SHADOWS)
     set(HLSL_COMPILE_DEFNS "${HLSL_COMPILE_DEFNS};OGCH_SHADOWS=1")
+endif()
+
+if (OGAH_SHADOWS)
+    set(HLSL_COMPILE_DEFNS "${HLSL_COMPILE_DEFNS};OGAH_SHADOWS=1")
 endif()
 
 add_dxil_embed_library(dxr_shaders render_dxr.hlsl util.hlsl
@@ -48,6 +56,11 @@ endif()
 if (OGCH_SHADOWS)
     target_compile_options(render_dxr PUBLIC
         -DOGCH_SHADOWS=1)
+endif()
+
+if (OGAH_SHADOWS)
+    target_compile_options(render_dxr PUBLIC
+        -DOGAH_SHADOWS=1)
 endif()
 
 target_include_directories(render_dxr PUBLIC

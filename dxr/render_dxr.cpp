@@ -520,10 +520,15 @@ void RenderDXR::create_device_objects()
 
 void RenderDXR::build_raytracing_pipeline()
 {
-    dxr::ShaderLibrary shader_library(
-        render_dxr_dxil,
-        sizeof(render_dxr_dxil),
-        {L"RayGen", L"AoRayGen", L"Miss", L"ClosestHit", L"ShadowMiss", L"OGCHClosestHit"});
+    dxr::ShaderLibrary shader_library(render_dxr_dxil,
+                                      sizeof(render_dxr_dxil),
+                                      {L"RayGen",
+                                       L"AoRayGen",
+                                       L"Miss",
+                                       L"ClosestHit",
+                                       L"ShadowMiss",
+                                       L"OGCHClosestHit",
+                                       L"OGAHAnyHit"});
 
     // Create the root signature for our ray gen shader
     dxr::RootSignature raygen_root_sig =
@@ -568,12 +573,20 @@ void RenderDXR::build_raytracing_pipeline()
             rt_pipeline_builder.add_hit_group(
                 {dxr::HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit")});
 
-#ifdef OGCH_SHADOWS
+#if OGCH_SHADOWS || OGAH_SHADOWS
             const std::wstring miss_hg_name =
-                L"MissGroup_inst" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
-
-            rt_pipeline_builder.add_hit_group({dxr::HitGroup(
-                miss_hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"OGCHClosestHit")});
+                L"MissGroup_inst" + std::to_wstring(i) + L"_geom" +
+                std::to_wstring(j)
+#if OGCH_SHADOWS
+                    rt_pipeline_builder.add_hit_group({dxr::HitGroup(
+                        miss_hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"OGCHClosestHit")})
+#else
+                    rt_pipeline_builder.add_hit_group(
+                        {dxr::HitGroup(miss_hg_name,
+                                       D3D12_HIT_GROUP_TYPE_TRIANGLES,
+                                       L"OGCHClosestHit",
+                                       L"OGAHAnyHit")});
+#endif
 #endif
         }
     }
