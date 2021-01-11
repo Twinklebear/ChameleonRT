@@ -371,7 +371,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
     double benchmark_time_stats = 0.f;
     double benchmark_rays_per_second = 0.f;
     size_t benchmark_frame_count = 0;
-    const size_t frames_per_camera = 100;
+    const size_t frames_per_camera = 50;
 
     size_t frame_id = 0;
     float render_time = 0.f;
@@ -462,7 +462,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         const bool need_readback = save_image || !validation_img_prefix.empty();
         RenderStats stats = renderer->render(
             camera.eye(), camera.dir(), camera.up(), fov_y, camera_changed, need_readback);
-        if (frame_id > 10) {
+        if (frame_id > 5) {
             benchmark_time_stats += stats.render_time;
             benchmark_rays_per_second += stats.rays_per_second;
             ++benchmark_frame_count;
