@@ -9,6 +9,31 @@ Sponza and Rungholt models shown below are from Morgan McGuire's [Computer Graph
 
 [![San Miguel, Sponza and Rungholt](https://i.imgur.com/tKZYjzn.jpg)](https://i.imgur.com/pVhQK3j.jpg)
 
+## Keys and navigation
+
+The camera is an arcball camera that moves around the camera's focal point.
+
+- Zoom in/out using the mousewheel. (Two-finger scroll motion on MacBook Pro etc. trackpad.)
+- Click and drag to rotate.
+- Right-click and drag to pan. (Two-finger click and drag on MacBook Pro etc. trackpad. Note: Ctrl+click does *not* pan.)
+
+Keys while the application window is in focus:
+
+- Print the current camera position, center point, up vector and field of view (FOV) to the terminal by pressing the `p` key.
+- Save image by pressing the `s` key.
+
+## Command-line options
+
+```text
+-eye <x> <y> <z>       Set the camera position
+-center <x> <y> <z>    Set the camera focus point
+-up <x> <y> <z>        Set the camera up vector
+-fov <fovy>            Specify the camera field of view (in degrees)
+-camera <n>            If the scene contains multiple cameras, specify which
+                       should be used. Defaults to the first camera
+-img <x> <y>           Specify the window dimensions. Defaults to 1280x720
+```
+
 ## Ray Tracing Backends  
 
 The currently implemented backends are: Embree, DXR, OptiX, Vulkan, and Metal.
