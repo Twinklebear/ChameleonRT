@@ -11,6 +11,11 @@ if (NOT METAL_LIB)
     message(FATAL_ERROR "Metal not found")
 endif()
 
+find_library(COCOA_LIB Cocoa)
+if (NOT COCOA_LIB)
+    message(FATAL_ERROR "Cocoa not found")
+endif()
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror=objc-method-access -fobjc-arc -fobjc-weak")
 
 set(METAL_COMPILE_DEFNS "")
@@ -51,6 +56,7 @@ target_link_libraries(render_metal
     util
     ${QUARTZ_CORE}
     ${METAL_LIB}
+    ${COCOA_LIB}
     metal_shaders
     metaldisplay_shaders)
 
