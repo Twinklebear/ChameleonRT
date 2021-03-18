@@ -30,18 +30,18 @@
 
 # Our initial guess will be within the SDK.
 
-if (WIN32)
-	find_path(searched_OptiX_INSTALL_DIR
-		NAME include/optix.h
+if (WIN32 AND ${OptiX_INSTALL_DIR} STREQUAL "")
+    find_path(searched_OptiX_INSTALL_DIR
+        NAME include/optix.h
         PATHS
-		"C:/ProgramData/NVIDIA Corporation/OptiX SDK 7.2.0"
-		"C:/ProgramData/NVIDIA Corporation/OptiX SDK 7.1.0"
-		"C:/ProgramData/NVIDIA Corporation/OptiX SDK 7.0.0"
-	)
-	mark_as_advanced(searched_OptiX_INSTALL_DIR)
-  set(OptiX_INSTALL_DIR ${searched_OptiX_INSTALL_DIR} CACHE PATH "Path to OptiX installed location.")
+        "C:/ProgramData/NVIDIA Corporation/OptiX SDK 7.2.0"
+        "C:/ProgramData/NVIDIA Corporation/OptiX SDK 7.1.0"
+        "C:/ProgramData/NVIDIA Corporation/OptiX SDK 7.0.0"
+    )
+    mark_as_advanced(searched_OptiX_INSTALL_DIR)
+    set(OptiX_INSTALL_DIR ${searched_OptiX_INSTALL_DIR} CACHE PATH "Path to OptiX installed location.")
 else()
-  set(OptiX_INSTALL_DIR $ENV{OptiX_INSTALL_DIR} CACHE PATH "Path to OptiX installed location.")
+    set(OptiX_INSTALL_DIR $ENV{OptiX_INSTALL_DIR} CACHE PATH "Path to OptiX installed location.")
 endif()
 
 # The distribution contains both 32 and 64 bit libraries.  Adjust the library
@@ -49,17 +49,17 @@ endif()
 # bin, lib).  Note that on Mac, the OptiX library is a universal binary, so we
 # only need to look in lib and not lib64 for 64 bit builds.
 if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT APPLE)
-  set(bit_dest "64")
+    set(bit_dest "64")
 else()
-  set(bit_dest "")
+    set(bit_dest "")
 endif()
 
 # Include
 find_path(OptiX_INCLUDE_DIR
-  NAMES optix.h
-  PATHS "${OptiX_INSTALL_DIR}/include"
-  NO_DEFAULT_PATH
-  )
+    NAMES optix.h
+    PATHS "${OptiX_INSTALL_DIR}/include"
+    NO_DEFAULT_PATH
+)
 
 include(FindPackageHandleStandardArgs)
 

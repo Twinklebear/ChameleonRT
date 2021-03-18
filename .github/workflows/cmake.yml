@@ -1,0 +1,228 @@
+name: CMake
+
+on: [push, pull_request]
+
+env:
+    BUILD_TYPE: Release
+    GLM_VERSION: 0.9.9.8
+    VULKAN_SDK_VERSION: 1.2.170
+    EMBREE_VERSION: 3.12.2
+    ISPC_VERSION: 1.15.0
+    TBB_VERSION: 2021.1.1
+    OPTIX_VERSION: 7.2.0
+
+jobs:
+    ubuntu:
+      runs-on: ubuntu-latest
+
+      steps:
+      - uses: actions/checkout@v2
+
+      - name: Create Build Environment
+        run: |
+          cmake -E make_directory ${{github.workspace}}/build
+          cmake -E make_directory ${{github.workspace}}/build/deps
+          sudo apt update
+
+      - name: Setup SDL2
+        run: sudo apt install libsdl2-dev
+
+      - name: Setup GLM
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/g-truc/glm/archive/${GLM_VERSION}.tar.gz
+          tar -xf ${GLM_VERSION}.tar.gz
+
+      - name: Setup VulkanSDK
+        run: |
+          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-${VULKAN_SDK_VERSION}-focal.list https://packages.lunarg.com/vulkan/${VULKAN_SDK_VERSION}/lunarg-vulkan-${VULKAN_SDK_VERSION}-focal.list
+          sudo apt update
+          sudo apt install vulkan-sdk
+
+      - name: Setup CUDA
+        run: |
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin
+          sudo mv cuda-ubuntu2004.pin /etc/apt/preferences.d/cuda-repository-pin-600
+          sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/7fa2af80.pub
+          sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /"
+          sudo apt-get update
+          sudo apt-get -y install cuda
+
+      # Provides VulkanSDK for Windows and OptiX for Windows/Linux
+      - name: Fetch RT CI Dependencies
+        uses: actions/checkout@v2
+        with:
+            ssh-key: ${{secrets.RT_CI_DEPS_KEY}}
+            repository: Twinklebear/rt-ci-deps
+            path: ${{github.workspace}}/build/deps/rt-ci-deps/
+          
+      - name: Setup Embree 
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/embree/embree/releases/download/v${EMBREE_VERSION}/embree-${EMBREE_VERSION}.x86_64.linux.tar.gz
+          tar -xf embree-${EMBREE_VERSION}.x86_64.linux.tar.gz
+
+      - name: Setup TBB
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/oneapi-src/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-lin.tgz
+          tar -xf oneapi-tbb-${TBB_VERSION}-lin.tgz
+
+      - name: Setup ISPC
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/ispc/ispc/releases/download/v${ISPC_VERSION}/ispc-v${ISPC_VERSION}-linux.tar.gz
+          tar -xf ispc-v${ISPC_VERSION}-linux.tar.gz
+
+      - name: Configure CMake
+        working-directory: ${{github.workspace}}/build
+        run: >
+          cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+          -Dglm_DIR=${{github.workspace}}/build/deps/glm-${GLM_VERSION}/cmake/glm/
+          -DENABLE_EMBREE=ON
+          -DENABLE_VULKAN=ON
+          -DENABLE_OPTIX=ON
+          -Dembree_DIR=${{github.workspace}}/build/deps/embree-${EMBREE_VERSION}.x86_64.linux/lib/cmake/embree-${EMBREE_VERSION}
+          -DTBB_DIR=${{github.workspace}}/build/deps/oneapi-tbb-${TBB_VERSION}/lib/cmake/tbb/
+          -DISPC_DIR=${{github.workspace}}/build/deps/ispc-v${ISPC_VERSION}-linux/bin/
+          -DOptiX_INSTALL_DIR=${{github.workspace}}/build/deps/rt-ci-deps/NVIDIA-OptiX-SDK-${OPTIX_VERSION}-linux64-x86_64
+
+      - name: Build
+        working-directory: ${{github.workspace}}/build
+        run: cmake --build . --config $BUILD_TYPE
+
+    windows:
+      runs-on: windows-latest
+
+      steps:
+      - uses: actions/checkout@v2
+
+      - name: Create Build Environment
+        run: |
+          cmake -E make_directory ${{github.workspace}}/build
+          cmake -E make_directory ${{github.workspace}}/build/deps
+          choco install wget
+
+      - name: Setup SDL2
+        run: vcpkg install sdl2:x64-windows
+
+      - name: Setup GLM
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/g-truc/glm/archive/${env:GLM_VERSION}.zip
+          7z x ./${env:GLM_VERSION}.zip -y
+
+      # Provides VulkanSDK for Windows and OptiX for Windows/Linux
+      - name: Fetch RT CI Dependencies
+        uses: actions/checkout@v2
+        with:
+            ssh-key: ${{secrets.RT_CI_DEPS_KEY}}
+            repository: Twinklebear/rt-ci-deps
+            path: ${{github.workspace}}/build/deps/rt-ci-deps/
+
+      - name: Unzip VulkanSDK
+        working-directory: ${{github.workspace}}/build/deps/rt-ci-deps/
+        run: 7z x vulkansdk-${env:VULKAN_SDK_VERSION}-windows-x64.7z -y
+
+      - name: Setup CUDA
+        run: |
+          $CUDA_VERSION_FULL = "11.2.2"
+          $CUDA_REPO_PKG_REMOTE = "https://developer.download.nvidia.com/compute/cuda/11.2.2/network_installers/cuda_11.2.2_win10_network.exe"
+          $CUDA_REPO_PKG_LOCAL = "cuda_11.2.2_win10_network.exe"
+          $CUDA_PACKAGES = "nvcc_11.2 cudart_11.2"
+          # Download the cuda network installer
+          Invoke-WebRequest $CUDA_REPO_PKG_REMOTE -OutFile $CUDA_REPO_PKG_LOCAL | Out-Null
+          # Invoke silent install of CUDA (via network installer)
+          Start-Process -Wait -FilePath .\"$($CUDA_REPO_PKG_LOCAL)" -ArgumentList "-s $($CUDA_PACKAGES)"
+
+      - name: Setup Embree 
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/embree/embree/releases/download/v${env:EMBREE_VERSION}/embree-${env:EMBREE_VERSION}.x64.vc14.windows.zip
+          7z x embree-${env:EMBREE_VERSION}.x64.vc14.windows.zip -y
+
+      - name: Setup TBB
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/oneapi-src/oneTBB/releases/download/v${env:TBB_VERSION}/oneapi-tbb-${env:TBB_VERSION}-win.zip
+          7z x oneapi-tbb-${env:TBB_VERSION}-win.zip -y
+
+      - name: Setup ISPC
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/ispc/ispc/releases/download/v${env:ISPC_VERSION}/ispc-v${env:ISPC_VERSION}-windows.zip
+          7z x ispc-v${env:ISPC_VERSION}-windows.zip -y
+
+      - name: Configure CMake
+        working-directory: ${{github.workspace}}/build
+        run: >
+          cmake -A x64 ${env:GITHUB_WORKSPACE}
+          -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+          -Dglm_DIR="${env:GITHUB_WORKSPACE}/build/deps/glm-${env:GLM_VERSION}/cmake/glm/"
+          -DENABLE_EMBREE=ON
+          -DENABLE_DXR=ON
+          -DENABLE_VULKAN=ON
+          -DENABLE_OPTIX=ON
+          -Dembree_DIR="${env:GITHUB_WORKSPACE}/build/deps/embree-${env:EMBREE_VERSION}.x64.vc14.windows/lib/cmake/embree-${env:EMBREE_VERSION}"
+          -DTBB_DIR="${env:GITHUB_WORKSPACE}/build/deps/oneapi-tbb-${env:TBB_VERSION}/lib/cmake/tbb/"
+          -DISPC_DIR="${env:GITHUB_WORKSPACE}/build/deps/ispc-v${env:ISPC_VERSION}-windows/bin/"
+          -DVULKAN_SDK="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/vulkansdk-${env:VULKAN_SDK_VERSION}-windows-x64"
+          -DCUDA_TOOLKIT_ROOT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.2"
+          -DOptiX_INSTALL_DIR="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/NVIDIA-OptiX-SDK-${env:OPTIX_VERSION}-windows-x86_64"
+          -DCMAKE_SYSTEM_VERSION="10.0.19042"
+
+      - name: Build
+        working-directory: ${{github.workspace}}/build
+        run: cmake --build . --config $BUILD_TYPE
+
+    macos:
+      # Note: need macos-11 for Metal RT API, but this isn't available publicly yet
+      # See https://github.com/actions/virtual-environments/issues/2486
+      runs-on: macos-latest
+
+      steps:
+      - uses: actions/checkout@v2
+
+      - name: Create Build Environment
+        run: |
+          cmake -E make_directory ${{github.workspace}}/build
+          cmake -E make_directory ${{github.workspace}}/build/deps
+
+      - name: Setup SDL2
+        run: brew install sdl2
+
+      - name: Setup GLM
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/g-truc/glm/archive/${GLM_VERSION}.tar.gz
+          tar -xf ${GLM_VERSION}.tar.gz
+
+      - name: Setup Embree 
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/embree/embree/releases/download/v${EMBREE_VERSION}/embree-${EMBREE_VERSION}.x86_64.macosx.zip
+          unzip embree-${EMBREE_VERSION}.x86_64.macosx.zip
+
+      - name: Setup TBB
+        working-directory: ${{github.workspace}}/build/deps
+        run: |
+          wget https://github.com/oneapi-src/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-mac.tgz
+          tar -xf oneapi-tbb-${TBB_VERSION}-mac.tgz
+
+      - name: Setup ISPC
+        working-directory: ${{github.workspace}}/build/deps
+        run: brew install ispc
+
+      - name: Configure CMake
+        working-directory: ${{github.workspace}}/build
+        run: >
+          cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+          -Dglm_DIR=${{github.workspace}}/build/deps/glm-${GLM_VERSION}/cmake/glm/
+          -DENABLE_EMBREE=ON
+          -Dembree_DIR=${{github.workspace}}/build/deps/embree-${EMBREE_VERSION}.x86_64.macosx/lib/cmake/embree-${EMBREE_VERSION}
+          -DTBB_DIR=${{github.workspace}}/build/deps/oneapi-tbb-${TBB_VERSION}/lib/cmake/tbb/
+
+      - name: Build
+        working-directory: ${{github.workspace}}/build
+        run: cmake --build . --config $BUILD_TYPE
