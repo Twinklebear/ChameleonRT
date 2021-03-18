@@ -18,12 +18,19 @@ set_target_properties(util PROPERTIES
 target_include_directories(util PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/parallel_hashmap>
-    $<BUILD_INTERFACE:${SDL2_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${GLM_INCLUDE_DIRS}>)
 
-target_link_libraries(util PUBLIC
-    imgui
-    ${SDL2_LIBRARY})
+target_link_libraries(util PUBLIC imgui)
+
+if (TARGET SDL2::SDL2)
+    target_link_libraries(util PUBLIC
+        SDL2::SDL2
+        SDL2::SDL2main)
+else ()
+    target_include_directories(util PUBLIC
+        $<BUILD_INTERFACE:${SDL2_INCLUDE_DIRS}>)
+    target_link_libraries(util PUBLIC ${SDL2_LIBRARIES})
+endif( )
 
 find_package(pbrtParser)
 if (${pbrtParser_FOUND})

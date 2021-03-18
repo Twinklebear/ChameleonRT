@@ -45,7 +45,7 @@ if(WIN32)
             $ENV{VULKAN_SDK}/Lib
             $ENV{VULKAN_SDK}/Bin
         )
-        find_program(SPIRV_COMPILER
+        find_program(GLSLC
             NAMES glslc
             PATHS
             ${VULKAN_SDK}/Bin
@@ -61,7 +61,7 @@ if(WIN32)
             $ENV{VULKAN_SDK}/Bin32
             NO_SYSTEM_ENVIRONMENT_PATH
         )
-        find_program(SPIRV_COMPILER
+        find_program(GLSLC
             NAMES glslc
             PATHS
             ${VULKAN_SDK}/Bin32
@@ -69,24 +69,48 @@ if(WIN32)
         )
     endif()
 else()
-    find_path(Vulkan_INCLUDE_DIR
-        NAMES vulkan/vulkan.h
-        PATHS
-        ${VULKAN_SDK}/x86_64/include
-        $ENV{VULKAN_SDK}/x86_64/include
-    )
-    find_library(Vulkan_LIBRARY
-        NAMES vulkan
-        PATHS
-        ${VULKAN_SDK}/x86_64/lib
-        $ENV{VULKAN_SDK}/x86_64/lib
-    )
-    find_program(SPIRV_COMPILER
-        NAMES glslc
-        PATHS
-        ${VULKAN_SDK}/x86_64/bin
-        $ENV{VULKAN_SDK}/x86_64/bin
-    )
+    if (VULKAN_SDK OR NOT $ENV{VULKAN_SDK} STREQUAL "")
+        find_path(Vulkan_INCLUDE_DIR
+            NAMES vulkan/vulkan.h
+            PATHS
+            ${VULKAN_SDK}/x86_64/include
+            $ENV{VULKAN_SDK}/x86_64/include
+            NO_DEFAULT_PATH
+        )
+        find_library(Vulkan_LIBRARY
+            NAMES vulkan
+            PATHS
+            ${VULKAN_SDK}/x86_64/lib
+            $ENV{VULKAN_SDK}/x86_64/lib
+            NO_DEFAULT_PATH
+        )
+        find_program(GLSLC
+            NAMES glslc
+            PATHS
+            ${VULKAN_SDK}/x86_64/bin
+            $ENV{VULKAN_SDK}/x86_64/bin
+            NO_DEFAULT_PATH
+        )
+    else ()
+        find_path(Vulkan_INCLUDE_DIR
+            NAMES vulkan/vulkan.h
+            PATHS
+            ${VULKAN_SDK}/x86_64/include
+            $ENV{VULKAN_SDK}/x86_64/include
+        )
+        find_library(Vulkan_LIBRARY
+            NAMES vulkan
+            PATHS
+            ${VULKAN_SDK}/x86_64/lib
+            $ENV{VULKAN_SDK}/x86_64/lib
+        )
+        find_program(GLSLC
+            NAMES glslc
+            PATHS
+            ${VULKAN_SDK}/x86_64/bin
+            $ENV{VULKAN_SDK}/x86_64/bin
+        )
+    endif ()
 endif()
 
 find_file(SPIRV2C NAME SPIRV2C.cmake
@@ -119,7 +143,7 @@ function(add_spirv_embed_library)
 
         # Determine the dependencies for the shader and track them
         execute_process(
-            COMMAND ${SPIRV_COMPILER} ${CMAKE_CURRENT_LIST_DIR}/${shader}
+            COMMAND ${GLSLC} ${CMAKE_CURRENT_LIST_DIR}/${shader}
             ${GLSL_INCLUDE_DIRECTORIES} ${GLSL_COMPILE_DEFNS}
             --target-env=vulkan1.2 ${SPIRV_COMPILE_OPTIONS} -MM
             OUTPUT_VARIABLE SPV_DEPS_STRING)
@@ -129,7 +153,7 @@ function(add_spirv_embed_library)
         list(REMOVE_AT SPV_DEPS_LIST 0)
 
         add_custom_command(OUTPUT ${SPV_OUTPUT}
-            COMMAND ${SPIRV_COMPILER} ${CMAKE_CURRENT_LIST_DIR}/${shader}
+            COMMAND ${GLSLC} ${CMAKE_CURRENT_LIST_DIR}/${shader}
             ${GLSL_INCLUDE_DIRECTORIES} ${GLSL_COMPILE_DEFNS}
             --target-env=vulkan1.2 -mfmt=c -o ${SPV_OUTPUT} ${SPIRV_COMPILE_OPTIONS}
             DEPENDS ${SPV_DEPS_LIST}
@@ -158,12 +182,11 @@ set(Vulkan_INCLUDE_DIRS ${Vulkan_INCLUDE_DIR})
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Vulkan
-    DEFAULT_MSG
-    Vulkan_LIBRARY Vulkan_INCLUDE_DIR)
+    DEFAULT_MSG Vulkan_LIBRARY Vulkan_INCLUDE_DIR GLSLC)
 
 mark_as_advanced(Vulkan_INCLUDE_DIR Vulkan_LIBRARY)
 
-if(Vulkan_FOUND AND NOT TARGET Vulkan::Vulkan)
+if (Vulkan_FOUND AND NOT TARGET Vulkan::Vulkan)
     add_library(Vulkan::Vulkan UNKNOWN IMPORTED)
     set_target_properties(Vulkan::Vulkan PROPERTIES
         IMPORTED_LOCATION "${Vulkan_LIBRARIES}"

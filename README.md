@@ -97,7 +97,7 @@ You can then pass `-vulkan` to use the Vulkan backend.
 
 If CMake doesn't find your install of Vulkan you can tell it where it's
 installed with `-DVULKAN_SDK`. This path should be to the specific version
-of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/1.2.162.0/`
+of Vulkan, for example: `-DVULKAN_SDK=<path>/VulkanSDK/<version>/`
 
 ### Metal
 
