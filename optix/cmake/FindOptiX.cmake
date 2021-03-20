@@ -30,7 +30,7 @@
 
 # Our initial guess will be within the SDK.
 
-if (WIN32 AND ${OptiX_INSTALL_DIR} STREQUAL "")
+if (WIN32 AND "${OptiX_INSTALL_DIR}" STREQUAL "")
     find_path(searched_OptiX_INSTALL_DIR
         NAME include/optix.h
         PATHS
