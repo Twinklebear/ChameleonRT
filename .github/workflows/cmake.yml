@@ -104,8 +104,9 @@ jobs:
           cmake -E make_directory ${{github.workspace}}/build/deps
           choco install wget
 
+      # Note: SDL2 Vulkan support is needed when installing through vcpkg
       - name: Setup SDL2
-        run: vcpkg install sdl2:x64-windows
+        run: vcpkg install sdl2[vulkan]:x64-windows
 
       - name: Setup GLM
         working-directory: ${{github.workspace}}/build/deps
