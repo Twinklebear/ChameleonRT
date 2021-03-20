@@ -211,7 +211,6 @@ jobs:
           tar -xf oneapi-tbb-${TBB_VERSION}-mac.tgz
 
       - name: Setup ISPC
-        working-directory: ${{github.workspace}}/build/deps
         run: brew install ispc
 
       - name: Configure CMake
