@@ -1,5 +1,7 @@
 # ChameleonRT
 
+[![CMake](https://github.com/Twinklebear/ChameleonRT/actions/workflows/cmake.yml/badge.svg)](https://github.com/Twinklebear/ChameleonRT/actions/workflows/cmake.yml)
+
 An example path tracer that runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan/Metal/OSPRay).
 Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files,
 [tinygltf](https://github.com/syoyo/tinygltf) to load glTF files and, optionally,
@@ -9,20 +11,20 @@ Sponza and Rungholt models shown below are from Morgan McGuire's [Computer Graph
 
 [![San Miguel, Sponza and Rungholt](https://i.imgur.com/tKZYjzn.jpg)](https://i.imgur.com/pVhQK3j.jpg)
 
-## Keys and navigation
+## Controls
 
 The camera is an arcball camera that moves around the camera's focal point.
 
 - Zoom in/out using the mousewheel. (Two-finger scroll motion on MacBook Pro etc. trackpad.)
 - Click and drag to rotate.
-- Right-click and drag to pan. (Two-finger click and drag on MacBook Pro etc. trackpad. Note: Ctrl+click does *not* pan.)
+- Right-click and drag to pan. (Two-finger click and drag on MacBook Pro etc. trackpad.)
 
 Keys while the application window is in focus:
 
 - Print the current camera position, center point, up vector and field of view (FOV) to the terminal by pressing the `p` key.
 - Save image by pressing the `s` key.
 
-## Command-line options
+## Command-line Options
 
 ```text
 -eye <x> <y> <z>       Set the camera position
