@@ -42,7 +42,8 @@ protected:
     D3D12_HEAP_TYPE rheap;
     D3D12_RESOURCE_STATES rstate;
 
-    friend D3D12_RESOURCE_BARRIER barrier_transition(Resource &res, D3D12_RESOURCE_STATES after);
+    friend D3D12_RESOURCE_BARRIER barrier_transition(Resource &res,
+                                                     D3D12_RESOURCE_STATES after);
 
 public:
     virtual ~Resource();
@@ -76,10 +77,10 @@ public:
                          D3D12_RESOURCE_STATES state,
                          D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
     // Allocate a GPU-side buffer of the desired size
-    static Buffer default(ID3D12Device *device,
-                          size_t nbytes,
-                          D3D12_RESOURCE_STATES state,
-                          D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+    static Buffer device(ID3D12Device *device,
+                         size_t nbytes,
+                         D3D12_RESOURCE_STATES state,
+                         D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
     // Allocate a readback buffer of the desired size
     static Buffer readback(ID3D12Device *device,
                            size_t nbytes,
@@ -104,11 +105,11 @@ class Texture2D : public Resource {
     DXGI_FORMAT format;
 
 public:
-    static Texture2D default(ID3D12Device *device,
-                             glm::uvec2 dims,
-                             D3D12_RESOURCE_STATES state,
-                             DXGI_FORMAT img_format,
-                             D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+    static Texture2D device(ID3D12Device *device,
+                            glm::uvec2 dims,
+                            D3D12_RESOURCE_STATES state,
+                            DXGI_FORMAT img_format,
+                            D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 
     // Read the texture data back into the provided buffer
     // buffer size must be aligned to a row pitch of D3D12_TEXTURE_DATA_PITCH_ALIGNMENT

@@ -715,7 +715,7 @@ RTPipeline::RTPipeline(D3D12_STATE_OBJECT_DESC &desc,
     const size_t sbt_size = hitgroup_record_offset + dispatch_desc.HitGroupTable.SizeInBytes;
 
     cpu_shader_table = Buffer::upload(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
-    shader_table = Buffer::default(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
+    shader_table = Buffer::device(device, sbt_size, D3D12_RESOURCE_STATE_GENERIC_READ);
 
     // Build the list of offsets into the shader table for each shader record
     // and write the identifiers into the table. The actual arguments are left to the user
@@ -886,10 +886,10 @@ BottomLevelBVH::BottomLevelBVH(std::vector<Geometry> &geoms,
 
 void BottomLevelBVH::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList4 *cmd_list)
 {
-    post_build_info = Buffer::default(device,
-                                      sizeof(uint64_t),
-                                      D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                      D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    post_build_info = Buffer::device(device,
+                                     sizeof(uint64_t),
+                                     D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                     D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     post_build_info_readback =
         Buffer::readback(device, post_build_info.size(), D3D12_RESOURCE_STATE_COPY_DEST);
 
@@ -922,14 +922,14 @@ void BottomLevelBVH::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandLi
 		<< pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
 #endif
 
-    bvh = Buffer::default(device,
-                          prebuild_info.ResultDataMaxSizeInBytes,
-                          D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-                          D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-    scratch = Buffer::default(device,
-                              prebuild_info.ScratchDataSizeInBytes,
-                              D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                              D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    bvh = Buffer::device(device,
+                         prebuild_info.ResultDataMaxSizeInBytes,
+                         D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+                         D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    scratch = Buffer::device(device,
+                             prebuild_info.ScratchDataSizeInBytes,
+                             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                             D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build_desc = {0};
     build_desc.Inputs = bvh_inputs;
@@ -961,10 +961,10 @@ void BottomLevelBVH::enqueue_compaction(ID3D12Device5 *device,
     post_build_info_readback.unmap();
 
     if (build_flags & D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION) {
-        scratch = Buffer::default(device,
-                                  compacted_size,
-                                  D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-                                  D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        scratch = Buffer::device(device,
+                                 compacted_size,
+                                 D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+                                 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
         cmd_list->CopyRaytracingAccelerationStructure(
             scratch->GetGPUVirtualAddress(),
@@ -1029,14 +1029,14 @@ void TopLevelBVH::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList4
 		<< pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
 #endif
 
-    bvh = Buffer::default(device,
-                          prebuild_info.ResultDataMaxSizeInBytes,
-                          D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
-                          D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-    scratch = Buffer::default(device,
-                              prebuild_info.ScratchDataSizeInBytes,
-                              D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                              D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    bvh = Buffer::device(device,
+                         prebuild_info.ResultDataMaxSizeInBytes,
+                         D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+                         D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    scratch = Buffer::device(device,
+                             prebuild_info.ScratchDataSizeInBytes,
+                             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                             D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC build_desc = {0};
     build_desc.Inputs = bvh_inputs;

@@ -145,10 +145,10 @@ Buffer Buffer::upload(ID3D12Device *device,
 {
     return create(device, nbytes, state, UPLOAD_HEAP_PROPS, res_desc(nbytes, flags));
 }
-Buffer Buffer::default(ID3D12Device *device,
-                       size_t nbytes,
-                       D3D12_RESOURCE_STATES state,
-                       D3D12_RESOURCE_FLAGS flags)
+Buffer Buffer::device(ID3D12Device *device,
+                      size_t nbytes,
+                      D3D12_RESOURCE_STATES state,
+                      D3D12_RESOURCE_FLAGS flags)
 {
     return create(device, nbytes, state, DEFAULT_HEAP_PROPS, res_desc(nbytes, flags));
 }
@@ -194,11 +194,11 @@ size_t Buffer::size() const
     return buf_size;
 }
 
-Texture2D Texture2D::default(ID3D12Device *device,
-                             glm::uvec2 dims,
-                             D3D12_RESOURCE_STATES state,
-                             DXGI_FORMAT img_format,
-                             D3D12_RESOURCE_FLAGS flags)
+Texture2D Texture2D::device(ID3D12Device *device,
+                            glm::uvec2 dims,
+                            D3D12_RESOURCE_STATES state,
+                            DXGI_FORMAT img_format,
+                            D3D12_RESOURCE_FLAGS flags)
 {
     D3D12_RESOURCE_DESC desc = {0};
     desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;

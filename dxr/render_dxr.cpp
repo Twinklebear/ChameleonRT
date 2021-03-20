@@ -60,17 +60,17 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
     frame_id = 0;
     img.resize(fb_width * fb_height);
 
-    render_target = dxr::Texture2D::default(device.Get(),
-                                            glm::uvec2(fb_width, fb_height),
-                                            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                            DXGI_FORMAT_R8G8B8A8_UNORM,
-                                            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-
-    accum_buffer = dxr::Texture2D::default(device.Get(),
+    render_target = dxr::Texture2D::device(device.Get(),
                                            glm::uvec2(fb_width, fb_height),
                                            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                           DXGI_FORMAT_R32G32B32A32_FLOAT,
+                                           DXGI_FORMAT_R8G8B8A8_UNORM,
                                            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+
+    accum_buffer = dxr::Texture2D::device(device.Get(),
+                                          glm::uvec2(fb_width, fb_height),
+                                          D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                          DXGI_FORMAT_R32G32B32A32_FLOAT,
+                                          D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
     // Allocate the readback buffer so we can read the image back to the CPU
     img_readback_buf = dxr::Buffer::readback(device.Get(),
@@ -78,11 +78,11 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
                                              D3D12_RESOURCE_STATE_COPY_DEST);
 
 #ifdef REPORT_RAY_STATS
-    ray_stats = dxr::Texture2D::default(device.Get(),
-                                        glm::uvec2(fb_width, fb_height),
-                                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                        DXGI_FORMAT_R16_UINT,
-                                        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    ray_stats = dxr::Texture2D::device(device.Get(),
+                                       glm::uvec2(fb_width, fb_height),
+                                       D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                       DXGI_FORMAT_R16_UINT,
+                                       D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
     ray_stats_readback_buf = dxr::Buffer::readback(device.Get(),
                                                    ray_stats.linear_row_pitch() * fb_height,
@@ -145,9 +145,9 @@ void RenderDXR::set_scene(const Scene &scene)
             }
 
             // Allocate GPU side buffers for the data so we can have it resident in VRAM
-            dxr::Buffer vertex_buf = dxr::Buffer::default(
+            dxr::Buffer vertex_buf = dxr::Buffer::device(
                 device.Get(), upload_verts.size(), D3D12_RESOURCE_STATE_COPY_DEST);
-            dxr::Buffer index_buf = dxr::Buffer::default(
+            dxr::Buffer index_buf = dxr::Buffer::device(
                 device.Get(), upload_indices.size(), D3D12_RESOURCE_STATE_COPY_DEST);
 
             CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
@@ -158,14 +158,14 @@ void RenderDXR::set_scene(const Scene &scene)
 
             dxr::Buffer uv_buf;
             if (!geom.uvs.empty()) {
-                uv_buf = dxr::Buffer::default(
+                uv_buf = dxr::Buffer::device(
                     device.Get(), upload_uvs.size(), D3D12_RESOURCE_STATE_COPY_DEST);
                 cmd_list->CopyResource(uv_buf.get(), upload_uvs.get());
             }
 
             dxr::Buffer normal_buf;
             if (!geom.normals.empty()) {
-                normal_buf = dxr::Buffer::default(
+                normal_buf = dxr::Buffer::device(
                     device.Get(), upload_normals.size(), D3D12_RESOURCE_STATE_COPY_DEST);
                 cmd_list->CopyResource(normal_buf.get(), upload_normals.get());
             }
@@ -277,10 +277,10 @@ void RenderDXR::set_scene(const Scene &scene)
         const DXGI_FORMAT format = t.color_space == SRGB ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                                                          : DXGI_FORMAT_R8G8B8A8_UNORM;
 
-        dxr::Texture2D tex = dxr::Texture2D::default(device.Get(),
-                                                     glm::uvec2(t.width, t.height),
-                                                     D3D12_RESOURCE_STATE_COPY_DEST,
-                                                     format);
+        dxr::Texture2D tex = dxr::Texture2D::device(device.Get(),
+                                                    glm::uvec2(t.width, t.height),
+                                                    D3D12_RESOURCE_STATE_COPY_DEST,
+                                                    format);
 
         dxr::Buffer tex_upload = dxr::Buffer::upload(device.Get(),
                                                      tex.linear_row_pitch() * t.height,
@@ -324,7 +324,7 @@ void RenderDXR::set_scene(const Scene &scene)
         std::memcpy(mat_upload_buf.map(), scene.materials.data(), mat_upload_buf.size());
         mat_upload_buf.unmap();
 
-        material_param_buf = dxr::Buffer::default(
+        material_param_buf = dxr::Buffer::device(
             device.Get(), mat_upload_buf.size(), D3D12_RESOURCE_STATE_COPY_DEST);
 
         cmd_list->CopyResource(material_param_buf.get(), mat_upload_buf.get());
@@ -346,7 +346,7 @@ void RenderDXR::set_scene(const Scene &scene)
         std::memcpy(light_upload_buf.map(), scene.lights.data(), light_upload_buf.size());
         light_upload_buf.unmap();
 
-        light_buf = dxr::Buffer::default(
+        light_buf = dxr::Buffer::device(
             device.Get(), light_upload_buf.size(), D3D12_RESOURCE_STATE_COPY_DEST);
 
         cmd_list->CopyResource(light_buf.get(), light_upload_buf.get());
