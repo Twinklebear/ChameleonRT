@@ -31,6 +31,7 @@ struct RenderVulkan : RenderBackend {
 #endif
 
     std::vector<std::unique_ptr<vkrt::TriangleMesh>> meshes;
+    std::vector<ParameterizedMesh> parameterized_meshes;
     std::unique_ptr<vkrt::TopLevelBVH> scene_bvh;
     size_t total_geom = 0;
 

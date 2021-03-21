@@ -359,6 +359,18 @@ void RenderVulkan::set_scene(const Scene &scene)
         meshes.emplace_back(std::move(bvh));
     }
 
+    parameterized_meshes = scene.parameterized_meshes;
+    std::vector<uint32_t> parameterized_mesh_sbt_offsets;
+    {
+        // Compute the offsets each parameterized mesh will be written too in the SBT,
+        // these are then the instance SBT offsets shared by each instance
+        uint32_t offset = 0;
+        for (const auto &pm : parameterized_meshes) {
+            parameterized_mesh_sbt_offsets.push_back(offset);
+            offset += meshes[pm.mesh_id]->geometries.size();
+        }
+    }
+
     std::shared_ptr<vkrt::Buffer> instance_buf;
     {
         // Setup the instance buffer
@@ -369,14 +381,15 @@ void RenderVulkan::set_scene(const Scene &scene)
         VkAccelerationStructureInstanceKHR *map =
             reinterpret_cast<VkAccelerationStructureInstanceKHR *>(upload_instances->map());
 
-        size_t instance_hitgroup_offset = 0;
         for (size_t i = 0; i < scene.instances.size(); ++i) {
             const auto &inst = scene.instances[i];
             std::memset(&map[i], 0, sizeof(VkAccelerationStructureInstanceKHR));
             map[i].instanceCustomIndex = i;
-            map[i].instanceShaderBindingTableRecordOffset = instance_hitgroup_offset;
+            map[i].instanceShaderBindingTableRecordOffset =
+                parameterized_mesh_sbt_offsets[inst.parameterized_mesh_id];
             map[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
-            map[i].accelerationStructureReference = meshes[inst.mesh_id]->handle;
+            map[i].accelerationStructureReference =
+                meshes[parameterized_meshes[inst.parameterized_mesh_id].mesh_id]->handle;
             map[i].mask = 0xff;
 
             // Note: 4x3 row major
@@ -386,8 +399,6 @@ void RenderVulkan::set_scene(const Scene &scene)
                     map[i].transform.matrix[r][c] = m[r][c];
                 }
             }
-
-            instance_hitgroup_offset += meshes[inst.mesh_id]->geometries.size();
         }
         upload_instances->unmap();
 
@@ -847,11 +858,11 @@ void RenderVulkan::build_shader_binding_table()
         .add_miss(vkrt::ShaderRecord("miss", "miss", 0))
         .add_miss(vkrt::ShaderRecord("occlusion_miss", "occlusion_miss", 0));
 
-    for (size_t i = 0; i < scene_bvh->num_instances(); ++i) {
-        const auto &inst = scene_bvh->instances[i];
-        for (size_t j = 0; j < meshes[inst.mesh_id]->geometries.size(); ++j) {
-            std::string hg_name =
-                "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j);
+    for (size_t i = 0; i < parameterized_meshes.size(); ++i) {
+        const auto &pm = parameterized_meshes[i];
+        for (size_t j = 0; j < meshes[pm.mesh_id]->geometries.size(); ++j) {
+            const std::string hg_name =
+                "HitGroup_param_mesh" + std::to_string(i) + "_geom" + std::to_string(j);
             sbt_builder.add_hitgroup(
                 vkrt::ShaderRecord(hg_name, "closest_hit", sizeof(HitGroupParams)));
         }
@@ -867,35 +878,34 @@ void RenderVulkan::build_shader_binding_table()
         *params = light_params->size() / sizeof(QuadLight);
     }
 
-    for (size_t i = 0; i < scene_bvh->num_instances(); ++i) {
-        const auto &inst = scene_bvh->instances[i];
-        for (size_t j = 0; j < meshes[inst.mesh_id]->geometries.size(); ++j) {
-            auto &geom = meshes[inst.mesh_id]->geometries[j];
-            std::string hg_name =
-                "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j);
+    for (size_t i = 0; i < parameterized_meshes.size(); ++i) {
+        const auto &pm = parameterized_meshes[i];
+        for (size_t j = 0; j < meshes[pm.mesh_id]->geometries.size(); ++j) {
+            auto &geom = meshes[pm.mesh_id]->geometries[j];
+            const std::string hg_name =
+                "HitGroup_param_mesh" + std::to_string(i) + "_geom" + std::to_string(j);
 
             HitGroupParams *params =
                 reinterpret_cast<HitGroupParams *>(shader_table.sbt_params(hg_name));
 
-            params->vert_buf =
-                meshes[inst.mesh_id]->geometries[j].vertex_buf->device_address();
-            params->idx_buf = meshes[inst.mesh_id]->geometries[j].index_buf->device_address();
+            params->vert_buf = meshes[pm.mesh_id]->geometries[j].vertex_buf->device_address();
+            params->idx_buf = meshes[pm.mesh_id]->geometries[j].index_buf->device_address();
 
-            if (meshes[inst.mesh_id]->geometries[j].normal_buf) {
+            if (meshes[pm.mesh_id]->geometries[j].normal_buf) {
                 params->normal_buf =
-                    meshes[inst.mesh_id]->geometries[j].normal_buf->device_address();
+                    meshes[pm.mesh_id]->geometries[j].normal_buf->device_address();
                 params->num_normals = 1;
             } else {
                 params->num_normals = 0;
             }
 
-            if (meshes[inst.mesh_id]->geometries[j].uv_buf) {
-                params->uv_buf = meshes[inst.mesh_id]->geometries[j].uv_buf->device_address();
+            if (meshes[pm.mesh_id]->geometries[j].uv_buf) {
+                params->uv_buf = meshes[pm.mesh_id]->geometries[j].uv_buf->device_address();
                 params->num_uvs = 1;
             } else {
                 params->num_uvs = 0;
             }
-            params->material_id = inst.material_ids[j];
+            params->material_id = pm.material_ids[j];
         }
     }
 
