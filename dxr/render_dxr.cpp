@@ -234,6 +234,9 @@ void RenderDXR::set_scene(const Scene &scene)
         }
     }
 
+    // TODO: May be best to move this into the top-level BVH build step,
+    // and have it take the parameterized mesh info as well, similar to what
+    // I have in the Metal backend
     instance_buf = dxr::Buffer::upload(
         device.Get(),
         align_to(scene.instances.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
