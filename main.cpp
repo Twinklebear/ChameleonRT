@@ -337,6 +337,7 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
            << "# Total Triangles: " << pretty_print_count(scene.total_tris()) << "\n"
            << "# Geometries: " << scene.num_geometries() << "\n"
            << "# Meshes: " << scene.meshes.size() << "\n"
+           << "# Parameterized Meshes: " << scene.parameterized_meshes.size() << "\n"
            << "# Instances: " << scene.instances.size() << "\n"
            << "# Materials: " << scene.materials.size() << "\n"
            << "# Textures: " << scene.textures.size() << "\n"

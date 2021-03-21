@@ -25,6 +25,8 @@ struct RenderDXR : RenderBackend {
     std::vector<dxr::BottomLevelBVH> meshes;
     dxr::TopLevelBVH scene_bvh;
 
+    std::vector<ParameterizedMesh> parameterized_meshes;
+
     dxr::RTPipeline rt_pipeline;
     dxr::DescriptorHeap raygen_desc_heap, raygen_sampler_heap;
 

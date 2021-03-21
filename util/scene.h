@@ -15,6 +15,7 @@
 
 struct Scene {
     std::vector<Mesh> meshes;
+    std::vector<ParameterizedMesh> parameterized_meshes;
     std::vector<Instance> instances;
     std::vector<DisneyMaterial> materials;
     std::vector<Image> textures;

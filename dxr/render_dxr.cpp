@@ -222,6 +222,18 @@ void RenderDXR::set_scene(const Scene &scene)
         meshes.back().finalize();
     }
 
+    parameterized_meshes = scene.parameterized_meshes;
+    std::vector<uint32_t> parameterized_mesh_sbt_offsets;
+    {
+        // Compute the offsets each parameterized mesh will be written too in the SBT,
+        // these are then the instance SBT offsets shared by each instance
+        uint32_t offset = 0;
+        for (const auto &pm : parameterized_meshes) {
+            parameterized_mesh_sbt_offsets.push_back(offset);
+            offset += meshes[pm.mesh_id].geometries.size();
+        }
+    }
+
     instance_buf = dxr::Buffer::upload(
         device.Get(),
         align_to(scene.instances.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
@@ -236,13 +248,15 @@ void RenderDXR::set_scene(const Scene &scene)
         D3D12_RAYTRACING_INSTANCE_DESC *buf =
             static_cast<D3D12_RAYTRACING_INSTANCE_DESC *>(instance_buf.map());
 
-        size_t instance_hitgroup_offset = 0;
         for (size_t i = 0; i < scene.instances.size(); ++i) {
             const auto &inst = scene.instances[i];
             buf[i].InstanceID = i;
-            buf[i].InstanceContributionToHitGroupIndex = instance_hitgroup_offset;
+            buf[i].InstanceContributionToHitGroupIndex =
+                parameterized_mesh_sbt_offsets[inst.parameterized_mesh_id];
             buf[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE;
-            buf[i].AccelerationStructure = meshes[inst.mesh_id]->GetGPUVirtualAddress();
+            buf[i].AccelerationStructure =
+                meshes[parameterized_meshes[inst.parameterized_mesh_id].mesh_id]
+                    ->GetGPUVirtualAddress();
             buf[i].InstanceMask = 0xff;
 
             // Note: D3D matrices are row-major
@@ -253,8 +267,6 @@ void RenderDXR::set_scene(const Scene &scene)
                     buf[i].Transform[r][c] = m[r][c];
                 }
             }
-
-            instance_hitgroup_offset += meshes[inst.mesh_id].geometries.size();
         }
         instance_buf.unmap();
     }
@@ -550,11 +562,11 @@ void RenderDXR::build_raytracing_pipeline()
     // For now this is also easy since they all share the same programs and root signatures,
     // but we just need different hitgroups to set the different params for the meshes
     std::vector<std::wstring> hg_names;
-    for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {
-        const auto &inst = scene_bvh.instances[i];
-        for (size_t j = 0; j < meshes[inst.mesh_id].geometries.size(); ++j) {
+    for (size_t i = 0; i < parameterized_meshes.size(); ++i) {
+        const auto &pm = parameterized_meshes[i];
+        for (size_t j = 0; j < meshes[pm.mesh_id].geometries.size(); ++j) {
             const std::wstring hg_name =
-                L"HitGroup_inst" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
+                L"HitGroup_param_mesh" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
             hg_names.push_back(hg_name);
 
             rt_pipeline_builder.add_hit_group(
@@ -608,12 +620,13 @@ void RenderDXR::build_shader_binding_table()
                     &desc_heap_handle,
                     sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
     }
-    for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {
-        const auto &inst = scene_bvh.instances[i];
-        for (size_t j = 0; j < meshes[inst.mesh_id].geometries.size(); ++j) {
-            auto &geom = meshes[inst.mesh_id].geometries[j];
+    for (size_t i = 0; i < parameterized_meshes.size(); ++i) {
+        const auto &pm = parameterized_meshes[i];
+        for (size_t j = 0; j < meshes[pm.mesh_id].geometries.size(); ++j) {
             const std::wstring hg_name =
-                L"HitGroup_inst" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
+                L"HitGroup_param_mesh" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
+
+            auto &geom = meshes[pm.mesh_id].geometries[j];
 
             uint8_t *map = rt_pipeline.shader_record(hg_name);
             const dxr::RootSignature *sig = rt_pipeline.shader_signature(hg_name);
@@ -646,9 +659,9 @@ void RenderDXR::build_shader_binding_table()
                 map + sig->offset("uv_buf"), &gpu_handle, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
 
             const std::array<uint32_t, 3> mesh_data = {
-                geom.normal_buf.size() / sizeof(glm::vec3),
-                geom.uv_buf.size() / sizeof(glm::vec2),
-                inst.material_ids[j]};
+                uint32_t(geom.normal_buf.size() / sizeof(glm::vec3)),
+                uint32_t(geom.uv_buf.size() / sizeof(glm::vec2)),
+                pm.material_ids[j]};
             std::memcpy(map + sig->offset("MeshData"),
                         mesh_data.data(),
                         mesh_data.size() * sizeof(uint32_t));

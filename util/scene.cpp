@@ -20,6 +20,19 @@
 
 namespace std {
 template <>
+struct hash<glm::uvec2> {
+    size_t operator()(glm::uvec2 const &v) const
+    {
+        return phmap::HashState().combine(0, v.x, v.y);
+    }
+};
+
+bool operator==(const glm::uvec2 &a, const glm::uvec2 &b)
+{
+    return a.x == b.x && a.y == b.y;
+}
+
+template <>
 struct hash<glm::uvec3> {
     size_t operator()(glm::uvec3 const &v) const
     {
@@ -64,7 +77,8 @@ size_t Scene::total_tris() const
 {
     return std::accumulate(
         instances.begin(), instances.end(), 0, [&](const size_t &n, const Instance &i) {
-            return n + meshes[i.mesh_id].num_tris();
+            return n +
+                   meshes[parameterized_meshes[i.parameterized_mesh_id].mesh_id].num_tris();
         });
 }
 
@@ -162,8 +176,9 @@ void Scene::load_obj(const std::string &file)
     }
     meshes.push_back(mesh);
 
-    // OBJ has a single "instance"
-    instances.emplace_back(glm::mat4(1.f), 0, material_ids);
+    // OBJ has a single "parameterized mesh" and "instance"
+    parameterized_meshes.emplace_back(0, material_ids);
+    instances.emplace_back(glm::mat4(1.f), 0);
 
     phmap::parallel_flat_hash_map<std::string, int32_t> texture_ids;
     // Parse the materials over to a similar DisneyMaterial representation
@@ -233,8 +248,8 @@ void Scene::load_gltf(const std::string &fname)
 
     flatten_gltf(model);
 
-    std::vector<std::vector<uint32_t>> mesh_material_ids;
-    // Load the meshes
+    // Load the meshes. Note: GLTF combines mesh + material parameters into
+    // a single entity, so GLTF "meshes" are ChameleonRT "parameterized meshes"
     for (auto &m : model.meshes) {
         Mesh mesh;
         std::vector<uint32_t> material_ids;
@@ -296,7 +311,7 @@ void Scene::load_gltf(const std::string &fname)
             }
             mesh.geometries.push_back(geom);
         }
-        mesh_material_ids.push_back(material_ids);
+        parameterized_meshes.emplace_back(meshes.size(), material_ids);
         meshes.push_back(mesh);
     }
 
@@ -364,7 +379,9 @@ void Scene::load_gltf(const std::string &fname)
         const tinygltf::Node &n = model.nodes[nid];
         if (n.mesh != -1) {
             const glm::mat4 transform = read_node_transform(n);
-            instances.emplace_back(transform, n.mesh, mesh_material_ids[n.mesh]);
+            // Note: GLTF "mesh" == ChameleonRT "parameterized mesh", since materials and
+            // meshes are combined in a single entity in GLTF
+            instances.emplace_back(transform, n.mesh);
         }
     }
 
@@ -522,13 +539,28 @@ void Scene::load_crts(const std::string &file)
         materials.push_back(mat);
     }
 
+    phmap::parallel_flat_hash_map<glm::uvec2, size_t> parameterized_mesh_ids;
+
     for (size_t i = 0; i < header["objects"].size(); ++i) {
         auto &n = header["objects"][i];
         const std::string type = n["type"];
         const glm::mat4 matrix = glm::make_mat4(n["matrix"].get<std::vector<float>>().data());
         if (type == "MESH") {
-            const auto mat_id = std::vector<uint32_t>{n["material"].get<uint32_t>()};
-            instances.emplace_back(matrix, n["mesh"].get<uint64_t>(), mat_id);
+            // CRTS meshes only have one geometry associated with them, so the parameterized
+            // mesh can be looked up by the pair of (mesh_id, material_id)
+            const auto mesh_id = n["mesh"].get<uint64_t>();
+            const auto mat_id = n["material"].get<uint32_t>();
+            const glm::uvec2 mesh_mat_id(mesh_id, mat_id);
+            const auto fnd = parameterized_mesh_ids.find(mesh_mat_id);
+            size_t param_mesh_id = -1;
+            if (fnd == parameterized_mesh_ids.end()) {
+                param_mesh_id = parameterized_meshes.size();
+                parameterized_mesh_ids[mesh_mat_id] = param_mesh_id;
+                parameterized_meshes.emplace_back(mesh_id, std::vector<uint32_t>{mat_id});
+            } else {
+                param_mesh_id = fnd->second;
+            }
+            instances.emplace_back(matrix, param_mesh_id);
         } else if (type == "LIGHT") {
             QuadLight light;
             const auto color = glm::make_vec3(n["color"].get<std::vector<float>>().data());
@@ -740,7 +772,9 @@ void Scene::load_pbrt(const std::string &file)
         transform[2] = glm::vec4(inst->xfm.l.vz.x, inst->xfm.l.vz.y, inst->xfm.l.vz.z, 0.f);
         transform[3] = glm::vec4(inst->xfm.p.x, inst->xfm.p.y, inst->xfm.p.z, 1.f);
 
-        instances.emplace_back(transform, mesh_id, material_ids);
+        // TODO: Look up and merge shared parameterized meshes
+        instances.emplace_back(transform, parameterized_meshes.size());
+        parameterized_meshes.emplace_back(mesh_id, material_ids);
     }
 
     validate_materials();
@@ -898,16 +932,19 @@ uint32_t Scene::load_pbrt_texture(
 void Scene::validate_materials()
 {
     const bool need_default_mat =
-        std::find_if(instances.begin(), instances.end(), [](const Instance &i) {
-            return std::find(i.material_ids.begin(), i.material_ids.end(), uint32_t(-1)) !=
-                   i.material_ids.end();
-        }) != instances.end();
+        std::find_if(parameterized_meshes.begin(),
+                     parameterized_meshes.end(),
+                     [](const ParameterizedMesh &i) {
+                         return std::find(i.material_ids.begin(),
+                                          i.material_ids.end(),
+                                          uint32_t(-1)) != i.material_ids.end();
+                     }) != parameterized_meshes.end();
 
     if (need_default_mat) {
         std::cout << "No materials assigned for some objects, generating a default\n";
         const uint32_t default_mat_id = materials.size();
         materials.push_back(DisneyMaterial());
-        for (auto &i : instances) {
+        for (auto &i : parameterized_meshes) {
             for (auto &m : i.material_ids) {
                 if (m == -1) {
                     m = default_mat_id;
