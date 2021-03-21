@@ -68,7 +68,8 @@ void RenderMetal::set_scene(const Scene &scene)
         // Upload the geometry for each mesh and build its BLAS
         std::vector<std::shared_ptr<metal::BottomLevelBVH>> meshes = build_meshes(scene);
 
-        bvh = std::make_shared<metal::TopLevelBVH>(scene.instances, meshes);
+        bvh = std::make_shared<metal::TopLevelBVH>(
+            scene.parameterized_meshes, scene.instances, meshes);
         {
             id<MTLCommandBuffer> command_buffer = context->command_buffer();
             id<MTLAccelerationStructureCommandEncoder> command_encoder =
@@ -90,12 +91,12 @@ void RenderMetal::set_scene(const Scene &scene)
             [command_buffer waitUntilCompleted];
         }
 
-        // Upload the instance material id buffers to the heap
-        for (const auto &i : scene.instances) {
+        // Upload the parameterized mesh material id buffers to the heap
+        for (const auto &pm : scene.parameterized_meshes) {
             metal::Buffer upload(*context,
-                                 sizeof(uint32_t) * i.material_ids.size(),
+                                 sizeof(uint32_t) * pm.material_ids.size(),
                                  MTLResourceStorageModeManaged);
-            std::memcpy(upload.data(), i.material_ids.data(), upload.size());
+            std::memcpy(upload.data(), pm.material_ids.data(), upload.size());
             upload.mark_modified();
 
             auto material_id_buffer = std::make_shared<metal::Buffer>(
@@ -114,7 +115,7 @@ void RenderMetal::set_scene(const Scene &scene)
                 [command_buffer commit];
                 [command_buffer waitUntilCompleted];
 
-                instance_material_ids.push_back(material_id_buffer);
+                parameterized_mesh_material_ids.push_back(material_id_buffer);
             }
         }
 
@@ -136,14 +137,18 @@ void RenderMetal::set_scene(const Scene &scene)
 
             size_t offset = 0;
             for (size_t i = 0; i < scene.instances.size(); ++i) {
+                const auto &inst = scene.instances[i];
                 auto encoder = args_builder.encoder_for_buffer(*instance_args_buffer, offset);
                 glm::mat4 *inverse_tfm =
                     reinterpret_cast<glm::mat4 *>(encoder->constant_data_at(0));
                 *inverse_tfm = glm::inverse(scene.instances[i].transform);
 
-                const auto &mesh = bvh->meshes[scene.instances[i].mesh_id];
+                const auto &pm = scene.parameterized_meshes[inst.parameterized_mesh_id];
+                const auto &mesh = bvh->meshes[pm.mesh_id];
+
                 encoder->set_buffer(*mesh->geometry_id_buffer, 0, 1);
-                encoder->set_buffer(*instance_material_ids[i], 0, 2);
+                encoder->set_buffer(
+                    *parameterized_mesh_material_ids[inst.parameterized_mesh_id], 0, 2);
 
                 offset += instance_args_size;
             }
@@ -319,9 +324,9 @@ void RenderMetal::allocate_heap(const Scene &scene)
             }
         }
 
-        // Allocate room for the instance's material ID lists
-        for (const auto &i : scene.instances) {
-            heap_builder.add_buffer(sizeof(uint32_t) * i.material_ids.size(),
+        // Allocate room for the parameterized mesh's material ID lists
+        for (const auto &pm : scene.parameterized_meshes) {
+            heap_builder.add_buffer(sizeof(uint32_t) * pm.material_ids.size(),
                                     MTLResourceStorageModePrivate);
         }
 

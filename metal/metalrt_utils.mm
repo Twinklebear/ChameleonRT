@@ -395,9 +395,10 @@ void BottomLevelBVH::enqueue_build(Context &context,
     build(context, command_encoder, bvh_desc);
 }
 
-TopLevelBVH::TopLevelBVH(const std::vector<Instance> &instances,
+TopLevelBVH::TopLevelBVH(const std::vector<ParameterizedMesh> &parameterized_meshes,
+                         const std::vector<Instance> &instances,
                          std::vector<std::shared_ptr<BottomLevelBVH>> &meshes)
-    : instances(instances), meshes(meshes)
+    : parameterized_meshes(parameterized_meshes), instances(instances), meshes(meshes)
 {
 }
 
@@ -409,6 +410,17 @@ void TopLevelBVH::enqueue_build(Context &context,
         [blas_array addObject:blas->bvh];
     }
 
+    std::vector<uint32_t> parameterized_mesh_sbt_offsets;
+    {
+        // Compute the offsets each parameterized mesh will be written too in the SBT,
+        // these are then the instance SBT offsets shared by each instance
+        uint32_t offset = 0;
+        for (const auto &pm : parameterized_meshes) {
+            parameterized_mesh_sbt_offsets.push_back(offset);
+            offset += meshes[pm.mesh_id]->geometries.size();
+        }
+    }
+
     instance_buffer = std::make_shared<Buffer>(
         context,
         instances.size() * sizeof(MTLAccelerationStructureInstanceDescriptor),
@@ -418,20 +430,19 @@ void TopLevelBVH::enqueue_build(Context &context,
         reinterpret_cast<MTLAccelerationStructureInstanceDescriptor *>(
             instance_buffer->data());
 
-    size_t intersection_table_offset = 0;
     for (size_t i = 0; i < instances.size(); ++i) {
-        const auto &instance = instances[i];
+        const auto &inst = instances[i];
 
-        inst_descs[i].accelerationStructureIndex = instance.mesh_id;
-        inst_descs[i].intersectionFunctionTableOffset = intersection_table_offset;
+        inst_descs[i].accelerationStructureIndex =
+            parameterized_meshes[inst.parameterized_mesh_id].mesh_id;
+        inst_descs[i].intersectionFunctionTableOffset =
+            parameterized_mesh_sbt_offsets[inst.parameterized_mesh_id];
         inst_descs[i].mask = 0xff;
 
-        const glm::mat4x3 tfm = instance.transform;
+        const glm::mat4x3 tfm = inst.transform;
         std::memcpy(&inst_descs[i].transformationMatrix,
                     glm::value_ptr(tfm),
                     sizeof(MTLPackedFloat4x3));
-
-        intersection_table_offset += meshes[instance.mesh_id]->geometries.size();
     }
     instance_buffer->mark_modified();
 

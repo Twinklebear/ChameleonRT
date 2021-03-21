@@ -210,12 +210,14 @@ struct BottomLevelBVH : BVH {
 };
 
 struct TopLevelBVH : BVH {
+    std::vector<ParameterizedMesh> parameterized_meshes;
     std::vector<Instance> instances;
     std::vector<std::shared_ptr<BottomLevelBVH>> meshes;
 
     std::shared_ptr<Buffer> instance_buffer;
 
-    TopLevelBVH(const std::vector<Instance> &instances,
+    TopLevelBVH(const std::vector<ParameterizedMesh> &parameterized_meshes,
+                const std::vector<Instance> &instances,
                 std::vector<std::shared_ptr<BottomLevelBVH>> &meshes);
 
     void enqueue_build(Context &context,
