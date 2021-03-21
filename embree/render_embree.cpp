@@ -70,10 +70,13 @@ void RenderEmbree::set_scene(const Scene &scene)
         meshes.push_back(std::make_shared<embree::TriangleMesh>(device, geometries));
     }
 
+    paramerized_meshes = scene.parameterized_meshes;
+
     std::vector<std::shared_ptr<embree::Instance>> instances;
     for (const auto &inst : scene.instances) {
+        const auto &pm = paramerized_meshes[inst.parameterized_mesh_id];
         instances.push_back(std::make_shared<embree::Instance>(
-            device, meshes[inst.mesh_id], inst.transform, inst.material_ids));
+            device, meshes[pm.mesh_id], inst.transform, pm.material_ids));
     }
 
     scene_bvh = std::make_shared<embree::TopLevelBVH>(device, instances);
