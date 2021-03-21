@@ -15,6 +15,7 @@ struct RenderOptiX : RenderBackend {
         light_params, ray_stats_buffer;
 
     std::vector<optix::TriangleMesh> meshes;
+    std::vector<ParameterizedMesh> parameterized_meshes;
     std::vector<optix::Texture2D> textures;
 
     optix::TopLevelBVH scene_bvh;

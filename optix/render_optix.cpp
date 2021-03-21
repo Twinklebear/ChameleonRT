@@ -163,23 +163,30 @@ void RenderOptiX::set_scene(const Scene &scene)
         meshes.back().finalize();
     }
 
-    // Build the top-level acceleration structure over the instances
-    // For now we don't really have "instances" since OBJ doesn't support this.
-    // Note: both for DXR and OptiX we can just put all the triangle meshes
-    // in one bottom-level AS, and use the geometry order indexed hit groups to
-    // set the params properly for each geom. However, eventually I do plan to support
-    // instancing so it's easiest to learn the whole path on a simple case.
+    parameterized_meshes = scene.parameterized_meshes;
+    std::vector<uint32_t> parameterized_mesh_sbt_offsets;
+    {
+        // Compute the offsets each parameterized mesh will be written too in the SBT,
+        // these are then the instance SBT offsets shared by each instance
+        uint32_t offset = 0;
+        for (const auto &pm : parameterized_meshes) {
+            parameterized_mesh_sbt_offsets.push_back(offset);
+            offset += meshes[pm.mesh_id].geometries.size();
+        }
+    }
+
     std::vector<OptixInstance> instances;
     {
         instances.reserve(scene.instances.size());
-        size_t instance_hitgroup_offset = 0;
         for (size_t i = 0; i < scene.instances.size(); ++i) {
             const auto &inst = scene.instances[i];
             OptixInstance instance = {};
             instance.instanceId = i;
-            instance.sbtOffset = instance_hitgroup_offset;
+            instance.sbtOffset = parameterized_mesh_sbt_offsets[inst.parameterized_mesh_id];
+            std::cout << "Instance " << i << " sbt offset: " << instance.sbtOffset << "\n";
             instance.flags = OPTIX_INSTANCE_FLAG_DISABLE_ANYHIT;
-            instance.traversableHandle = meshes[inst.mesh_id].handle();
+            instance.traversableHandle =
+                meshes[parameterized_meshes[inst.parameterized_mesh_id].mesh_id].handle();
             instance.visibilityMask = 0xff;
 
             // Note: Same as D3D, row-major 3x4
@@ -191,8 +198,6 @@ void RenderOptiX::set_scene(const Scene &scene)
                 }
             }
             instances.push_back(instance);
-
-            instance_hitgroup_offset += meshes[inst.mesh_id].geometries.size();
         }
     }
 
@@ -304,11 +309,11 @@ void RenderOptiX::build_raytracing_pipeline()
             .add_miss("occlusion_miss", miss_progs[1], 0);
 
     // Hitgroups for each instance's geometries
-    for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {
-        const auto &inst = scene_bvh.instances[i];
-        for (size_t j = 0; j < meshes[inst.mesh_id].geometries.size(); ++j) {
+    for (size_t i = 0; i < parameterized_meshes.size(); ++i) {
+        const auto &pm = parameterized_meshes[i];
+        for (size_t j = 0; j < meshes[pm.mesh_id].geometries.size(); ++j) {
             shader_table_builder.add_hitgroup(
-                "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j),
+                "HitGroup_param_mesh" + std::to_string(i) + "_geom" + std::to_string(j),
                 hitgroup_progs[0],
                 sizeof(HitGroupParams));
         }
@@ -324,16 +329,16 @@ void RenderOptiX::build_raytracing_pipeline()
         params.num_lights = light_params.size() / sizeof(QuadLight);
     }
 
-    for (size_t i = 0; i < scene_bvh.num_instances(); ++i) {
-        const auto &inst = scene_bvh.instances[i];
-        for (size_t j = 0; j < meshes[inst.mesh_id].geometries.size(); ++j) {
-            auto &geom = meshes[inst.mesh_id].geometries[j];
+    for (size_t i = 0; i < parameterized_meshes.size(); ++i) {
+        const auto &pm = parameterized_meshes[i];
+        for (size_t j = 0; j < meshes[pm.mesh_id].geometries.size(); ++j) {
+            auto &geom = meshes[pm.mesh_id].geometries[j];
             HitGroupParams &params = shader_table.get_shader_params<HitGroupParams>(
-                "HitGroup_inst" + std::to_string(i) + "_geom" + std::to_string(j));
+                "HitGroup_param_mesh" + std::to_string(i) + "_geom" + std::to_string(j));
 
             params.vertex_buffer = geom.vertex_buf->device_ptr();
             params.index_buffer = geom.index_buf->device_ptr();
-            params.material_id = inst.material_ids[j];
+            params.material_id = pm.material_ids[j];
 
             if (geom.uv_buf) {
                 params.uv_buffer = geom.uv_buf->device_ptr();
