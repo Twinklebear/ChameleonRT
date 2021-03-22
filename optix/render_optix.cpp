@@ -183,7 +183,6 @@ void RenderOptiX::set_scene(const Scene &scene)
             OptixInstance instance = {};
             instance.instanceId = i;
             instance.sbtOffset = parameterized_mesh_sbt_offsets[inst.parameterized_mesh_id];
-            std::cout << "Instance " << i << " sbt offset: " << instance.sbtOffset << "\n";
             instance.flags = OPTIX_INSTANCE_FLAG_DISABLE_ANYHIT;
             instance.traversableHandle =
                 meshes[parameterized_meshes[inst.parameterized_mesh_id].mesh_id].handle();

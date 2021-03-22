@@ -673,18 +673,15 @@ void Scene::load_pbrt(const std::string &file)
     phmap::parallel_flat_hash_map<pbrt::Texture::SP, size_t> pbrt_textures;
     phmap::parallel_flat_hash_map<std::string, size_t> pbrt_objects;
     for (const auto &inst : scene->world->instances) {
-        // Note: Materials are per-shape, so we should parse them and the IDs when loading
-        // the shapes
-
         // Check if this object has already been loaded for the instance
+        // PBRT geometries are also parameterized with a material, similar to GLTF
         auto fnd = pbrt_objects.find(inst->object->name);
-        size_t mesh_id = -1;
-        std::vector<uint32_t> material_ids;
+        size_t parameterized_mesh_id = -1;
         if (fnd == pbrt_objects.end()) {
             std::cout << "Loading newly encountered instanced object " << inst->object->name
                       << "\n";
 
-            // TODO: materials for pbrt
+            std::vector<uint32_t> material_ids;
             std::vector<Geometry> geometries;
             for (const auto &g : inst->object->shapes) {
                 if (pbrt::TriangleMesh::SP mesh =
@@ -744,26 +741,15 @@ void Scene::load_pbrt(const std::string &file)
                              "skipping\n";
                 continue;
             }
-            mesh_id = meshes.size();
-            pbrt_objects[inst->object->name] = meshes.size();
+            const size_t mesh_id = meshes.size();
             meshes.emplace_back(geometries);
+
+            parameterized_mesh_id = parameterized_meshes.size();
+            parameterized_meshes.emplace_back(mesh_id, material_ids);
+
+            pbrt_objects[inst->object->name] = parameterized_mesh_id;
         } else {
-            // TODO: The instance needs to get the material ids for its shapes if we found it
-            mesh_id = fnd->second;
-            for (const auto &g : inst->object->shapes) {
-                if (pbrt::TriangleMesh::SP mesh =
-                        std::dynamic_pointer_cast<pbrt::TriangleMesh>(g)) {
-                    uint32_t material_id = -1;
-                    if (mesh->material) {
-                        material_id = load_pbrt_materials(mesh->material,
-                                                          mesh->textures,
-                                                          pbrt_base_dir,
-                                                          pbrt_materials,
-                                                          pbrt_textures);
-                    }
-                    material_ids.push_back(material_id);
-                }
-            }
+            parameterized_mesh_id = fnd->second;
         }
 
         glm::mat4 transform(1.f);
@@ -772,9 +758,7 @@ void Scene::load_pbrt(const std::string &file)
         transform[2] = glm::vec4(inst->xfm.l.vz.x, inst->xfm.l.vz.y, inst->xfm.l.vz.z, 0.f);
         transform[3] = glm::vec4(inst->xfm.p.x, inst->xfm.p.y, inst->xfm.p.z, 1.f);
 
-        // TODO: Look up and merge shared parameterized meshes
-        instances.emplace_back(transform, parameterized_meshes.size());
-        parameterized_meshes.emplace_back(mesh_id, material_ids);
+        instances.emplace_back(transform, parameterized_mesh_id);
     }
 
     validate_materials();
