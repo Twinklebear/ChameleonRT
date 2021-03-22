@@ -273,13 +273,13 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
     build_info.geometryCount = 1;
     build_info.pGeometries = &instance_desc;
 
-    const uint32_t instance_desc_count = 1;
+    const uint32_t instance_count = instances.size();
     VkAccelerationStructureBuildSizesInfoKHR build_size_info = {};
     build_size_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
     GetAccelerationStructureBuildSizesKHR(device->logical_device(),
                                           VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
                                           &build_info,
-                                          &instance_desc_count,
+                                          &instance_count,
                                           &build_size_info);
 
     bvh_buf = Buffer::device(*device,
@@ -297,6 +297,7 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
     VkAccelerationStructureCreateInfoKHR as_create_info = {};
     as_create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
     as_create_info.buffer = bvh_buf->handle();
+    as_create_info.offset = 0;
     as_create_info.size = build_size_info.accelerationStructureSize;
     as_create_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
     CHECK_VULKAN(CreateAccelerationStructureKHR(
