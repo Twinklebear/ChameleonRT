@@ -1023,11 +1023,6 @@ void TopLevelBVH::enqeue_build(ID3D12Device5 *device, ID3D12GraphicsCommandList4
     prebuild_info.ScratchDataSizeInBytes =
         align_to(prebuild_info.ScratchDataSizeInBytes,
                  D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-#if 0
-	std::cout << "TopLevelBVH will use at most "
-		<< pretty_print_count(prebuild_info.ResultDataMaxSizeInBytes) << "b, and scratch of: "
-		<< pretty_print_count(prebuild_info.ScratchDataSizeInBytes) << "b\n";
-#endif
 
     bvh = Buffer::device(device,
                          prebuild_info.ResultDataMaxSizeInBytes,
