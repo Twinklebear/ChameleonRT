@@ -48,12 +48,12 @@ uint32_t lcg_random(inout LCGRand rng)
 
 float lcg_randomf(inout LCGRand rng)
 {
-	return ldexp((float)lcg_random(rng), -32);
+    return ldexp((float)lcg_random(rng), -32);
 }
 
 LCGRand get_rng(int frame_id)
 {
-	const uint2 pixel = DispatchRaysIndex().xy;
+    const uint2 pixel = DispatchRaysIndex().xy;
     const uint2 dims = DispatchRaysDimensions().xy;
 
     LCGRand rng;
