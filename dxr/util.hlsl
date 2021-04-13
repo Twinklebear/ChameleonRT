@@ -55,6 +55,13 @@ void ortho_basis(const float3 n, out Basis basis)
     basis.y = normalize(cross(n, basis.x));
 }
 
+// Flip the hemisphere that the v lies in relative to the basis z axis.
+// I.e., flip the z component of v within the given basis
+float3 flip_hemisphere(in const Basis basis, in const float3 v)
+{
+    return dot(v, basis.x) * basis.x + dot(v, basis.y) * basis.y - dot(v, basis.z) * basis.z;
+}
+
 float luminance(in const float3 c)
 {
     return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;

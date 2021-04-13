@@ -1,3 +1,4 @@
+#include "ashikhmin_shirley_brdf.hlsl"
 #include "disney_bsdf.hlsl"
 #include "lambertian_brdf.hlsl"
 #include "lcg_rng.hlsl"
@@ -103,7 +104,8 @@ inline float3 current_brdf(in const DisneyMaterial mat,
                            in const float3 w_o,
                            in const float3 w_i)
 {
-    return lambertian_brdf(mat, basis, w_o, w_i);
+    // return lambertian_brdf(mat, basis, w_o, w_i);
+    return ashikhmin_shirley_brdf(mat, basis, w_o, w_i);
 }
 
 inline float current_pdf(in const DisneyMaterial mat,
@@ -111,7 +113,8 @@ inline float current_pdf(in const DisneyMaterial mat,
                          in const float3 w_o,
                          in const float3 w_i)
 {
-    return lambertian_pdf(mat, basis, w_o, w_i);
+    // return lambertian_pdf(mat, basis, w_o, w_i);
+    return ashikhmin_shirley_pdf(mat, basis, w_o, w_i);
 }
 
 inline float3 sample_current_brdf(in const DisneyMaterial mat,
@@ -121,7 +124,8 @@ inline float3 sample_current_brdf(in const DisneyMaterial mat,
                                   out float3 w_i,
                                   out float pdf)
 {
-    return sample_lambertian_brdf(mat, basis, w_o, rng, w_i, pdf);
+    // return sample_lambertian_brdf(mat, basis, w_o, rng, w_i, pdf);
+    return sample_ashikhmin_shirley_brdf(mat, basis, w_o, rng, w_i, pdf);
 }
 
 float3 sample_direct_light(in const DisneyMaterial mat,
@@ -252,7 +256,6 @@ float3 sample_direct_light(in const DisneyMaterial mat,
         const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
         unpack_material(mat, uint(payload.normal.w), payload.color_dist.rg);
 
-        /*
         float3 v_z = payload.normal.xyz;
         // TODO: This should be based on if the hit was on the backface and
         // only actually done for thin objects where we hit the back face
@@ -260,8 +263,7 @@ float3 sample_direct_light(in const DisneyMaterial mat,
         if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
             v_z = -v_z;
         }
-        */
-        ortho_basis(payload.normal.xyz, shading_basis);
+        ortho_basis(v_z, shading_basis);
 
         illum += path_throughput *
                  sample_direct_light(mat, hit_p, shading_basis, w_o, ray_count, rng);

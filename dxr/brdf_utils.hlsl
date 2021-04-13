@@ -62,9 +62,9 @@ float power_heuristic(float n_f, float pdf_f, float n_g, float pdf_g)
     return (f * f) / (f * f + g * g);
 }
 
-float schlick_weight(float cos_theta)
+float3 schlick_fresnel(const float3 r_0, const float cos_theta)
 {
-    return pow(saturate(1.f - cos_theta), 5.f);
+    return r_0 + (1.f - r_0) * pow(1.f - cos_theta, 5.f);
 }
 
 #endif

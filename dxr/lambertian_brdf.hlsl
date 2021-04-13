@@ -24,10 +24,10 @@ float lambertian_pdf(in const DisneyMaterial mat,
                      in const float3 w_o,
                      in const float3 w_i)
 {
-    if (same_hemisphere(w_o, w_i, basis.z)) {
-        return abs(dot(w_i, basis.z)) * M_1_PI;
+    if (!same_hemisphere(w_o, w_i, basis.z)) {
+        return 0.f;
     }
-    return 0.f;
+    return abs(dot(w_i, basis.z)) * M_1_PI;
 }
 
 float3 sample_lambertian_brdf(in const DisneyMaterial mat,
