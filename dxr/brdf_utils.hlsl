@@ -27,6 +27,14 @@ bool same_hemisphere(in const float3 w_o, in const float3 w_i, in const float3 n
     return dot(w_o, n) * dot(w_i, n) > 0.f;
 }
 
+// Flip the hemisphere that the v lies in relative to the basis z axis.
+// I.e., flip the z component of v within the given basis
+// Note: negate, or just flip the z component?
+float3 flip_hemisphere(in const Basis basis, in const float3 v)
+{
+    return dot(v, basis.x) * basis.x + dot(v, basis.y) * basis.y - dot(v, basis.z) * basis.z;
+}
+
 // Sample the hemisphere using a cosine weighted distribution,
 // returns a vector in a hemisphere oriented about (0, 0, 1)
 float3 cos_sample_hemisphere(float2 u)
