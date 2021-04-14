@@ -72,7 +72,28 @@ float power_heuristic(float n_f, float pdf_f, float n_g, float pdf_g)
 
 float3 schlick_fresnel(const float3 r_0, const float cos_theta)
 {
-    return r_0 + (1.f - r_0) * pow(1.f - cos_theta, 5.f);
+    // Avoid precision issues with pow() here
+    const float x = 1.f - cos_theta;
+    return r_0 + (1.f - r_0) * x * x * x * x * x;
+}
+
+// Compute the Fresnel equation for dielectrics given the cosines of the
+// incident & transmitted rays and the IORs of the materials on the incident
+// and transmitted sides.
+// cos_theta_inc: cos theta for the ray incident on the surface
+// cos_theta_tr: cos theta for the ray transmitted through the interface
+// eta_inc: cos theta for the material on the indicent ray's side
+// eta_tr: cos theta for the material on the transmitted ray's side
+float fresnel_dielectric(const float cos_theta_inc,
+                         const float cos_theta_tr,
+                         const float eta_inc,
+                         const float eta_tr)
+{
+    const float r_par = (eta_tr * cos_theta_inc - eta_inc * cos_theta_tr) /
+                        (eta_tr * cos_theta_inc + eta_inc * cos_theta_tr);
+    const float r_perp = (eta_inc * cos_theta_inc - eta_tr * cos_theta_tr) /
+                         (eta_inc * cos_theta_inc + eta_tr * cos_theta_tr);
+    return 0.5 * (pow2(r_par) + pow2(r_perp));
 }
 
 #endif
