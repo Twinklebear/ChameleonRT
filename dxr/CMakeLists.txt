@@ -8,14 +8,15 @@ if (REPORT_RAY_STATS)
 endif()
 
 add_dxil_embed_library(dxr_shaders render_dxr.hlsl
+    ashikhmin_shirley_brdf.hlsl
     brdf_utils.hlsl
     disney_bsdf.hlsl
     lambertian_brdf.hlsl
     lcg_rng.hlsl
     lights.hlsl
-    render_dxr.hlsl
+    torrance_sparrow_brdf.hlsl
+    trowbridge_reitz_microfacet.hlsl
     util.hlsl
-    ashikhmin_shirley_brdf.hlsl
 	COMPILE_OPTIONS -O3
 	COMPILE_DEFINITIONS
         ${HLSL_COMPILE_DEFNS}

@@ -81,14 +81,20 @@ float3 schlick_fresnel(const float3 r_0, const float cos_theta)
 // incident & transmitted rays and the IORs of the materials on the incident
 // and transmitted sides.
 // cos_theta_inc: cos theta for the ray incident on the surface
-// cos_theta_tr: cos theta for the ray transmitted through the interface
 // eta_inc: cos theta for the material on the indicent ray's side
 // eta_tr: cos theta for the material on the transmitted ray's side
-float fresnel_dielectric(const float cos_theta_inc,
-                         const float cos_theta_tr,
-                         const float eta_inc,
-                         const float eta_tr)
+float fresnel_dielectric(float cos_theta_inc, const float eta_inc, const float eta_tr)
 {
+    cos_theta_inc = clamp(cos_theta_inc, -1.f, 1.f);
+    const float sin_theta_inc = sqrt(max(0.f, 1.f - pow2(cos_theta_inc)));
+    const float sin_theta_tr = eta_inc / eta_tr * sin_theta_inc;
+    // Total internal reflection
+    if (sin_theta_tr >= 1.f) {
+        return 1.f;
+    }
+
+    const float cos_theta_tr = sqrt(max(0.f, 1.f - pow2(sin_theta_tr)));
+
     const float r_par = (eta_tr * cos_theta_inc - eta_inc * cos_theta_tr) /
                         (eta_tr * cos_theta_inc + eta_inc * cos_theta_tr);
     const float r_perp = (eta_inc * cos_theta_inc - eta_tr * cos_theta_tr) /
