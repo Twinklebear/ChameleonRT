@@ -123,7 +123,7 @@ __device__ float3 sample_direct_light(const DisneyMaterial &mat, const float3 &h
             }
         }
     }
-    return illum;
+    return illum * num_lights;
 }
 
 extern "C" __global__ void __raygen__perspective_camera() {

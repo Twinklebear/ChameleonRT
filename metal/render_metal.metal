@@ -170,7 +170,7 @@ float3 sample_direct_light(instance_acceleration_structure scene,
             }
         }
     }
-    return illum;
+    return illum * num_lights;
 }
 
 // A miss "shader" to make the same checkerboard background for testing as in the DXR backend

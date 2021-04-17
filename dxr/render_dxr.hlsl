@@ -219,7 +219,7 @@ float3 sample_direct_light(in const DisneyMaterial mat,
             }
         }
     }
-    return illum;
+    return illum * num_lights;
 }
 
 [shader("raygeneration")] void RayGen() {

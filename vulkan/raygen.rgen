@@ -156,7 +156,7 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 			}
 		}
 	}
-	return illum;
+	return illum * num_lights;
 }
 
 void main() {
