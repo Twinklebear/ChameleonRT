@@ -106,8 +106,8 @@ inline float3 current_brdf(in const DisneyMaterial mat,
                            in const float3 w_i)
 {
     // return lambertian_brdf(mat, basis, w_o, w_i);
-    // return ashikhmin_shirley_brdf(mat, basis, w_o, w_i);
-    return torrance_sparrow_brdf(mat, basis, w_o, w_i);
+    return ashikhmin_shirley_brdf(mat, basis, w_o, w_i);
+    // return torrance_sparrow_brdf(mat, basis, w_o, w_i);
 }
 
 inline float current_pdf(in const DisneyMaterial mat,
@@ -116,8 +116,8 @@ inline float current_pdf(in const DisneyMaterial mat,
                          in const float3 w_i)
 {
     // return lambertian_pdf(mat, basis, w_o, w_i);
-    // return ashikhmin_shirley_pdf(mat, basis, w_o, w_i);
-    return torrance_sparrow_pdf(mat, basis, w_o, w_i);
+    return ashikhmin_shirley_pdf(mat, basis, w_o, w_i);
+    // return torrance_sparrow_pdf(mat, basis, w_o, w_i);
 }
 
 inline float3 sample_current_brdf(in const DisneyMaterial mat,
@@ -128,8 +128,8 @@ inline float3 sample_current_brdf(in const DisneyMaterial mat,
                                   out float pdf)
 {
     // return sample_lambertian_brdf(mat, basis, w_o, rng, w_i, pdf);
-    // return sample_ashikhmin_shirley_brdf(mat, basis, w_o, rng, w_i, pdf);
-    return sample_torrance_sparrow_brdf(mat, basis, w_o, rng, w_i, pdf);
+    return sample_ashikhmin_shirley_brdf(mat, basis, w_o, rng, w_i, pdf);
+    // return sample_torrance_sparrow_brdf(mat, basis, w_o, rng, w_i, pdf);
 }
 
 float3 sample_direct_light(in const DisneyMaterial mat,

@@ -25,9 +25,10 @@ float3 ashikhmin_shirley_brdf(in const DisneyMaterial mat,
     }
     w_h = normalize(w_h);
     const float d = gtr_2(mat, basis, w_o, w_i, w_h);
-    // Note: Fresnel computed vs. the microfacet normal, as the specular
-    // term is reflected by the microfacet
-    const float3 f = schlick_fresnel(r_spec, dot(w_i, w_h));
+    // TODO: in pbrt-v3 they use dot(w_i, basis.z) (i.e., CosTheta(w_i) in their
+    // coordinate system. Why? It makes some sense b/c w_i is the incident
+    // light direction, but in the end it gives the wrong result?
+    const float3 f = schlick_fresnel(r_spec, dot(w_o, basis.z));
     const float denom = 4.f * dot(w_h, w_i) * max(dot(w_o, basis.z), dot(w_i, basis.z));
     float3 specular = (d * f) / denom;
 
@@ -61,10 +62,16 @@ float3 sample_ashikhmin_shirley_brdf(in const DisneyMaterial mat,
     if (comp < 0.5) {
         // Sample direction from the diffuse component
         w_i = lambertian_sample_dir(basis, u);
+        if (!same_hemisphere(w_o, w_i, basis.z)) {
+            w_i = flip_hemisphere(basis, w_i);
+        }
     } else {
         // Sample direction from the microface component
         const float3 w_h = gtr_2_sample_h(mat, basis, u);
         w_i = reflect(w_o, w_h);
+        if (!same_hemisphere(w_o, w_i, basis.z)) {
+            return 0.f;
+        }
     }
     pdf = ashikhmin_shirley_pdf(mat, basis, w_o, w_i);
     return ashikhmin_shirley_brdf(mat, basis, w_o, w_i);
