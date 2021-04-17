@@ -566,7 +566,7 @@ void Scene::load_crts(const std::string &file)
             const auto color = glm::make_vec3(n["color"].get<std::vector<float>>().data());
             light.emission = glm::vec4(color * n["energy"].get<float>(), 1.f);
             light.position = glm::column(matrix, 3);
-            light.normal = -glm::normalize(glm::column(matrix, 2));
+            light.normal = glm::normalize(glm::column(matrix, 2));
             light.v_x = glm::normalize(glm::column(matrix, 0));
             light.v_y = glm::normalize(glm::column(matrix, 1));
             light.width = n["size"][0].get<float>();
@@ -915,6 +915,14 @@ uint32_t Scene::load_pbrt_texture(
 
 void Scene::validate_materials()
 {
+    // Using PBRT's roughness remapping for testing against PBRT
+    for (auto &m : materials) {
+        float roughness = std::max(m.roughness, 0.001f);
+        float x = std::log(roughness);
+        m.roughness = 1.62142f + 0.819955f * x + 0.1734f * std::pow(x, 2) +
+                      0.0171201f * std::pow(x, 3) + 0.000640711f * std::pow(x, 4);
+    }
+
     const bool need_default_mat =
         std::find_if(parameterized_meshes.begin(),
                      parameterized_meshes.end(),
