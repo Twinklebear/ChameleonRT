@@ -48,7 +48,7 @@ bool quad_intersect(thread const QuadLight &light,
                     thread float3 &light_pos)
 {
     float denom = dot(dir, light.normal.xyz);
-    if (denom >= EPSILON) {
+    if (denom != 0.f) {
         t = dot(light.position.xyz - orig, light.normal.xyz) / denom;
         if (t < 0.f) {
             return false;
