@@ -28,7 +28,9 @@ float3 ashikhmin_shirley_brdf(in const DisneyMaterial mat,
     // TODO: in pbrt-v3 they use dot(w_i, basis.z) (i.e., CosTheta(w_i) in their
     // coordinate system. Why? It makes some sense b/c w_i is the incident
     // light direction, but in the end it gives the wrong result?
-    const float3 f = schlick_fresnel(r_spec, dot(w_o, basis.z));
+    // Or is dot(w_i, w_h) right and the dot(w_o, n) giving too strong of an effect?
+    const float3 f = schlick_fresnel(r_spec, dot(w_i, w_h));
+    //const float3 f = schlick_fresnel(r_spec, dot(w_o, basis.z));
     const float denom = 4.f * dot(w_h, w_i) * max(dot(w_o, basis.z), dot(w_i, basis.z));
     float3 specular = (d * f) / denom;
 
