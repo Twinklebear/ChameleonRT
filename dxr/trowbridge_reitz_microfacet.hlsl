@@ -44,7 +44,7 @@ float gtr_2_masking_shadowing(in const DisneyMaterial mat,
         return 0.f;
     }
     const float cos_theta_sqr = pow2(dot(w, basis.z));
-    const float tan_theta_sqr = (1.f - cos_theta_sqr) / cos_theta_sqr;
+    const float tan_theta_sqr = max(0, 1.f - cos_theta_sqr) / cos_theta_sqr;
     return 2.f / (1.f + sqrt(1.f + pow2(mat.roughness) * tan_theta_sqr));
 }
 
