@@ -8,6 +8,7 @@
 #include "render_backend.h"
 
 struct RenderDXR : RenderBackend {
+    Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
     Microsoft::WRL::ComPtr<ID3D12Device5> device;
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> cmd_queue;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmd_allocator;

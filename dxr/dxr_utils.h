@@ -8,8 +8,6 @@
 
 namespace dxr {
 
-bool dxr_available(Microsoft::WRL::ComPtr<ID3D12Device5> &device);
-
 class RootSignatureBuilder;
 class DescriptorHeapBuilder;
 

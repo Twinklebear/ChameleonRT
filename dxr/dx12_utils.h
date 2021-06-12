@@ -24,6 +24,12 @@ extern const D3D12_HEAP_PROPERTIES UPLOAD_HEAP_PROPS;
 extern const D3D12_HEAP_PROPERTIES DEFAULT_HEAP_PROPS;
 extern const D3D12_HEAP_PROPERTIES READBACK_HEAP_PROPS;
 
+/* Find the first DXR capable adapter and create a device for it,
+ * returns null if no DXR capable adapter is found
+ */
+Microsoft::WRL::ComPtr<ID3D12Device5> create_dxr_device(
+    Microsoft::WRL::ComPtr<IDXGIFactory2> &factory);
+
 // Convenience for making resource transition barriers
 D3D12_RESOURCE_BARRIER barrier_transition(ID3D12Resource *res,
                                           D3D12_RESOURCE_STATES before,

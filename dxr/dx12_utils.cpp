@@ -1,5 +1,7 @@
 #include "dx12_utils.h"
 #include <cassert>
+#include <codecvt>
+#include <locale>
 #include "util.h"
 
 namespace dxr {
@@ -29,6 +31,33 @@ const D3D12_HEAP_PROPERTIES READBACK_HEAP_PROPS = {
     0,
     0,
 };
+
+ComPtr<ID3D12Device5> create_dxr_device(ComPtr<IDXGIFactory2> &factory)
+{
+    IDXGIAdapter1 *adapter;
+    for (uint32_t i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+        ComPtr<ID3D12Device5> device;
+        auto err = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&device));
+        if (FAILED(err)) {
+            std::cout << "Failed to make D3D12 device\n";
+            throw std::runtime_error("failed to make d3d12 device\n");
+        }
+
+        D3D12_FEATURE_DATA_D3D12_OPTIONS5 feature_data = {0};
+        CHECK_ERR(device->CheckFeatureSupport(
+            D3D12_FEATURE_D3D12_OPTIONS5, &feature_data, sizeof(feature_data)));
+
+        if (feature_data.RaytracingTier >= D3D12_RAYTRACING_TIER_1_0) {
+            DXGI_ADAPTER_DESC1 desc;
+            adapter->GetDesc1(&desc);
+            std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
+            const std::string name = conv.to_bytes(desc.Description);
+            std::cout << "Selecting device: " << name << "\n";
+            return device;
+        }
+    }
+    return nullptr;
+}
 
 D3D12_RESOURCE_BARRIER barrier_transition(ID3D12Resource *res,
                                           D3D12_RESOURCE_STATES before,

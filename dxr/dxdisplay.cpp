@@ -35,12 +35,9 @@ DXDisplay::DXDisplay(SDL_Window *window)
 #endif
     CHECK_ERR(CreateDXGIFactory2(factory_flags, IID_PPV_ARGS(&factory)));
 
-    // TODO: we should enumerate the devices and find the first one supporting RTX
-
-    auto err = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&device));
-    if (FAILED(err)) {
-        std::cout << "Failed to make D3D12 device\n";
-        throw std::runtime_error("failed to make d3d12 device\n");
+    device = dxr::create_dxr_device(factory);
+    if (!device) {
+        throw std::runtime_error("Failed to find DXR capable device!");
     }
 
     device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
