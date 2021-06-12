@@ -45,6 +45,7 @@ RenderDXR::RenderDXR() : native_display(false)
 
     device = dxr::create_dxr_device(factory);
     if (!device) {
+        std::cout << "Failed to find DXR capable GPU!" << std::endl;
         throw std::runtime_error("Failed to find DXR capable device!");
     }
     create_device_objects();
