@@ -992,7 +992,7 @@ void RenderVulkan::record_command_buffers()
                             nullptr);
 
     VkStridedDeviceAddressRegionKHR callable_table = {};
-    callable_table.deviceAddress = VK_NULL_HANDLE;
+    callable_table.deviceAddress = 0;
 
     vkrt::CmdTraceRaysKHR(render_cmd_buf,
                           &shader_table.raygen,
