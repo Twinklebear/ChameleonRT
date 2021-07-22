@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.15)
 project(chameleonrt)
 
 if (NOT WIN32)
@@ -9,10 +9,12 @@ add_definitions(-DNOMINMAX -DGLM_ENABLE_EXPERIMENTAL -DSDL_MAIN_HANDLED
     -DWIN32_LEAN_AND_MEAN)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
+include(ExternalProject)
 
 find_package(Threads REQUIRED)
-find_package(glm REQUIRED)
 find_package(SDL2 CONFIG REQUIRED)
+# Include glm as an external project
+include(cmake/glm.cmake)
 
 add_subdirectory(imgui)
 add_subdirectory(util)

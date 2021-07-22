@@ -17,10 +17,9 @@ set_target_properties(util PROPERTIES
 
 target_include_directories(util PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/parallel_hashmap>
-    $<BUILD_INTERFACE:${GLM_INCLUDE_DIRS}>)
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/parallel_hashmap>)
 
-target_link_libraries(util PUBLIC imgui)
+target_link_libraries(util PUBLIC imgui glm)
 
 if (TARGET SDL2::SDL2)
     target_link_libraries(util PUBLIC
