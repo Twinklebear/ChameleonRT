@@ -4,7 +4,6 @@ on: [push, pull_request]
 
 env:
     BUILD_TYPE: Release
-    GLM_VERSION: 0.9.9.8
     VULKAN_SDK_VERSION: 1.2.182
     EMBREE_VERSION: 3.12.2
     ISPC_VERSION: 1.15.0
@@ -26,12 +25,6 @@ jobs:
 
       - name: Setup SDL2
         run: sudo apt install libsdl2-dev
-
-      - name: Setup GLM
-        working-directory: ${{github.workspace}}/build/deps
-        run: |
-          wget https://github.com/g-truc/glm/archive/${GLM_VERSION}.tar.gz
-          tar -xf ${GLM_VERSION}.tar.gz
 
       - name: Setup VulkanSDK
         run: |
@@ -79,7 +72,6 @@ jobs:
         working-directory: ${{github.workspace}}/build
         run: >
           cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
-          -Dglm_DIR=${{github.workspace}}/build/deps/glm-${GLM_VERSION}/cmake/glm/
           -DENABLE_EMBREE=ON
           -DENABLE_VULKAN=ON
           -DENABLE_OPTIX=ON
@@ -107,12 +99,6 @@ jobs:
       # Note: SDL2 Vulkan support is needed when installing through vcpkg
       - name: Setup SDL2
         run: vcpkg install sdl2[vulkan]:x64-windows
-
-      - name: Setup GLM
-        working-directory: ${{github.workspace}}/build/deps
-        run: |
-          wget https://github.com/g-truc/glm/archive/${env:GLM_VERSION}.zip
-          7z x ./${env:GLM_VERSION}.zip -y
 
       # Provides VulkanSDK for Windows and OptiX for Windows/Linux
       - name: Fetch RT CI Dependencies
@@ -160,7 +146,6 @@ jobs:
         run: >
           cmake -A x64 ${env:GITHUB_WORKSPACE}
           -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
-          -Dglm_DIR="${env:GITHUB_WORKSPACE}/build/deps/glm-${env:GLM_VERSION}/cmake/glm/"
           -DENABLE_EMBREE=ON
           -DENABLE_DXR=ON
           -DENABLE_VULKAN=ON
@@ -193,12 +178,6 @@ jobs:
       - name: Setup SDL2
         run: brew install sdl2
 
-      - name: Setup GLM
-        working-directory: ${{github.workspace}}/build/deps
-        run: |
-          wget https://github.com/g-truc/glm/archive/${GLM_VERSION}.tar.gz
-          tar -xf ${GLM_VERSION}.tar.gz
-
       - name: Setup Embree 
         working-directory: ${{github.workspace}}/build/deps
         run: |
@@ -218,7 +197,6 @@ jobs:
         working-directory: ${{github.workspace}}/build
         run: >
           cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
-          -Dglm_DIR=${{github.workspace}}/build/deps/glm-${GLM_VERSION}/cmake/glm/
           -DENABLE_EMBREE=ON
           -Dembree_DIR=${{github.workspace}}/build/deps/embree-${EMBREE_VERSION}.x86_64.macosx/lib/cmake/embree-${EMBREE_VERSION}
           -DTBB_DIR=${{github.workspace}}/build/deps/oneapi-tbb-${TBB_VERSION}/lib/cmake/tbb/
