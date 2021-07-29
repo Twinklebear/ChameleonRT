@@ -6,4 +6,5 @@ authors:
 title: ChameleonRT
 version: 1.0.0
 date-released: 2019-01-01
-
+repository: https://github.com/Twinklebear/ChameleonRT
+license: MIT
