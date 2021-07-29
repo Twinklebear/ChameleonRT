@@ -1,0 +1,9 @@
+cff-version: 1.1.0
+message: If you find ChameleonRT useful in your work, please cite it as below.
+authors:
+  - family-names: Usher
+    given-names: Will
+title: ChameleonRT
+version: 1.0.0
+date-released: 2019-01-01
+
