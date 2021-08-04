@@ -52,7 +52,6 @@ ComPtr<ID3D12Device5> create_dxr_device(ComPtr<IDXGIFactory2> &factory)
             adapter->GetDesc1(&desc);
             std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
             const std::string name = conv.to_bytes(desc.Description);
-            std::cout << "Selecting device: " << name << "\n";
             return device;
         }
     }
