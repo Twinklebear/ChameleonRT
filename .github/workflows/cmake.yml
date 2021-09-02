@@ -163,9 +163,7 @@ jobs:
         run: cmake --build . --config ${env:BUILD_TYPE}
 
     macos:
-      # Note: need macos-11 for Metal RT API, but this isn't available publicly yet
-      # See https://github.com/actions/virtual-environments/issues/2486
-      runs-on: macos-latest
+      runs-on: macos-11
 
       steps:
       - uses: actions/checkout@v2
@@ -200,6 +198,7 @@ jobs:
           -DENABLE_EMBREE=ON
           -Dembree_DIR=${{github.workspace}}/build/deps/embree-${EMBREE_VERSION}.x86_64.macosx/lib/cmake/embree-${EMBREE_VERSION}
           -DTBB_DIR=${{github.workspace}}/build/deps/oneapi-tbb-${TBB_VERSION}/lib/cmake/tbb/
+          -DENABLE_METAL=ON
 
       - name: Build
         working-directory: ${{github.workspace}}/build
