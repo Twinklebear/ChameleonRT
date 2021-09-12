@@ -9,6 +9,7 @@
 #include "imgui_impl_metal.h"
 #include "metaldisplay_embedded_metallib.h"
 #include "metalrt_utils.h"
+#include "render_metal.h"
 #include "util.h"
 
 struct MetalDisplayData {
@@ -89,13 +90,18 @@ void MetalDisplay::new_frame()
     }
 }
 
-void MetalDisplay::display(const std::vector<uint32_t> &img)
+void MetalDisplay::display(const RenderBackend *renderer)
 {
-    upload_texture->upload(img.data());
-    display_native(upload_texture);
+    const auto *metal_renderer = dynamic_cast<const RenderMetal *>(renderer);
+    if (metal_renderer) {
+        display_native(metal_renderer->render_target);
+    } else {
+        upload_texture->upload(renderer->img.data());
+        display_native(upload_texture);
+    }
 }
 
-void MetalDisplay::display_native(std::shared_ptr<metal::Texture2D> &img)
+void MetalDisplay::display_native(const std::shared_ptr<metal::Texture2D> &img)
 {
     @autoreleasepool {
         id<MTLCommandBuffer> command_buffer = context->command_buffer();

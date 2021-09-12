@@ -235,6 +235,16 @@ void DXDisplay::display(const std::vector<uint32_t> &img)
     }
 }
 
+void DXDisplay::display(const RenderBackend *renderer)
+{
+    const auto *dxr_renderer = dynamic_cast<const RenderDXR *>(renderer);
+    if (dxr_renderer) {
+        display_native(dxr_renderer->render_target);
+    } else {
+        display(renderer->img);
+    }
+}
+
 void DXDisplay::display_native(dxr::Texture2D &img)
 {
     CHECK_ERR(cmd_allocator->Reset());
@@ -296,4 +306,85 @@ void DXDisplay::display_native(dxr::Texture2D &img)
 size_t DXDisplay::fb_linear_row_pitch() const
 {
     return align_to(fb_dims.x * sizeof(uint32_t), D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+}
+
+void DXDisplay::display(const std::vector<uint32_t> &img)
+{
+    // TODO: A utility for uploading these strided buffers for texture copies
+    if (fb_linear_row_pitch() == img.size() * sizeof(uint32_t)) {
+        std::memcpy(upload_texture.map(), img.data(), upload_texture.size());
+    } else {
+        uint8_t *buf = static_cast<uint8_t *>(upload_texture.map());
+        for (uint32_t y = 0; y < fb_dims.y; ++y) {
+            std::memcpy(buf + y * fb_linear_row_pitch(),
+                        img.data() + y * fb_dims.x,
+                        fb_dims.x * sizeof(uint32_t));
+        }
+    }
+    upload_texture.unmap();
+
+    CHECK_ERR(cmd_allocator->Reset());
+    CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+
+    const uint32_t back_buffer_idx = swap_chain->GetCurrentBackBufferIndex();
+    ComPtr<ID3D12Resource> back_buffer;
+    CHECK_ERR(swap_chain->GetBuffer(back_buffer_idx, IID_PPV_ARGS(&back_buffer)));
+
+    auto b = dxr::barrier_transition(
+        back_buffer.Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
+    cmd_list->ResourceBarrier(1, &b);
+
+    D3D12_TEXTURE_COPY_LOCATION dst_desc = {0};
+    dst_desc.pResource = back_buffer.Get();
+    dst_desc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    dst_desc.SubresourceIndex = 0;
+
+    D3D12_TEXTURE_COPY_LOCATION src_desc = {0};
+    src_desc.pResource = upload_texture.get();
+    src_desc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    src_desc.PlacedFootprint.Offset = 0;
+    src_desc.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    src_desc.PlacedFootprint.Footprint.Width = fb_dims.x;
+    src_desc.PlacedFootprint.Footprint.Height = fb_dims.y;
+    src_desc.PlacedFootprint.Footprint.Depth = 1;
+    src_desc.PlacedFootprint.Footprint.RowPitch = fb_linear_row_pitch();
+
+    D3D12_BOX region = {0};
+    region.left = 0;
+    region.right = fb_dims.x;
+    region.top = 0;
+    region.bottom = fb_dims.y;
+    region.front = 0;
+    region.back = 1;
+    cmd_list->CopyTextureRegion(&dst_desc, 0, 0, 0, &src_desc, &region);
+
+    b = dxr::barrier_transition(
+        back_buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    cmd_list->ResourceBarrier(1, &b);
+
+    // Render ImGui to the framebuffer
+    cmd_list->OMSetRenderTargets(1, &render_targets[back_buffer_idx], false, nullptr);
+    ID3D12DescriptorHeap *desc_heap = imgui_desc_heap.Get();
+    cmd_list->SetDescriptorHeaps(1, &desc_heap);
+    ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd_list.Get());
+
+    b = dxr::barrier_transition(
+        back_buffer.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+    cmd_list->ResourceBarrier(1, &b);
+
+    CHECK_ERR(cmd_list->Close());
+
+    // Execute the command list and present
+    ID3D12CommandList *cmd_lists = cmd_list.Get();
+    cmd_queue->ExecuteCommandLists(1, &cmd_lists);
+    CHECK_ERR(swap_chain->Present(1, 0));
+
+    // Sync with the fence to wait for the frame to be presented
+    const uint64_t signal_val = fence_value++;
+    CHECK_ERR(cmd_queue->Signal(fence.Get(), signal_val));
+
+    if (fence->GetCompletedValue() < signal_val) {
+        CHECK_ERR(fence->SetEventOnCompletion(signal_val, fence_evt));
+        WaitForSingleObject(fence_evt, INFINITE);
+    }
 }

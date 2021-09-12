@@ -103,14 +103,26 @@ void GLDisplay::new_frame()
     ImGui_ImplOpenGL3_NewFrame();
 }
 
-void GLDisplay::display(const std::vector<uint32_t> &img)
+void GLDisplay::display(const RenderBackend *renderer)
 {
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, render_texture);
-    glTexSubImage2D(
-        GL_TEXTURE_2D, 0, 0, 0, fb_dims.x, fb_dims.y, GL_RGBA, GL_UNSIGNED_BYTE, img.data());
+    const auto *gl_native = dynamic_cast<const GLNativeRenderer *>(renderer);
+    if (gl_native) {
+        display_native(gl_native->gl_display_texture);
+    } else {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, render_texture);
+        glTexSubImage2D(GL_TEXTURE_2D,
+                        0,
+                        0,
+                        0,
+                        fb_dims.x,
+                        fb_dims.y,
+                        GL_RGBA,
+                        GL_UNSIGNED_BYTE,
+                        renderer->img.data());
 
-    display_native(render_texture);
+        display_native(render_texture);
+    }
 }
 
 void GLDisplay::display_native(const GLuint img)

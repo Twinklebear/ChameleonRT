@@ -1,11 +1,12 @@
 #pragma once
 
 #include <optix.h>
+#include "display/gldisplay.h"
 #include "glad/glad.h"
 #include "optix_utils.h"
 #include "render_backend.h"
 
-struct RenderOptiX : RenderBackend {
+struct RenderOptiX : GLNativeRenderer {
     CUcontext cuda_context;
     CUstream cuda_stream;
 
@@ -28,7 +29,6 @@ struct RenderOptiX : RenderBackend {
     uint32_t frame_id = 0;
 
     bool native_display = false;
-    GLuint display_texture = -1;
     cudaGraphicsResource_t cu_display_texture;
 
 #ifdef REPORT_RAY_STATS

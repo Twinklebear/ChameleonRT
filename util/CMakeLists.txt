@@ -9,7 +9,8 @@ add_library(util
     buffer_view.cpp
     gltf_types.cpp
     flatten_gltf.cpp
-    file_mapping.cpp)
+    file_mapping.cpp
+    render_plugin.cpp)
 
 set_target_properties(util PROPERTIES
     CXX_STANDARD 14

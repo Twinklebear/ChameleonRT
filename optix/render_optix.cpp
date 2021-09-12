@@ -66,7 +66,7 @@ RenderOptiX::~RenderOptiX()
 {
     if (native_display) {
         cudaGraphicsUnregisterResource(cu_display_texture);
-        glDeleteTextures(1, &display_texture);
+        glDeleteTextures(1, &gl_display_texture);
     }
     optixPipelineDestroy(pipeline);
     optixDeviceContextDestroy(device);
@@ -95,12 +95,12 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height)
 #endif
 
     if (native_display) {
-        if (display_texture != -1) {
+        if (gl_display_texture != -1) {
             cudaGraphicsUnregisterResource(cu_display_texture);
-            glDeleteTextures(1, &display_texture);
+            glDeleteTextures(1, &gl_display_texture);
         }
-        glGenTextures(1, &display_texture);
-        glBindTexture(GL_TEXTURE_2D, display_texture);
+        glGenTextures(1, &gl_display_texture);
+        glBindTexture(GL_TEXTURE_2D, gl_display_texture);
         glTexImage2D(
             GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
@@ -110,7 +110,7 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
         CHECK_CUDA(cudaGraphicsGLRegisterImage(
-            &cu_display_texture, display_texture, GL_TEXTURE_2D, 0));
+            &cu_display_texture, gl_display_texture, GL_TEXTURE_2D, 0));
     }
 }
 

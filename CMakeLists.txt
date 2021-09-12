@@ -9,6 +9,10 @@ add_definitions(-DNOMINMAX -DGLM_ENABLE_EXPERIMENTAL -DSDL_MAIN_HANDLED
     -DWIN32_LEAN_AND_MEAN)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
+# Output all render plugins to the root binary dir where the executable is
+# so setting runtime paths is easier
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
+
 include(ExternalProject)
 
 find_package(Threads REQUIRED)
@@ -84,28 +88,4 @@ set_target_properties(chameleonrt PROPERTIES
 target_link_libraries(chameleonrt PUBLIC
     util
     display)
-
-if (ENABLE_OSPRAY)
-	target_link_libraries(chameleonrt PUBLIC render_ospray)
-endif()
-
-if (ENABLE_EMBREE)
-	target_link_libraries(chameleonrt PUBLIC render_embree)
-endif()
-
-if (ENABLE_OPTIX)
-	target_link_libraries(chameleonrt PUBLIC render_optix)
-endif()
-
-if (ENABLE_VULKAN)
-	target_link_libraries(chameleonrt PUBLIC render_vulkan)
-endif()
-
-if (ENABLE_DXR)
-	target_link_libraries(chameleonrt PUBLIC render_dxr)
-endif()
-
-if (ENABLE_METAL)
-    target_link_libraries(chameleonrt PUBLIC render_metal)
-endif()
 

@@ -41,7 +41,8 @@ add_metal_embed_library(metal_shaders
 add_metal_embed_library(metaldisplay_shaders
     metaldisplay.metal)
 
-add_library(render_metal
+add_library(render_metal MODULE
+    render_metal_plugin.cpp
     render_metal.mm
     metaldisplay.mm
     metalrt_utils.mm
@@ -54,6 +55,7 @@ set_target_properties(render_metal PROPERTIES
 target_link_libraries(render_metal
     PUBLIC
     util
+    display
     ${QUARTZ_CORE}
     ${METAL_LIB}
     ${COCOA_LIB}

@@ -27,7 +27,11 @@ struct GLDisplay : Display {
 
     void new_frame() override;
 
-    void display(const std::vector<uint32_t> &img) override;
+    void display(const RenderBackend *renderer) override;
 
     void display_native(const GLuint img);
+};
+
+struct GLNativeRenderer : RenderBackend {
+    GLuint gl_display_texture = -1;
 };

@@ -15,28 +15,7 @@
 #include "util/display/display.h"
 #include "util/display/gldisplay.h"
 #include "util/display/imgui_impl_sdl.h"
-
-#if ENABLE_OSPRAY
-#include "ospray/render_ospray.h"
-#endif
-#if ENABLE_OPTIX
-#include "optix/render_optix.h"
-#endif
-#if ENABLE_EMBREE
-#include "embree/render_embree.h"
-#endif
-#if ENABLE_DXR
-#include "dxr/dxdisplay.h"
-#include "dxr/render_dxr.h"
-#endif
-#if ENABLE_VULKAN
-#include "vulkan/render_vulkan.h"
-#include "vulkan/vkdisplay.h"
-#endif
-#if ENABLE_METAL
-#include "metal/metaldisplay.h"
-#include "metal/render_metal.h"
-#endif
+#include "util/render_plugin.h"
 
 const std::string USAGE =
     "Usage: <backend> <obj_file> [options]\n"
@@ -72,7 +51,10 @@ const std::string USAGE =
 int win_width = 1280;
 int win_height = 720;
 
-void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *display);
+void run_app(const std::vector<std::string> &args,
+             SDL_Window *window,
+             Display *display,
+             RenderPlugin *render_plugin);
 
 glm::vec2 transform_mouse(glm::vec2 in)
 {
@@ -96,40 +78,65 @@ int main(int argc, const char **argv)
         return -1;
     }
 
-    // Determine which display frontend we should use
-    std::string display_frontend = "gl";
-    uint32_t window_flags = SDL_WINDOW_RESIZABLE;
+    std::unique_ptr<RenderPlugin> render_plugin;
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "-img") {
             win_width = std::stoi(args[++i]);
             win_height = std::stoi(args[++i]);
             continue;
         }
-#if ENABLE_DXR
-        if (args[i] == "-dxr") {
-            display_frontend = "dx";
-            continue;
+#if ENABLE_OSPRAY
+        if (args[i] == "-ospray") {
+            if (render_plugin) {
+                std::cout << "Warning: Replacing loaded rendering plugin with OSPRay\n";
+            }
+            render_plugin = std::make_unique<RenderPlugin>("render_ospray");
+        }
+#endif
+#if ENABLE_OPTIX
+        if (args[i] == "-optix") {
+            if (render_plugin) {
+                std::cout << "Warning: Replacing loaded rendering plugin with OptiX\n";
+            }
+            render_plugin = std::make_unique<RenderPlugin>("render_optix");
+        }
+#endif
+#if ENABLE_EMBREE
+        if (args[i] == "-embree") {
+            if (render_plugin) {
+                std::cout << "Warning: Replacing loaded rendering plugin with Embree\n";
+            }
+            render_plugin = std::make_unique<RenderPlugin>("render_embree");
         }
 #endif
 #if ENABLE_VULKAN
         if (args[i] == "-vulkan") {
-            display_frontend = "vk";
-            window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN;
-            continue;
+            if (render_plugin) {
+                std::cout << "Warning: Replacing loaded rendering plugin with Vulkan\n";
+            }
+            render_plugin = std::make_unique<RenderPlugin>("render_vulkan");
         }
 #endif
-        // Disabled while debugging ImGui issue
+#if ENABLE_DXR
+        if (args[i] == "-dxr") {
+            if (render_plugin) {
+                std::cout << "Warning: Replacing loaded rendering plugin with DXR\n";
+            }
+            render_plugin = std::make_unique<RenderPlugin>("render_dxr");
+        }
+#endif
 #if ENABLE_METAL
         if (args[i] == "-metal") {
-            display_frontend = "mtl";
-            continue;
+            if (render_plugin) {
+                std::cout << "Warning: Replacing loaded rendering plugin with Metal\n";
+            }
+            render_plugin = std::make_unique<RenderPlugin>("render_metal");
         }
 #endif
     }
 
-    if (display_frontend == "gl") {
-        window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
-
+    const uint32_t window_flags = render_plugin->get_window_flags() | SDL_WINDOW_RESIZABLE;
+    if (window_flags & SDL_WINDOW_OPENGL) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -149,27 +156,11 @@ int main(int argc, const char **argv)
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
+    render_plugin->set_imgui_context(ImGui::GetCurrentContext());
+
     {
-        std::unique_ptr<Display> display;
-        if (display_frontend == "gl") {
-            display = std::make_unique<GLDisplay>(window);
-        }
-#ifdef ENABLE_DXR
-        else if (display_frontend == "dx") {
-            display = std::make_unique<DXDisplay>(window);
-        }
-#endif
-#ifdef ENABLE_VULKAN
-        else if (display_frontend == "vk") {
-            display = std::make_unique<VKDisplay>(window);
-        }
-#endif
-#ifdef ENABLE_METAL
-        else if (display_frontend == "mtl") {
-            display = std::make_unique<MetalDisplay>(window);
-        }
-#endif
-        run_app(args, window, display.get());
+        std::unique_ptr<Display> display = render_plugin->make_display(window);
+        run_app(args, window, display.get(), render_plugin.get());
     }
 
     ImGui_ImplSDL2_Shutdown();
@@ -181,31 +172,20 @@ int main(int argc, const char **argv)
     return 0;
 }
 
-void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *display)
+void run_app(const std::vector<std::string> &args,
+             SDL_Window *window,
+             Display *display,
+             RenderPlugin *render_plugin)
 {
     ImGuiIO &io = ImGui::GetIO();
 
-#ifdef ENABLE_DXR
-    DXDisplay *dx_display = dynamic_cast<DXDisplay *>(display);
-#endif
-#ifdef ENABLE_VULKAN
-    VKDisplay *vk_display = dynamic_cast<VKDisplay *>(display);
-#endif
-#ifdef ENABLE_METAL
-    MetalDisplay *mtl_display = dynamic_cast<MetalDisplay *>(display);
-#endif
-    GLDisplay *gl_display = dynamic_cast<GLDisplay *>(display);
-    bool display_is_native = false;
-
     std::string scene_file;
-    std::unique_ptr<RenderBackend> renderer = nullptr;
     bool got_camera_args = false;
     glm::vec3 eye(0, 0, 5);
     glm::vec3 center(0);
     glm::vec3 up(0, 1, 0);
     float fov_y = 65.f;
     size_t camera_id = 0;
-    std::string backend_arg;
     std::string validation_img_prefix;
     for (size_t i = 1; i < args.size(); ++i) {
         if (args[i] == "-eye") {
@@ -230,91 +210,16 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
             camera_id = std::stol(args[++i]);
         } else if (args[i] == "-validation") {
             validation_img_prefix = args[++i];
-        }
-#if ENABLE_OSPRAY
-        else if (args[i] == "-ospray") {
-            if (renderer) {
-                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
-                continue;
-            }
-            renderer = std::make_unique<RenderOSPRay>();
-            backend_arg = args[i];
-        }
-#endif
-#if ENABLE_OPTIX
-        else if (args[i] == "-optix") {
-            if (renderer) {
-                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
-                continue;
-            }
-            display_is_native = gl_display != nullptr;
-            renderer = std::make_unique<RenderOptiX>(display_is_native);
-            backend_arg = args[i];
-        }
-#endif
-#if ENABLE_EMBREE
-        else if (args[i] == "-embree") {
-            if (renderer) {
-                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
-                continue;
-            }
-            renderer = std::make_unique<RenderEmbree>();
-            backend_arg = args[i];
-        }
-#endif
-#if ENABLE_DXR
-        else if (args[i] == "-dxr") {
-            if (renderer) {
-                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
-                continue;
-            }
-            if (dx_display) {
-                display_is_native = true;
-                renderer = std::make_unique<RenderDXR>(dx_display->device);
-            } else {
-                renderer = std::make_unique<RenderDXR>();
-            }
-            backend_arg = args[i];
-        }
-#endif
-#if ENABLE_VULKAN
-        else if (args[i] == "-vulkan") {
-            if (renderer) {
-                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
-                continue;
-            }
-            if (vk_display) {
-                display_is_native = true;
-                renderer =
-                    std::make_unique<RenderVulkan>(vk_display->device);
-            } else {
-                renderer = std::make_unique<RenderVulkan>();
-            }
-            backend_arg = args[i];
-        }
-#endif
-#if ENABLE_METAL
-        else if (args[i] == "-metal") {
-            if (renderer) {
-                std::cout << "Ignoring redundant renderer argument " << args[i] << "\n";
-                continue;
-            }
-            if (mtl_display) {
-                display_is_native = true;
-                renderer = std::make_unique<RenderMetal>(mtl_display->context);
-            } else {
-                renderer = std::make_unique<RenderMetal>();
-            }
-            backend_arg = args[i];
-        }
-#endif
-        else if (args[i] == "-img") {
+        } else if (args[i] == "-img") {
             i += 2;
-        } else {
+        } else if (args[i][0] != '-') {
             scene_file = args[i];
             canonicalize_path(scene_file);
         }
     }
+
+    std::unique_ptr<RenderBackend> renderer = render_plugin->make_renderer(display);
+
     if (!renderer) {
         std::cout << "Error: No renderer backend or invalid backend name specified\n" << USAGE;
         std::exit(1);
@@ -452,8 +357,8 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
                            4 * win_width);
         }
         if (!validation_img_prefix.empty()) {
-            const std::string img_name =
-                validation_img_prefix + backend_arg + "-f" + std::to_string(frame_id) + ".png";
+            const std::string img_name = validation_img_prefix + render_plugin->get_name() +
+                                         "-f" + std::to_string(frame_id) + ".png";
             stbi_write_png(img_name.c_str(),
                            win_width,
                            win_height,
@@ -502,34 +407,6 @@ void run_app(const std::vector<std::string> &args, SDL_Window *window, Display *
         ImGui::End();
         ImGui::Render();
 
-        if (display_is_native) {
-            // We know what the renderer must be, so skip dynamic cast check
-#ifdef ENABLE_DXR
-            if (dx_display) {
-                RenderDXR *render_dx = reinterpret_cast<RenderDXR *>(renderer.get());
-                dx_display->display_native(render_dx->render_target);
-            }
-#endif
-#ifdef ENABLE_VULKAN
-            if (vk_display) {
-                RenderVulkan *render_vk = reinterpret_cast<RenderVulkan *>(renderer.get());
-                vk_display->display_native(render_vk->render_target);
-            }
-#endif
-#ifdef ENABLE_METAL
-            if (mtl_display) {
-                RenderMetal *render_mtl = reinterpret_cast<RenderMetal *>(renderer.get());
-                mtl_display->display_native(render_mtl->render_target);
-            }
-#endif
-#ifdef ENABLE_OPTIX
-            if (gl_display) {
-                RenderOptiX *render_ox = reinterpret_cast<RenderOptiX *>(renderer.get());
-                gl_display->display_native(render_ox->display_texture);
-            }
-#endif
-        } else {
-            display->display(renderer->img);
-        }
+        display->display(renderer.get());
     }
 }

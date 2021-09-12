@@ -314,76 +314,14 @@ void VKDisplay::new_frame()
     ImGui_ImplVulkan_NewFrame();
 }
 
-void VKDisplay::display(const std::vector<uint32_t> &img)
+void VKDisplay::display(const RenderBackend *renderer)
 {
-    std::memcpy(upload_buffer->map(), img.data(), upload_buffer->size());
-    upload_buffer->unmap();
-
-    vkResetCommandPool(
-        device->logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
-
-    VkCommandBufferBeginInfo begin_info = {};
-    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
-
-    VkImageMemoryBarrier img_mem_barrier = {};
-    img_mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    img_mem_barrier.image = upload_texture->image_handle();
-    img_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    img_mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    img_mem_barrier.subresourceRange.baseMipLevel = 0;
-    img_mem_barrier.subresourceRange.levelCount = 1;
-    img_mem_barrier.subresourceRange.baseArrayLayer = 0;
-    img_mem_barrier.subresourceRange.layerCount = 1;
-
-    vkCmdPipelineBarrier(command_buffer,
-                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                         0,
-                         0,
-                         nullptr,
-                         0,
-                         nullptr,
-                         1,
-                         &img_mem_barrier);
-
-    VkImageSubresourceLayers copy_subresource = {};
-    copy_subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copy_subresource.mipLevel = 0;
-    copy_subresource.baseArrayLayer = 0;
-    copy_subresource.layerCount = 1;
-
-    VkBufferImageCopy img_copy = {};
-    img_copy.bufferOffset = 0;
-    img_copy.bufferRowLength = 0;
-    img_copy.bufferImageHeight = 0;
-    img_copy.imageSubresource = copy_subresource;
-    img_copy.imageOffset.x = 0;
-    img_copy.imageOffset.y = 0;
-    img_copy.imageOffset.z = 0;
-    img_copy.imageExtent.width = fb_dims.x;
-    img_copy.imageExtent.height = fb_dims.y;
-    img_copy.imageExtent.depth = 1;
-
-    vkCmdCopyBufferToImage(command_buffer,
-                           upload_buffer->handle(),
-                           upload_texture->image_handle(),
-                           VK_IMAGE_LAYOUT_GENERAL,
-                           1,
-                           &img_copy);
-
-    CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
-
-    VkSubmitInfo submit_info = {};
-    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &command_buffer;
-    CHECK_VULKAN(vkQueueSubmit(device->graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
-    vkQueueWaitIdle(device->graphics_queue());
-
-    display_native(upload_texture);
+    const auto *vk_renderer = dynamic_cast<const RenderVulkan *>(renderer);
+    if (vk_renderer) {
+        display_native(vk_renderer->render_target);
+    } else {
+        display(renderer->img);
+    }
 }
 
 void VKDisplay::display_native(std::shared_ptr<vkrt::Texture2D> &img)
@@ -512,4 +450,76 @@ void VKDisplay::display_native(std::shared_ptr<vkrt::Texture2D> &img)
     // Wait for the present to finish
     CHECK_VULKAN(vkWaitForFences(
         device->logical_device(), 1, &fence, true, std::numeric_limits<uint64_t>::max()));
+}
+
+void VKDisplay::display(const std::vector<uint32_t> &img)
+{
+    std::memcpy(upload_buffer->map(), img.data(), upload_buffer->size());
+    upload_buffer->unmap();
+
+    vkResetCommandPool(
+        device->logical_device(), command_pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+
+    VkCommandBufferBeginInfo begin_info = {};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    CHECK_VULKAN(vkBeginCommandBuffer(command_buffer, &begin_info));
+
+    VkImageMemoryBarrier img_mem_barrier = {};
+    img_mem_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    img_mem_barrier.image = upload_texture->image_handle();
+    img_mem_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    img_mem_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    img_mem_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    img_mem_barrier.subresourceRange.baseMipLevel = 0;
+    img_mem_barrier.subresourceRange.levelCount = 1;
+    img_mem_barrier.subresourceRange.baseArrayLayer = 0;
+    img_mem_barrier.subresourceRange.layerCount = 1;
+
+    vkCmdPipelineBarrier(command_buffer,
+                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                         0,
+                         0,
+                         nullptr,
+                         0,
+                         nullptr,
+                         1,
+                         &img_mem_barrier);
+
+    VkImageSubresourceLayers copy_subresource = {};
+    copy_subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copy_subresource.mipLevel = 0;
+    copy_subresource.baseArrayLayer = 0;
+    copy_subresource.layerCount = 1;
+
+    VkBufferImageCopy img_copy = {};
+    img_copy.bufferOffset = 0;
+    img_copy.bufferRowLength = 0;
+    img_copy.bufferImageHeight = 0;
+    img_copy.imageSubresource = copy_subresource;
+    img_copy.imageOffset.x = 0;
+    img_copy.imageOffset.y = 0;
+    img_copy.imageOffset.z = 0;
+    img_copy.imageExtent.width = fb_dims.x;
+    img_copy.imageExtent.height = fb_dims.y;
+    img_copy.imageExtent.depth = 1;
+
+    vkCmdCopyBufferToImage(command_buffer,
+                           upload_buffer->handle(),
+                           upload_texture->image_handle(),
+                           VK_IMAGE_LAYOUT_GENERAL,
+                           1,
+                           &img_copy);
+
+    CHECK_VULKAN(vkEndCommandBuffer(command_buffer));
+
+    VkSubmitInfo submit_info = {};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+    CHECK_VULKAN(vkQueueSubmit(device->graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
+    vkQueueWaitIdle(device->graphics_queue());
+
+    display_native(upload_texture);
 }

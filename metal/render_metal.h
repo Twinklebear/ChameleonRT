@@ -7,6 +7,7 @@
 // We just declare the Metal API wrapper objects because we
 // don't want to include the header here as it will pull in
 // ObjC objects into this file which is included from plain C++ files
+// TODO: Now that renderer backends are in separate plugins, this is no longer a concern
 namespace metal {
 struct Context;
 struct ShaderLibrary;

@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "render_backend.h"
 
 struct Display {
     virtual ~Display() {}
@@ -14,5 +15,5 @@ struct Display {
 
     virtual void new_frame() = 0;
 
-    virtual void display(const std::vector<uint32_t> &img) = 0;
+    virtual void display(const RenderBackend *renderer) = 0;
 };

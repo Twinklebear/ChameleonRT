@@ -35,8 +35,8 @@ struct MetalDisplay : Display {
 
     void new_frame() override;
 
-    void display(const std::vector<uint32_t> &img) override;
+    void display(const RenderBackend *renderer) override;
 
-    void display_native(std::shared_ptr<metal::Texture2D> &img);
+    void display_native(const std::shared_ptr<metal::Texture2D> &img);
 };
 
