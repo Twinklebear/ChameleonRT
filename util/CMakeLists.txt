@@ -1,6 +1,6 @@
 add_subdirectory(display)
 
-add_library(util
+add_library(util SHARED
     arcball_camera.cpp
     util.cpp
     material.cpp
@@ -14,7 +14,8 @@ add_library(util
 
 set_target_properties(util PROPERTIES
     CXX_STANDARD 14
-    CXX_STANDARD_REQUIRED ON)
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(util PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>

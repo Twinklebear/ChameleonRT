@@ -135,7 +135,7 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
                                  const glm::vec3 &up,
                                  const float fovy,
                                  const bool camera_changed,
-                                 const bool readback_framebuffer)
+                                 const bool)
 {
     using namespace std::chrono;
     RenderStats stats;

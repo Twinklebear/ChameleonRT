@@ -2,7 +2,7 @@
 #include <stdexcept>
 
 #ifdef _WIN32
-#define PLUGIN_PREFIX
+#define PLUGIN_PREFIX ""
 #define PLUGIN_SUFFIX ".dll"
 #else
 #define PLUGIN_PREFIX "lib"

@@ -16,7 +16,10 @@ add_ispc_library(ispc_kernels render_embree.ispc
 	COMPILE_DEFINITIONS
         ${ISPC_COMPILE_DEFNS})
 
-add_library(render_embree render_embree.cpp embree_utils.cpp)
+add_library(render_embree MODULE
+    render_embree_plugin.cpp
+    render_embree.cpp
+    embree_utils.cpp)
 
 set_target_properties(render_embree PROPERTIES
 	CXX_STANDARD 14
@@ -31,5 +34,9 @@ target_include_directories(render_embree PUBLIC
 	$<BUILD_INTERFACE:${EMBREE_INCLUDE_DIRS}>)
 
 target_link_libraries(render_embree PUBLIC
-	ispc_kernels util TBB::tbb ${EMBREE_LIBRARIES})
+	ispc_kernels
+    util
+    display
+    TBB::tbb
+    ${EMBREE_LIBRARIES})
 
