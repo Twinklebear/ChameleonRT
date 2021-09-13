@@ -74,6 +74,7 @@ void RenderOSPRay::set_scene(const Scene &in_scene)
 {
     ospResetAccumulation(fb);
 
+    // TODO: should take scene as shared ptr
     scene = in_scene;
 
     // Linearize any sRGB textures beforehand, since we don't have fancy sRGB texture
@@ -182,9 +183,10 @@ void RenderOSPRay::set_scene(const Scene &in_scene)
     for (const auto &inst : scene.instances) {
         // Make models for each geometry in the instance's mesh to set the material
         std::vector<OSPGeometricModel> geom_models;
-        for (size_t i = 0; i < meshes[inst.mesh_id].size(); ++i) {
-            OSPGeometricModel gm = ospNewGeometricModel(meshes[inst.mesh_id][i]);
-            ospSetParam(gm, "material", OSP_UINT, &inst.material_ids[i]);
+        const auto &pm = scene.parameterized_meshes[inst.parameterized_mesh_id];
+        for (size_t i = 0; i < meshes[inst.parameterized_mesh_id].size(); ++i) {
+            OSPGeometricModel gm = ospNewGeometricModel(meshes[inst.parameterized_mesh_id][i]);
+            ospSetParam(gm, "material", OSP_UINT, &pm.material_ids[i]);
             ospCommit(gm);
             geom_models.push_back(gm);
         }
