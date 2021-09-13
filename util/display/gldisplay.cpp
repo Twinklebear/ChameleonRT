@@ -106,7 +106,6 @@ void GLDisplay::display(RenderBackend *renderer)
 {
     auto *gl_native = dynamic_cast<GLNativeRenderer *>(renderer);
     if (gl_native) {
-        std::cout << "it's a glnative display\n";
         display_native(gl_native->gl_display_texture);
     } else {
         glActiveTexture(GL_TEXTURE0);

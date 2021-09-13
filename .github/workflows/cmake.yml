@@ -114,10 +114,10 @@ jobs:
 
       - name: Setup CUDA
         run: |
-          $CUDA_VERSION_FULL = "11.2.2"
-          $CUDA_REPO_PKG_REMOTE = "https://developer.download.nvidia.com/compute/cuda/11.2.2/network_installers/cuda_11.2.2_win10_network.exe"
-          $CUDA_REPO_PKG_LOCAL = "cuda_11.2.2_win10_network.exe"
-          $CUDA_PACKAGES = "nvcc_11.2 cudart_11.2"
+          $CUDA_VERSION_FULL = "11.4.2"
+          $CUDA_REPO_PKG_REMOTE = "https://developer.download.nvidia.com/compute/cuda/11.4.2/network_installers/cuda_11.4.2_win10_network.exe"
+          $CUDA_REPO_PKG_LOCAL = "cuda_11.4.2_win10_network.exe"
+          $CUDA_PACKAGES = "nvcc_11.4 cudart_11.4"
           # Download the cuda network installer
           Invoke-WebRequest $CUDA_REPO_PKG_REMOTE -OutFile $CUDA_REPO_PKG_LOCAL | Out-Null
           # Invoke silent install of CUDA (via network installer)

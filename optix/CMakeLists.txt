@@ -1,6 +1,6 @@
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-find_package(CUDA 10 REQUIRED)
+find_package(CUDA 11 REQUIRED)
 find_package(OptiX 7 REQUIRED)
 
 include(cmake/Bin2C.cmake)
@@ -20,7 +20,10 @@ add_ptx_embed_library(optix_kernels render_optix.cu
         -Xptxas --warn-on-double-precision-use
         -Xptxas -Werror)
 
-add_library(render_optix render_optix.cpp optix_utils.cpp)
+add_library(render_optix MODULE
+    render_optix_plugin.cpp
+    render_optix.cpp
+    optix_utils.cpp)
 
 set_target_properties(render_optix PROPERTIES
     CXX_STANDARD 14
@@ -39,6 +42,7 @@ target_link_libraries(render_optix PUBLIC
     optix_kernels
     util
     glad
+    display
     ${CUDA_LIBRARIES}
     ${CUDA_CUDA_LIBRARY})
 
