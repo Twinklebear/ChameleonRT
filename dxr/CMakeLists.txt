@@ -16,7 +16,8 @@ add_dxil_embed_library(dxr_shaders render_dxr.hlsl util.hlsl
         ${CMAKE_CURRENT_LIST_DIR}
         ${PROJECT_SOURCE_DIR})
 
-add_library(render_dxr
+add_library(render_dxr MODULE
+    render_dxr_plugin.cpp
     render_dxr.cpp
     dxdisplay.cpp
     dx12_utils.cpp
@@ -36,5 +37,8 @@ target_include_directories(render_dxr PUBLIC
 	$<BUILD_INTERFACE:${D3D12_INCLUDE_DIRS}>)
 
 target_link_libraries(render_dxr PUBLIC
-	dxr_shaders util ${D3D12_LIBRARIES})
+	dxr_shaders
+    util
+    display
+    ${D3D12_LIBRARIES})
 

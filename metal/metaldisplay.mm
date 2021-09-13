@@ -50,7 +50,6 @@ MetalDisplay::MetalDisplay(SDL_Window *window)
         data->render_pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
 
         ImGui_ImplMetal_Init(context->device);
-        ImGui_ImplSDL2_InitForMetal(window);
     }
 }
 
@@ -90,9 +89,9 @@ void MetalDisplay::new_frame()
     }
 }
 
-void MetalDisplay::display(const RenderBackend *renderer)
+void MetalDisplay::display(RenderBackend *renderer)
 {
-    const auto *metal_renderer = dynamic_cast<const RenderMetal *>(renderer);
+    auto *metal_renderer = dynamic_cast<RenderMetal *>(renderer);
     if (metal_renderer) {
         display_native(metal_renderer->render_target);
     } else {

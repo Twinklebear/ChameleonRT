@@ -1,6 +1,6 @@
 add_subdirectory(display)
 
-add_library(util SHARED
+add_library(util
     arcball_camera.cpp
     util.cpp
     material.cpp

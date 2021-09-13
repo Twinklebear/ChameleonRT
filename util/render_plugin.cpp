@@ -1,4 +1,5 @@
 #include "render_plugin.h"
+#include <iostream>
 #include <stdexcept>
 
 #ifdef _WIN32
@@ -11,7 +12,7 @@
 
 RenderPlugin::RenderPlugin(const std::string &plugin_name) : name(plugin_name)
 {
-    const std::string plugin_file_name = PLUGIN_PREFIX + plugin_name + PLUGIN_SUFFIX;
+    const std::string plugin_file_name = std::string(PLUGIN_PREFIX) + plugin_name + std::string(PLUGIN_SUFFIX);
     std::string error_msg;
 #ifdef _WIN32
     plugin = LoadLibrary(plugin_file_name.c_str());
@@ -37,14 +38,20 @@ RenderPlugin::RenderPlugin(const std::string &plugin_name) : name(plugin_name)
 #endif
 
     if (!plugin) {
+        std::cerr << "Failed to load plugin '" << plugin_file_name << "' due to: " << error_msg
+                  << "\n"
+                  << std::flush;
         throw std::runtime_error("Failed to load plugin '" + plugin_file_name +
                                  "' due to: " + error_msg);
     }
 
     auto populate_fcn_table = get_fn<PopulateFunctionTableFn>("populate_plugin_functions");
     if (!populate_fcn_table) {
+        std::cerr << "Plugin '" << plugin_file_name
+                  << "' is missing the POPULATE_PLUGIN_FUNCTIONS macro\n"
+                  << std::flush;
         throw std::runtime_error("Plugin " + plugin_file_name +
-                                 " is the POPULATE_PLUGIN_FUNCTIONS macro");
+                                 " is missing the POPULATE_PLUGIN_FUNCTIONS macro");
     }
     populate_fcn_table(&function_table);
 }

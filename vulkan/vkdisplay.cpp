@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 #include "display/imgui_impl_sdl.h"
 #include "imgui_impl_vulkan.h"
+#include "render_vulkan.h"
 #include "vulkan_utils.h"
 
 #if !SDL_VERSION_ATLEAST(2, 0, 8)
@@ -135,8 +136,6 @@ VKDisplay::VKDisplay(SDL_Window *window)
         CHECK_VULKAN(vkCreateDescriptorPool(
             device->logical_device(), &info, nullptr, &imgui_desc_pool));
     }
-
-    ImGui_ImplSDL2_InitForVulkan(window);
 
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = device->instance();
@@ -314,9 +313,9 @@ void VKDisplay::new_frame()
     ImGui_ImplVulkan_NewFrame();
 }
 
-void VKDisplay::display(const RenderBackend *renderer)
+void VKDisplay::display(RenderBackend *renderer)
 {
-    const auto *vk_renderer = dynamic_cast<const RenderVulkan *>(renderer);
+    auto *vk_renderer = dynamic_cast<RenderVulkan *>(renderer);
     if (vk_renderer) {
         display_native(vk_renderer->render_target);
     } else {

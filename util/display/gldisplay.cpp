@@ -42,7 +42,6 @@ GLDisplay::GLDisplay(SDL_Window *win)
         throw std::runtime_error("Failed to initialize OpenGL");
     }
 
-    ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
     display_render = std::make_unique<Shader>(fullscreen_quad_vs, display_texture_fs);
@@ -103,10 +102,11 @@ void GLDisplay::new_frame()
     ImGui_ImplOpenGL3_NewFrame();
 }
 
-void GLDisplay::display(const RenderBackend *renderer)
+void GLDisplay::display(RenderBackend *renderer)
 {
-    const auto *gl_native = dynamic_cast<const GLNativeRenderer *>(renderer);
+    auto *gl_native = dynamic_cast<GLNativeRenderer *>(renderer);
     if (gl_native) {
+        std::cout << "it's a glnative display\n";
         display_native(gl_native->gl_display_texture);
     } else {
         glActiveTexture(GL_TEXTURE0);

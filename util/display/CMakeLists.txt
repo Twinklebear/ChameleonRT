@@ -2,7 +2,7 @@ find_package(OpenGL REQUIRED)
 
 add_subdirectory(glad)
 
-add_library(display SHARED
+add_library(display
     imgui_impl_sdl.cpp
     gldisplay.cpp
     shader.cpp

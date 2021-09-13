@@ -27,7 +27,7 @@ struct GLDisplay : Display {
 
     void new_frame() override;
 
-    void display(const RenderBackend *renderer) override;
+    void display(RenderBackend *renderer) override;
 
     void display_native(const GLuint img);
 };

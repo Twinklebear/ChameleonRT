@@ -43,7 +43,7 @@ struct VKDisplay : Display {
 
     void new_frame() override;
 
-    void display(const RenderBackend *renderer) override;
+    void display(RenderBackend *renderer) override;
 
     void display_native(std::shared_ptr<vkrt::Texture2D> &img);
 

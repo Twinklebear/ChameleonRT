@@ -15,5 +15,5 @@ struct Display {
 
     virtual void new_frame() = 0;
 
-    virtual void display(const RenderBackend *renderer) = 0;
+    virtual void display(RenderBackend *renderer) = 0;
 };

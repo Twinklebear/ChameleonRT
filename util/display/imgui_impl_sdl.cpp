@@ -128,7 +128,7 @@ bool ImGui_ImplSDL2_ProcessEvent(const SDL_Event* event)
     return false;
 }
 
-static bool ImGui_ImplSDL2_Init(SDL_Window* window)
+bool ImGui_ImplSDL2_Init(SDL_Window* window)
 {
     g_Window = window;
 
@@ -195,27 +195,6 @@ static bool ImGui_ImplSDL2_Init(SDL_Window* window)
 bool ImGui_ImplSDL2_InitForOpenGL(SDL_Window* window, void* sdl_gl_context)
 {
     (void)sdl_gl_context; // Viewport branch will need this.
-    return ImGui_ImplSDL2_Init(window);
-}
-
-bool ImGui_ImplSDL2_InitForVulkan(SDL_Window* window)
-{
-#if !SDL_HAS_VULKAN
-    IM_ASSERT(0 && "Unsupported");
-#endif
-    return ImGui_ImplSDL2_Init(window);
-}
-
-bool ImGui_ImplSDL2_InitForD3D(SDL_Window* window)
-{
-#if !defined(_WIN32)
-    IM_ASSERT(0 && "Unsupported");
-#endif
-    return ImGui_ImplSDL2_Init(window);
-}
-
-bool ImGui_ImplSDL2_InitForMetal(SDL_Window* window)
-{
     return ImGui_ImplSDL2_Init(window);
 }
 

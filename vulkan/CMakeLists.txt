@@ -15,7 +15,8 @@ add_spirv_embed_library(spv_shaders raygen.rgen miss.rmiss hit.rchit
     COMPILE_DEFINITIONS
         ${GLSL_COMPILE_DEFNS})
 
-add_library(render_vulkan
+add_library(render_vulkan MODULE
+    render_vulkan_plugin.cpp
     render_vulkan.cpp
     vulkan_utils.cpp
     vulkanrt_utils.cpp
@@ -35,5 +36,8 @@ target_compile_options(render_vulkan PUBLIC
     -DVK_ENABLE_BETA_EXTENSIONS=1)
 
 target_link_libraries(render_vulkan PUBLIC
-	spv_shaders util Vulkan::Vulkan)
+	spv_shaders
+    util
+    display
+    Vulkan::Vulkan)
 
