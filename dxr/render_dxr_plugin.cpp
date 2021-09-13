@@ -11,7 +11,6 @@ uint32_t get_sdl_window_flags()
 
 void set_imgui_context(ImGuiContext *context)
 {
-    std::cout << "context = " << context << "\n";
     ImGui::SetCurrentContext(context);
 }
 

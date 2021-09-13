@@ -42,3 +42,6 @@ target_link_libraries(render_dxr PUBLIC
     display
     ${D3D12_LIBRARIES})
 
+install(TARGETS render_dxr
+    LIBRARY DESTINATION bin)
+

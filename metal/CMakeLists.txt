@@ -1,4 +1,3 @@
-
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/MetalShader.cmake)
 
 find_library(QUARTZ_CORE QuartzCore)
@@ -66,4 +65,7 @@ if (REPORT_RAY_STATS)
 	target_compile_options(render_metal PUBLIC
 		-DREPORT_RAY_STATS=1)
 endif()
+
+install(TARGETS render_metal
+    LIBRARY DESTINATION bin)
 

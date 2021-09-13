@@ -30,13 +30,16 @@ if (REPORT_RAY_STATS)
 		-DREPORT_RAY_STATS=1)
 endif()
 
-target_include_directories(render_embree PUBLIC
-	$<BUILD_INTERFACE:${EMBREE_INCLUDE_DIRS}>)
-
 target_link_libraries(render_embree PUBLIC
 	ispc_kernels
     util
     display
     TBB::tbb
-    ${EMBREE_LIBRARIES})
+    embree)
+
+install(TARGETS render_embree
+    LIBRARY DESTINATION bin)
+
+crt_add_packaged_dependency(embree)
+crt_add_packaged_dependency(TBB::tbb)
 

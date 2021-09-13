@@ -46,3 +46,6 @@ target_link_libraries(render_optix PUBLIC
     ${CUDA_LIBRARIES}
     ${CUDA_CUDA_LIBRARY})
 
+install(TARGETS render_optix
+    LIBRARY DESTINATION bin)
+

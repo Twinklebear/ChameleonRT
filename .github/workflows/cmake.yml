@@ -12,6 +12,9 @@ env:
 
 jobs:
     ubuntu:
+      env:
+        PACKAGE_NAME: chameleonrt-ubuntu2004-x86_64
+
       runs-on: ubuntu-latest
 
       steps:
@@ -71,7 +74,9 @@ jobs:
       - name: Configure CMake
         working-directory: ${{github.workspace}}/build
         run: >
-          cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+          cmake $GITHUB_WORKSPACE
+          -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/install
+          -DCMAKE_BUILD_TYPE=$BUILD_TYPE
           -DENABLE_EMBREE=ON
           -DENABLE_VULKAN=ON
           -DENABLE_OPTIX=ON
@@ -82,9 +87,23 @@ jobs:
 
       - name: Build
         working-directory: ${{github.workspace}}/build
-        run: cmake --build . --config $BUILD_TYPE
+        run: cmake --build . --config $BUILD_TYPE --target install
+
+      - name: Package
+        working-directory: ${{github.workspace}}/install
+        run: |
+          mv bin ${PACKAGE_NAME}
+          tar -czvf ${PACKAGE_NAME}.tar.gz ${PACKAGE_NAME}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v2
+        with:
+            name: ${{env.PACKAGE_NAME}}
+            path: ${{github.workspace}}/install/${{env.PACKAGE_NAME}}.tar.gz
 
     windows:
+      env:
+        PACKAGE_NAME: chameleonrt-windows-x86_64
       runs-on: windows-latest
 
       steps:
@@ -145,6 +164,7 @@ jobs:
         working-directory: ${{github.workspace}}/build
         run: >
           cmake -A x64 ${env:GITHUB_WORKSPACE}
+          -DCMAKE_INSTALL_PREFIX:PATH=${env:GITHUB_WORKSPACE}/install
           -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
           -DENABLE_EMBREE=ON
           -DENABLE_DXR=ON
@@ -154,15 +174,29 @@ jobs:
           -DTBB_DIR="${env:GITHUB_WORKSPACE}/build/deps/oneapi-tbb-${env:TBB_VERSION}/lib/cmake/tbb/"
           -DISPC_DIR="${env:GITHUB_WORKSPACE}/build/deps/ispc-v${env:ISPC_VERSION}-windows/bin/"
           -DVULKAN_SDK="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/vulkansdk-${env:VULKAN_SDK_VERSION}-windows-x64"
-          -DCUDA_TOOLKIT_ROOT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.2"
+          -DCUDA_TOOLKIT_ROOT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.4"
           -DOptiX_INSTALL_DIR="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/NVIDIA-OptiX-SDK-${env:OPTIX_VERSION}-windows-x86_64"
           -DCMAKE_SYSTEM_VERSION="10.0.19042"
 
       - name: Build
         working-directory: ${{github.workspace}}/build
-        run: cmake --build . --config ${env:BUILD_TYPE}
+        run: cmake --build . --config ${env:BUILD_TYPE} --target install
+
+      - name: Package
+        working-directory: ${{github.workspace}}/install
+        run: |
+          mv bin ${env:PACKAGE_NAME}
+          7z a -tzip ${env:PACKAGE_NAME}.zip ${env:PACKAGE_NAME}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v2
+        with:
+            name: ${{env.PACKAGE_NAME}}
+            path: ${{github.workspace}}/install/${{env.PACKAGE_NAME}}.zip
 
     macos:
+      env:
+        PACKAGE_NAME: chameleonrt-macOS-x86_64
       runs-on: macos-11
 
       steps:
@@ -194,7 +228,9 @@ jobs:
       - name: Configure CMake
         working-directory: ${{github.workspace}}/build
         run: >
-          cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+          cmake $GITHUB_WORKSPACE
+          -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/install
+          -DCMAKE_BUILD_TYPE=$BUILD_TYPE
           -DENABLE_EMBREE=ON
           -Dembree_DIR=${{github.workspace}}/build/deps/embree-${EMBREE_VERSION}.x86_64.macosx/lib/cmake/embree-${EMBREE_VERSION}
           -DTBB_DIR=${{github.workspace}}/build/deps/oneapi-tbb-${TBB_VERSION}/lib/cmake/tbb/
@@ -202,4 +238,16 @@ jobs:
 
       - name: Build
         working-directory: ${{github.workspace}}/build
-        run: cmake --build . --config $BUILD_TYPE
+        run: cmake --build . --config $BUILD_TYPE --target install
+
+      - name: Package
+        working-directory: ${{github.workspace}}/install
+        run: |
+          mv bin ${PACKAGE_NAME}
+          tar -czvf ${PACKAGE_NAME}.tar.gz ${PACKAGE_NAME}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v2
+        with:
+            name: ${{env.PACKAGE_NAME}}
+            path: ${{github.workspace}}/install/${{env.PACKAGE_NAME}}.tar.gz

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.18)
 project(chameleonrt)
 
 if (NOT WIN32)
@@ -19,6 +19,7 @@ find_package(Threads REQUIRED)
 find_package(SDL2 CONFIG REQUIRED)
 # Include glm as an external project
 include(cmake/glm.cmake)
+include(cmake/package.cmake)
 
 add_subdirectory(imgui)
 add_subdirectory(util)
@@ -88,4 +89,7 @@ set_target_properties(chameleonrt PROPERTIES
 target_link_libraries(chameleonrt PUBLIC
     util
     display)
+
+install(TARGETS chameleonrt
+        RUNTIME DESTINATION bin)
 

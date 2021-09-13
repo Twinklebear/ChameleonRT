@@ -2,7 +2,8 @@ add_library(glad src/glad.c)
 
 set_target_properties(glad PROPERTIES
     CXX_STANDARD 14
-    CXX_STANDARD_REQUIRED ON)
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(glad PUBLIC
     $<BUILD_INTERFACE:${OPENGL_INCLUDE_DIR}>

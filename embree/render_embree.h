@@ -12,7 +12,8 @@ struct RenderEmbree : RenderBackend {
     RTCDevice device;
     glm::uvec2 fb_dims;
 
-    std::vector<ParameterizedMesh> paramerized_meshes;
+    // TODO: should take scene as shared ptr and keep ref to it,
+    std::vector<ParameterizedMesh> parameterized_meshes;
     std::shared_ptr<embree::TopLevelBVH> scene_bvh;
 
     std::vector<embree::MaterialParams> material_params;

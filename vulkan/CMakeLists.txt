@@ -41,3 +41,6 @@ target_link_libraries(render_vulkan PUBLIC
     display
     Vulkan::Vulkan)
 
+install(TARGETS render_vulkan
+    LIBRARY DESTINATION bin)
+

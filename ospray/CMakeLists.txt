@@ -15,3 +15,13 @@ target_link_libraries(render_ospray PUBLIC
     ospray::ospray
     TBB::tbb)
 
+install(TARGETS render_ospray
+    LIBRARY DESTINATION bin)
+
+crt_add_packaged_dependency(ospray::ospray)
+crt_add_packaged_dependency(ospray::ospray_module_ispc)
+crt_add_packaged_dependency(openvkl::openvkl)
+crt_add_packaged_dependency(rkcommon::rkcommon)
+crt_add_packaged_dependency(embree)
+crt_add_packaged_dependency(TBB::tbb)
+
