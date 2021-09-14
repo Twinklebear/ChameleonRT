@@ -13,7 +13,7 @@ Binaries built for each platform with support for all rendering backends availab
 can be downloaded from the latest [Actions](https://github.com/Twinklebear/ChameleonRT/actions).
 On Linux set the `LD_LIBRARY_PATH` to include the directory where you extract the
 application, on macOS do the same for `DYLD_LIBRARY_PATH`. On macOS you may need to do some
-tweaking/security allowances to get the application to run. Only x86 binaries are provided for macOS at the moment.
+tweaking/security allowances to get the application to run. Only x86_64 binaries are provided for macOS at the moment.
 
 [![San Miguel, Sponza and Rungholt](https://i.imgur.com/tKZYjzn.jpg)](https://i.imgur.com/pVhQK3j.jpg)
 
