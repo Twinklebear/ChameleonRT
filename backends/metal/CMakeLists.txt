@@ -1,3 +1,10 @@
+cmake_dependent_option(ENABLE_METAL "Build the Metal rendering backend" OFF
+    "APPLE" OFF)
+
+if (NOT ENABLE_METAL)
+    return()
+endif()
+
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/MetalShader.cmake)
 
 find_library(QUARTZ_CORE QuartzCore)
@@ -40,18 +47,18 @@ add_metal_embed_library(metal_shaders
 add_metal_embed_library(metaldisplay_shaders
     metaldisplay.metal)
 
-add_library(render_metal MODULE
+add_library(crt_metal MODULE
     render_metal_plugin.cpp
     render_metal.mm
     metaldisplay.mm
     metalrt_utils.mm
     imgui_impl_metal.mm)
 
-set_target_properties(render_metal PROPERTIES
+set_target_properties(crt_metal PROPERTIES
     CXX_STANDARD 14
     CXX_STANDARD_REQUIRED ON)
 
-target_link_libraries(render_metal
+target_link_libraries(crt_metal
     PUBLIC
     util
     display
@@ -62,10 +69,10 @@ target_link_libraries(render_metal
     metaldisplay_shaders)
 
 if (REPORT_RAY_STATS)
-	target_compile_options(render_metal PUBLIC
+	target_compile_options(crt_metal PUBLIC
 		-DREPORT_RAY_STATS=1)
 endif()
 
-install(TARGETS render_metal
+install(TARGETS crt_metal
     LIBRARY DESTINATION bin)
 

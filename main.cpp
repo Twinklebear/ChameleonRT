@@ -19,25 +19,7 @@
 
 const std::string USAGE =
     "Usage: <backend> <obj_file> [options]\n"
-    "Backends:\n"
-#if ENABLE_OSPRAY
-    "\t-ospray    Render with OSPRay\n"
-#endif
-#if ENABLE_OPTIX
-    "\t-optix     Render with OptiX\n"
-#endif
-#if ENABLE_EMBREE
-    "\t-embree    Render with Embree\n"
-#endif
-#if ENABLE_VULKAN
-    "\t-vulkan    Render with Vulkan Ray Tracing\n"
-#endif
-#if ENABLE_DXR
-    "\t-dxr       Render with DirectX Ray Tracing\n"
-#endif
-#if ENABLE_METAL
-    "\t-metal     Render with Metal Ray Tracing\n"
-#endif
+    "Render backend libraries should be named following (lib)crt_<backend>.(dll|so)"
     "Options:\n"
     "\t-eye <x> <y> <z>       Set the camera position\n"
     "\t-center <x> <y> <z>    Set the camera focus point\n"
@@ -78,61 +60,14 @@ int main(int argc, const char **argv)
         return -1;
     }
 
-    std::unique_ptr<RenderPlugin> render_plugin;
-    for (size_t i = 0; i < args.size(); ++i) {
+    std::unique_ptr<RenderPlugin> render_plugin =
+        std::make_unique<RenderPlugin>("crt_" + args[1]);
+    for (size_t i = 2; i < args.size(); ++i) {
         if (args[i] == "-img") {
             win_width = std::stoi(args[++i]);
             win_height = std::stoi(args[++i]);
             continue;
         }
-#if ENABLE_OSPRAY
-        if (args[i] == "-ospray") {
-            if (render_plugin) {
-                std::cout << "Warning: Replacing loaded rendering plugin with OSPRay\n";
-            }
-            render_plugin = std::make_unique<RenderPlugin>("render_ospray");
-        }
-#endif
-#if ENABLE_OPTIX
-        if (args[i] == "-optix") {
-            if (render_plugin) {
-                std::cout << "Warning: Replacing loaded rendering plugin with OptiX\n";
-            }
-            render_plugin = std::make_unique<RenderPlugin>("render_optix");
-        }
-#endif
-#if ENABLE_EMBREE
-        if (args[i] == "-embree") {
-            if (render_plugin) {
-                std::cout << "Warning: Replacing loaded rendering plugin with Embree\n";
-            }
-            render_plugin = std::make_unique<RenderPlugin>("render_embree");
-        }
-#endif
-#if ENABLE_VULKAN
-        if (args[i] == "-vulkan") {
-            if (render_plugin) {
-                std::cout << "Warning: Replacing loaded rendering plugin with Vulkan\n";
-            }
-            render_plugin = std::make_unique<RenderPlugin>("render_vulkan");
-        }
-#endif
-#if ENABLE_DXR
-        if (args[i] == "-dxr") {
-            if (render_plugin) {
-                std::cout << "Warning: Replacing loaded rendering plugin with DXR\n";
-            }
-            render_plugin = std::make_unique<RenderPlugin>("render_dxr");
-        }
-#endif
-#if ENABLE_METAL
-        if (args[i] == "-metal") {
-            if (render_plugin) {
-                std::cout << "Warning: Replacing loaded rendering plugin with Metal\n";
-            }
-            render_plugin = std::make_unique<RenderPlugin>("render_metal");
-        }
-#endif
     }
 
     const uint32_t window_flags = render_plugin->get_window_flags() | SDL_WINDOW_RESIZABLE;

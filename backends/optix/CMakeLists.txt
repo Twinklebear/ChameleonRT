@@ -1,3 +1,10 @@
+cmake_dependent_option(ENABLE_OPTIX "Build the OptiX rendering backend. Requires OptiX and CUDA" OFF
+    "NOT APPLE" OFF)
+
+if (NOT ENABLE_OPTIX)
+    return()
+endif()
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 find_package(CUDA 11 REQUIRED)
@@ -20,25 +27,25 @@ add_ptx_embed_library(optix_kernels render_optix.cu
         -Xptxas --warn-on-double-precision-use
         -Xptxas -Werror)
 
-add_library(render_optix MODULE
+add_library(crt_optix MODULE
     render_optix_plugin.cpp
     render_optix.cpp
     optix_utils.cpp)
 
-set_target_properties(render_optix PROPERTIES
+set_target_properties(crt_optix PROPERTIES
     CXX_STANDARD 14
     CXX_STANDARD_REQUIRED ON)
 
 if (REPORT_RAY_STATS)
-    target_compile_options(render_optix PUBLIC
+    target_compile_options(crt_optix PUBLIC
         -DREPORT_RAY_STATS=1)
 endif()
 
-target_include_directories(render_optix PUBLIC
+target_include_directories(crt_optix PUBLIC
     $<BUILD_INTERFACE:${OptiX_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${CUDA_INCLUDE_DIRS}>)
 
-target_link_libraries(render_optix PUBLIC
+target_link_libraries(crt_optix PUBLIC
     optix_kernels
     util
     glad
@@ -46,6 +53,6 @@ target_link_libraries(render_optix PUBLIC
     ${CUDA_LIBRARIES}
     ${CUDA_CUDA_LIBRARY})
 
-install(TARGETS render_optix
+install(TARGETS crt_optix
     LIBRARY DESTINATION bin)
 

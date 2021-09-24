@@ -1,0 +1,6 @@
+file(GLOB backend_dirs RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/ *)
+foreach(d ${backend_dirs})
+    if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${d}/CMakeLists.txt)
+        add_subdirectory(${d})
+    endif ()
+endforeach()
