@@ -83,7 +83,7 @@ cmake .. -DENABLE_EMBREE=ON \
 	-DISPC_DIR=<path to ispc>
 ```
 
-You can then pass `-embree` to use the Embree backend. The `TBBConfig.cmake` will
+You can then pass `embree` to use the Embree backend. The `TBBConfig.cmake` will
 be under `<tbb root>/cmake`, while `embree-config.cmake` is in the root of the
 Embree directory.
 
@@ -97,7 +97,7 @@ To build the OptiX backend run CMake with:
 cmake .. -DENABLE_OPTIX=ON
 ```
 
-You can then pass `-optix` to use the OptiX backend.
+You can then pass `optix` to use the OptiX backend.
 
 If CMake doesn't find your install of OptiX you can tell it where
 it's installed with `-DOptiX_INSTALL_DIR`.
@@ -113,7 +113,7 @@ To build the DXR backend run CMake with:
 cmake .. -DENABLE_DXR=ON
 ```
 
-You can then pass `-dxr` to use the DXR backend.
+You can then pass `dxr` to use the DXR backend.
 
 ### Vulkan KHR Ray Tracing
 
@@ -125,7 +125,7 @@ To build the Vulkan backend run CMake with:
 cmake .. -DENABLE_VULKAN=ON
 ```
 
-You can then pass `-vulkan` to use the Vulkan backend.
+You can then pass `vulkan` to use the Vulkan backend.
 
 If CMake doesn't find your install of Vulkan you can tell it where it's
 installed with `-DVULKAN_SDK`. This path should be to the specific version
@@ -141,7 +141,7 @@ To build the Metal backend run CMake with:
 cmake .. -DENABLE_METAL=ON
 ```
 
-You can then pass `-metal` to use the Metal backend.
+You can then pass `metal` to use the Metal backend.
 
 ### OSPRay
 
@@ -159,7 +159,7 @@ depending on how you got or built the OSPRay binaries.
 If you downloaded the OSPRay release binaries, you just need to
 specify that path.
 
-You can then pass `-ospray` to use the OSPRay backend.
+You can then pass `ospray` to use the OSPRay backend.
 
 ## Citation
 
