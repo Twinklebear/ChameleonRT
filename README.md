@@ -50,7 +50,7 @@ those you compiled with on the command line. Running the program with no
 arguments will print help information.
 
 ```
-./chameleonrt <backend> <mesh.obj>
+./chameleonrt <backend> <mesh.obj/gltf/glb>
 ```
 
 All five ray tracing backends use [SDL2](https://www.libsdl.org/index.php) for window management

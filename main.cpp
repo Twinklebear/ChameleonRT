@@ -10,7 +10,6 @@
 #include "imgui.h"
 #include "scene.h"
 #include "stb_image_write.h"
-#include "tiny_obj_loader.h"
 #include "util.h"
 #include "util/display/display.h"
 #include "util/display/gldisplay.h"
@@ -18,7 +17,7 @@
 #include "util/render_plugin.h"
 
 const std::string USAGE =
-    "Usage: <backend> <obj_file> [options]\n"
+    "Usage: <backend> <mesh.obj/gltf/glb> [options]\n"
     "Render backend libraries should be named following (lib)crt_<backend>.(dll|so)"
     "Options:\n"
     "\t-eye <x> <y> <z>       Set the camera position\n"
