@@ -164,6 +164,7 @@ jobs:
         working-directory: ${{github.workspace}}/build
         run: >
           cmake -A x64 ${env:GITHUB_WORKSPACE}
+          -G "Visual Studio 16 2019"
           -DCMAKE_INSTALL_PREFIX:PATH=${env:GITHUB_WORKSPACE}/install
           -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
           -DENABLE_EMBREE=ON

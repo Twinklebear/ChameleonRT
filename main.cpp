@@ -18,7 +18,7 @@
 
 const std::string USAGE =
     "Usage: <backend> <mesh.obj/gltf/glb> [options]\n"
-    "Render backend libraries should be named following (lib)crt_<backend>.(dll|so)"
+    "Render backend libraries should be named following (lib)crt_<backend>.(dll|so)\n"
     "Options:\n"
     "\t-eye <x> <y> <z>       Set the camera position\n"
     "\t-center <x> <y> <z>    Set the camera focus point\n"
