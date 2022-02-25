@@ -164,7 +164,6 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
             vkCreateQueryPool(device->logical_device(), &pool_ci, nullptr, &query_pool));
 
         vkCmdResetQueryPool(cmd_buf, query_pool, 0, 1);
-        vkCmdBeginQuery(cmd_buf, query_pool, 0, 0);
         CmdWriteAccelerationStructuresPropertiesKHR(
             cmd_buf,
             1,
@@ -172,7 +171,6 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
             VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
             query_pool,
             0);
-        vkCmdEndQuery(cmd_buf, query_pool, 0);
     }
 }
 
