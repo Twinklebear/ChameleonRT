@@ -535,7 +535,6 @@ void RenderDXR::build_raytracing_pipeline()
                                       sizeof(render_dxr_dxil),
                                       {L"RayGen", L"Miss", L"ClosestHit", L"ShadowMiss"});
 
-    // DXR Spec requires a global root signature, even if it's empty
     dxr::RootSignature global_root_sig =
         dxr::RootSignatureBuilder::global().create(device.Get());
 
