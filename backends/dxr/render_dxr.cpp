@@ -535,6 +535,10 @@ void RenderDXR::build_raytracing_pipeline()
                                       sizeof(render_dxr_dxil),
                                       {L"RayGen", L"Miss", L"ClosestHit", L"ShadowMiss"});
 
+    // DXR Spec requires a global root signature, even if it's empty
+    dxr::RootSignature global_root_sig =
+        dxr::RootSignatureBuilder::global().create(device.Get());
+
     // Create the root signature for our ray gen shader
     dxr::RootSignature raygen_root_sig =
         dxr::RootSignatureBuilder::local()
@@ -554,6 +558,7 @@ void RenderDXR::build_raytracing_pipeline()
 
     dxr::RTPipelineBuilder rt_pipeline_builder =
         dxr::RTPipelineBuilder()
+            .set_global_root_sig(global_root_sig)
             .add_shader_library(shader_library)
             .set_ray_gen(L"RayGen")
             .add_miss_shader(L"Miss")
@@ -821,6 +826,7 @@ void RenderDXR::record_command_lists()
                                                         raygen_sampler_heap.get()};
     render_cmd_list->SetDescriptorHeaps(desc_heaps.size(), desc_heaps.data());
     render_cmd_list->SetPipelineState1(rt_pipeline.get());
+    render_cmd_list->SetComputeRootSignature(rt_pipeline.global_sig());
 
     D3D12_DISPATCH_RAYS_DESC dispatch_rays = rt_pipeline.dispatch_rays(render_target.dims());
     render_cmd_list->DispatchRays(&dispatch_rays);
