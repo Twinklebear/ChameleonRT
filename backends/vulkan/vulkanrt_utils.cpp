@@ -92,10 +92,11 @@ void TriangleMesh::enqueue_build(VkCommandBuffer &cmd_buf)
                                  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR);
 
-    scratch_buf = Buffer::device(
-        *device,
-        build_size_info.buildScratchSize,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    scratch_buf = Buffer::device(*device,
+                                 build_size_info.buildScratchSize,
+                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
     // Create the acceleration structure
     VkAccelerationStructureCreateInfoKHR as_create_info = {};
@@ -288,10 +289,11 @@ void TopLevelBVH::enqueue_build(VkCommandBuffer &cmd_buf)
                                  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR);
 
-    scratch_buf = Buffer::device(
-        *device,
-        build_size_info.buildScratchSize,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    scratch_buf = Buffer::device(*device,
+                                 build_size_info.buildScratchSize,
+                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
     // Create the acceleration structure
     VkAccelerationStructureCreateInfoKHR as_create_info = {};

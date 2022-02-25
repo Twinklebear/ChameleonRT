@@ -242,13 +242,15 @@ void RenderVulkan::set_scene(const Scene &scene)
                 *device,
                 upload_verts->size(),
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                    VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
 
             auto index_buf = vkrt::Buffer::device(
                 *device,
                 upload_indices->size(),
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                    VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
 
             // Execute the upload to the device
             {
@@ -405,7 +407,8 @@ void RenderVulkan::set_scene(const Scene &scene)
         instance_buf = vkrt::Buffer::device(
             *device,
             upload_instances->size(),
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
         // Upload the instance data to the device
         {
             VkCommandBufferBeginInfo begin_info = {};
