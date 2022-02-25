@@ -828,7 +828,16 @@ void RenderVulkan::build_shader_descriptor_table()
     alloc_info.pSetLayouts = &desc_layout;
     CHECK_VULKAN(vkAllocateDescriptorSets(device->logical_device(), &alloc_info, &desc_set));
 
+    // Set up the size info for the variable size texture info binding
+    const uint32_t texture_set_size = std::max(uint32_t(textures.size()), uint32_t(1));
+    VkDescriptorSetVariableDescriptorCountAllocateInfo texture_set_size_info = {};
+    texture_set_size_info.sType =
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+    texture_set_size_info.descriptorSetCount = 1;
+    texture_set_size_info.pDescriptorCounts = &texture_set_size;
+
     alloc_info.pSetLayouts = &textures_desc_layout;
+    alloc_info.pNext = &texture_set_size_info;
     CHECK_VULKAN(
         vkAllocateDescriptorSets(device->logical_device(), &alloc_info, &textures_desc_set));
 
