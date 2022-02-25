@@ -65,7 +65,7 @@ function(add_ispc_library)
         endif()
 
         add_custom_command(OUTPUT
-            ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.o
+            ${ISPC_OBJS}
             ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_ispc.h
             COMMAND ${ispc} ${CMAKE_CURRENT_LIST_DIR}/${SRC}
             -o ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.o
