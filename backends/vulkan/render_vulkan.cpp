@@ -837,7 +837,9 @@ void RenderVulkan::build_shader_descriptor_table()
     texture_set_size_info.pDescriptorCounts = &texture_set_size;
 
     alloc_info.pSetLayouts = &textures_desc_layout;
-    alloc_info.pNext = &texture_set_size_info;
+    if (!textures.empty()) {
+        alloc_info.pNext = &texture_set_size_info;
+    }
     CHECK_VULKAN(
         vkAllocateDescriptorSets(device->logical_device(), &alloc_info, &textures_desc_set));
 
