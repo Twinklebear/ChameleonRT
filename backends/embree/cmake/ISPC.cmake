@@ -17,6 +17,7 @@ function(add_ispc_library)
 
     if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64" OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
         set(ISPC_ARCH "x86-64")
+        set(ISPC_TARGET_ARG "--target=sse4-i32x4,avx2-i32x8,avx512skx-i32x16")
     elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64")
         set(ISPC_TARGET_ARG "--target=neon-i32x4")
         set(ISPC_ARCH "aarch64")
@@ -34,6 +35,12 @@ function(add_ispc_library)
         # populate its actual dependencies list
         get_filename_component(FNAME ${SRC} NAME_WE)
         list(APPEND ISPC_OBJS ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.o)
+        if (${ISPC_ARCH} STREQUAL "x86-64")
+            # TODO: This should be based on the target arch list
+            list(APPEND ISPC_OBJS ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_sse4.o)
+            list(APPEND ISPC_OBJS ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_avx2.o)
+            list(APPEND ISPC_OBJS ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}_avx512skx.o)
+        endif()
 
         message("Writing ISPC dependency list for ${SRC} to ${CMAKE_CURRENT_BINARY_DIR}/${FNAME}.idep")
         execute_process(
