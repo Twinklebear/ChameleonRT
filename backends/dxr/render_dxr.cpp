@@ -7,11 +7,25 @@
 #include <numeric>
 #include <sstream>
 #include <string>
-#include "render_dxr_embedded_dxil.h"
 #include "util.h"
 #include <glm/ext.hpp>
 
-#define NUM_RAY_TYPES 2
+#ifdef DXR_NG
+#include "render_dxr_ng_embedded_dxil.h"
+#define SHADER_BYTECODE_NAME render_dxr_ng_dxil
+
+const auto *RAYGEN_SHADER_NAME = L"RayGen_NG";
+const auto *PRIMARY_MISS_SHADER_NAME = L"Miss_NG";
+const auto *CLOSESTHIT_SHADER_NAME = L"ClosestHit_NG";
+#else
+#include "render_dxr_embedded_dxil.h"
+#define SHADER_BYTECODE_NAME render_dxr_dxil
+
+const auto *RAYGEN_SHADER_NAME = L"RayGen";
+const auto *PRIMARY_MISS_SHADER_NAME = L"Miss";
+const auto *SHADOW_MISS_SHADER_NAME = L"ShadowMiss";
+const auto *CLOSESTHIT_SHADER_NAME = L"ClosestHit";
+#endif
 
 using Microsoft::WRL::ComPtr;
 
@@ -531,9 +545,19 @@ void RenderDXR::create_device_objects()
 
 void RenderDXR::build_raytracing_pipeline()
 {
-    dxr::ShaderLibrary shader_library(render_dxr_dxil,
-                                      sizeof(render_dxr_dxil),
-                                      {L"RayGen", L"Miss", L"ClosestHit", L"ShadowMiss"});
+#ifdef DXR_NG
+    dxr::ShaderLibrary shader_library(
+        SHADER_BYTECODE_NAME,
+        sizeof(SHADER_BYTECODE_NAME),
+        {RAYGEN_SHADER_NAME, PRIMARY_MISS_SHADER_NAME, CLOSESTHIT_SHADER_NAME});
+#else
+    dxr::ShaderLibrary shader_library(SHADER_BYTECODE_NAME,
+                                      sizeof(SHADER_BYTECODE_NAME),
+                                      {RAYGEN_SHADER_NAME,
+                                       PRIMARY_MISS_SHADER_NAME,
+                                       SHADOW_MISS_SHADER_NAME,
+                                       CLOSESTHIT_SHADER_NAME});
+#endif
 
     dxr::RootSignature global_root_sig =
         dxr::RootSignatureBuilder::global().create(device.Get());
@@ -555,17 +579,30 @@ void RenderDXR::build_raytracing_pipeline()
                                                .add_constants("MeshData", 0, 3, 1)
                                                .create(device.Get());
 
+#ifdef DXR_NG
     dxr::RTPipelineBuilder rt_pipeline_builder =
         dxr::RTPipelineBuilder()
             .set_global_root_sig(global_root_sig)
             .add_shader_library(shader_library)
-            .set_ray_gen(L"RayGen")
-            .add_miss_shader(L"Miss")
-            .add_miss_shader(L"ShadowMiss")
-            .set_shader_root_sig({L"RayGen"}, raygen_root_sig)
+            .set_ray_gen(RAYGEN_SHADER_NAME)
+            .add_miss_shader(PRIMARY_MISS_SHADER_NAME)
+            .set_shader_root_sig({RAYGEN_SHADER_NAME}, raygen_root_sig)
             .configure_shader_payload(
                 shader_library.export_names(), 8 * sizeof(float), 2 * sizeof(float))
             .set_max_recursion(1);
+#else
+    dxr::RTPipelineBuilder rt_pipeline_builder =
+        dxr::RTPipelineBuilder()
+            .set_global_root_sig(global_root_sig)
+            .add_shader_library(shader_library)
+            .set_ray_gen(RAYGEN_SHADER_NAME)
+            .add_miss_shader(PRIMARY_MISS_SHADER_NAME)
+            .add_miss_shader(SHADOW_MISS_SHADER_NAME)
+            .set_shader_root_sig({RAYGEN_SHADER_NAME}, raygen_root_sig)
+            .configure_shader_payload(
+                shader_library.export_names(), 8 * sizeof(float), 2 * sizeof(float))
+            .set_max_recursion(1);
+#endif
 
     // Setup hit groups and shader root signatures for our instances.
     // For now this is also easy since they all share the same programs and root signatures,
@@ -578,8 +615,13 @@ void RenderDXR::build_raytracing_pipeline()
                 L"HitGroup_param_mesh" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
             hg_names.push_back(hg_name);
 
-            rt_pipeline_builder.add_hit_group(
-                {dxr::HitGroup(hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, L"ClosestHit")});
+#ifdef DXR_NG
+            rt_pipeline_builder.add_hit_group({dxr::HitGroup(
+                hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, CLOSESTHIT_SHADER_NAME)});
+#else
+            rt_pipeline_builder.add_hit_group({dxr::HitGroup(
+                hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, CLOSESTHIT_SHADER_NAME)});
+#endif
         }
     }
     rt_pipeline_builder.set_shader_root_sig(hg_names, hitgroup_root_sig);
@@ -610,8 +652,8 @@ void RenderDXR::build_shader_binding_table()
 {
     rt_pipeline.map_shader_table();
     {
-        uint8_t *map = rt_pipeline.shader_record(L"RayGen");
-        const dxr::RootSignature *sig = rt_pipeline.shader_signature(L"RayGen");
+        uint8_t *map = rt_pipeline.shader_record(RAYGEN_SHADER_NAME);
+        const dxr::RootSignature *sig = rt_pipeline.shader_signature(RAYGEN_SHADER_NAME);
 
         const uint32_t num_lights = light_buf.size() / sizeof(QuadLight);
         std::memcpy(map + sig->offset("SceneParams"), &num_lights, sizeof(uint32_t));

@@ -14,41 +14,55 @@ if (REPORT_RAY_STATS)
 	set(HLSL_COMPILE_DEFNS "REPORT_RAY_STATS=1")
 endif()
 
-add_dxil_embed_library(dxr_shaders render_dxr.hlsl util.hlsl
-	disney_bsdf.hlsl lcg_rng.hlsl
-	COMPILE_OPTIONS -O3
-	COMPILE_DEFINITIONS
-        ${HLSL_COMPILE_DEFNS}
-	INCLUDE_DIRECTORIES
-        ${CMAKE_CURRENT_LIST_DIR}
-        ${PROJECT_SOURCE_DIR})
+#set(DXR_VARIATION_SUFFIXES "" "_ng" "_ao")
+#set(DXR_VARIATION_DEFINES "" "-DDXR_NG" "-DDXR_AO")
+set(DXR_VARIATION_SUFFIXES "" "_ng")
+set(DXR_VARIATION_DEFINES "" "-DDXR_NG")
 
-add_library(crt_dxr MODULE
-    render_dxr_plugin.cpp
-    render_dxr.cpp
-    dxdisplay.cpp
-    dx12_utils.cpp
-    dxr_utils.cpp
-    imgui_impl_dx12.cpp)
+foreach (VARIANT_SUFFIX VARIANT_DEFINE IN ZIP_LISTS DXR_VARIATION_SUFFIXES DXR_VARIATION_DEFINES)
+    add_dxil_embed_library(dxr_shaders${VARIANT_SUFFIX}
+        render_dxr${VARIANT_SUFFIX}.hlsl
+        util.hlsl
+        disney_bsdf.hlsl
+        lcg_rng.hlsl
+        COMPILE_OPTIONS -O3
+        COMPILE_DEFINITIONS
+            ${HLSL_COMPILE_DEFNS}
+        INCLUDE_DIRECTORIES
+            ${CMAKE_CURRENT_LIST_DIR}
+            ${PROJECT_SOURCE_DIR})
 
-set_target_properties(crt_dxr PROPERTIES
-	CXX_STANDARD 14
-	CXX_STANDARD_REQUIRED ON)
 
-if (REPORT_RAY_STATS)
-	target_compile_options(crt_dxr PUBLIC
-		-DREPORT_RAY_STATS=1)
-endif()
+    add_library(crt_dxr${VARIANT_SUFFIX} MODULE
+        render_dxr_plugin.cpp
+        render_dxr.cpp
+        dxdisplay.cpp
+        dx12_utils.cpp
+        dxr_utils.cpp
+        imgui_impl_dx12.cpp)
 
-target_include_directories(crt_dxr PUBLIC
-	$<BUILD_INTERFACE:${D3D12_INCLUDE_DIRS}>)
+    set_target_properties(crt_dxr${VARIANT_SUFFIX} PROPERTIES
+        CXX_STANDARD 14
+        CXX_STANDARD_REQUIRED ON)
 
-target_link_libraries(crt_dxr PUBLIC
-	dxr_shaders
-    util
-    display
-    ${D3D12_LIBRARIES})
+    if (REPORT_RAY_STATS)
+        target_compile_options(crt_dxr${VARIANT_SUFFIX} PUBLIC
+            -DREPORT_RAY_STATS=1)
+    endif()
 
-install(TARGETS crt_dxr
-    LIBRARY DESTINATION bin)
+    target_compile_definitions(crt_dxr${VARIANT_SUFFIX} PUBLIC
+        ${VARIANT_DEFINE})
+
+    target_include_directories(crt_dxr${VARIANT_SUFFIX} PUBLIC
+        $<BUILD_INTERFACE:${D3D12_INCLUDE_DIRS}>)
+
+    target_link_libraries(crt_dxr${VARIANT_SUFFIX} PUBLIC
+        dxr_shaders
+        util
+        display
+        ${D3D12_LIBRARIES})
+
+    install(TARGETS crt_dxr${VARIANT_SUFFIX}
+        LIBRARY DESTINATION bin)
+endforeach()
 
