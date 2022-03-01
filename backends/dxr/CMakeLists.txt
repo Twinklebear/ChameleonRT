@@ -55,7 +55,7 @@ foreach (VARIANT_SUFFIX VARIANT_DEFINE IN ZIP_LISTS DXR_VARIATION_SUFFIXES DXR_V
         $<BUILD_INTERFACE:${D3D12_INCLUDE_DIRS}>)
 
     target_link_libraries(crt_dxr${VARIANT_SUFFIX} PUBLIC
-        dxr_shaders
+        dxr_shaders${VARIANT_SUFFIX}
         util
         display
         ${D3D12_LIBRARIES})
