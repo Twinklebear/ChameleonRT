@@ -1,6 +1,8 @@
 #include "util.hlsl"
 #include "lcg_rng.hlsl"
 
+#define NUM_AO_SAMPLES 2
+
 // Raytracing output texture, accessed as a UAV
 RWTexture2D<float4> output : register(u0);
 
@@ -23,12 +25,13 @@ cbuffer ViewParams : register(b0) {
 // Raytracing acceleration structure, accessed as a SRV
 RaytracingAccelerationStructure scene : register(t0);
 
-struct RayPayloadNg {
-    float3 color;
+struct RayPayloadPrimary {
+    float3 normal;
+    float dist;
 };
 
 [shader("raygeneration")] 
-void RayGen_NG() {
+void RayGen_AO() {
     const uint2 pixel = DispatchRaysIndex().xy;
     const float2 dims = float2(DispatchRaysDimensions().xy);
     LCGRand rng = get_rng(frame_id);
@@ -41,13 +44,49 @@ void RayGen_NG() {
     ray.TMax = 1e20f;
 
     uint ray_count = 0;
-    RayPayloadNg payload;
+    RayPayloadPrimary payload;
     TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
 #ifdef REPORT_RAY_STATS
     ++ray_count;
 #endif
 
-    const float4 accum_color = (float4(payload.color, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
+    float3 ao_color = 0.f;
+    if (payload.dist > 0.f) {
+        float3 v_z = payload.normal;
+        float3 v_x, v_y;
+        ortho_basis(v_x, v_y, v_z);
+
+        ray.Origin = ray.Origin + ray.Direction * payload.dist;
+        ray.TMin = EPSILON;
+        ray.TMax = 1e20f;
+
+        float n_occluded = 0;
+        OcclusionHitInfo shadow_hit;
+        for (int i = 0; i < NUM_AO_SAMPLES; ++i) {
+            const float theta = sqrt(lcg_randomf(rng));
+            const float phi = 2.f * M_PI * lcg_randomf(rng);
+
+            const float x = cos(phi) * theta;
+            const float y = sin(phi) * theta;
+            const float z = sqrt(1.f - theta * theta);
+
+            ray.Direction = normalize(x * v_x + y * v_y + z * v_z);
+
+            const uint32_t occlusion_flags = RAY_FLAG_FORCE_OPAQUE
+                | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+                | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
+
+            shadow_hit.hit = 1;
+            TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, ray, shadow_hit);
+
+            if (shadow_hit.hit == 1) { 
+                n_occluded += 1.f;
+            }
+        }
+        ao_color = 1.f - n_occluded / NUM_AO_SAMPLES;
+    }
+
+    const float4 accum_color = (float4(ao_color, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
     accum_buffer[pixel] = accum_color;
 
     output[pixel] = float4(linear_to_srgb(accum_color.r),
@@ -60,8 +99,14 @@ void RayGen_NG() {
 }
 
 [shader("miss")]
-void Miss_NG(inout RayPayloadNg payload : SV_RayPayload) {
-    payload.color = 0.f;
+void Miss_AO(inout RayPayloadPrimary payload : SV_RayPayload) {
+    payload.normal = 0.f;
+    payload.dist = -1.f;
+}
+
+[shader("miss")]
+void ShadowMiss_AO(inout OcclusionHitInfo occlusion : SV_RayPayload) {
+    occlusion.hit = 0;
 }
 
 // Per-mesh parameters for the closest hit
@@ -77,7 +122,7 @@ cbuffer MeshData : register(b0, space1) {
 }
 
 [shader("closesthit")] 
-void ClosestHit_NG(inout RayPayloadNg payload, Attributes attrib) {
+void ClosestHit_AO(inout RayPayloadPrimary payload, Attributes attrib) {
     uint3 idx = indices[NonUniformResourceIndex(PrimitiveIndex())];
 
     float3 va = vertices[NonUniformResourceIndex(idx.x)];
@@ -86,8 +131,9 @@ void ClosestHit_NG(inout RayPayloadNg payload, Attributes attrib) {
     float3 ng = normalize(cross(vb - va, vc - va));
 
     float3x3 inv_transp = float3x3(WorldToObject4x3()[0], WorldToObject4x3()[1], WorldToObject4x3()[2]);
-    ng = normalize(mul(inv_transp, ng));
-    payload.color = 0.5f * (ng + float3(1, 1, 1));
+    payload.normal = normalize(mul(inv_transp, ng));
+    payload.dist = RayTCurrent();
 }
+
 
 

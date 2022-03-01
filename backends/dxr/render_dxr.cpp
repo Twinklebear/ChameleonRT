@@ -17,6 +17,15 @@
 const auto *RAYGEN_SHADER_NAME = L"RayGen_NG";
 const auto *PRIMARY_MISS_SHADER_NAME = L"Miss_NG";
 const auto *CLOSESTHIT_SHADER_NAME = L"ClosestHit_NG";
+#elif defined(DXR_AO)
+#include "render_dxr_ao_embedded_dxil.h"
+#define SHADER_BYTECODE_NAME render_dxr_ao_dxil
+
+const auto *RAYGEN_SHADER_NAME = L"RayGen_AO";
+const auto *PRIMARY_MISS_SHADER_NAME = L"Miss_AO";
+const auto *SHADOW_MISS_SHADER_NAME = L"ShadowMiss_AO";
+const auto *CLOSESTHIT_SHADER_NAME = L"ClosestHit_AO";
+
 #else
 #include "render_dxr_embedded_dxil.h"
 #define SHADER_BYTECODE_NAME render_dxr_dxil
@@ -588,7 +597,7 @@ void RenderDXR::build_raytracing_pipeline()
             .add_miss_shader(PRIMARY_MISS_SHADER_NAME)
             .set_shader_root_sig({RAYGEN_SHADER_NAME}, raygen_root_sig)
             .configure_shader_payload(
-                shader_library.export_names(), 8 * sizeof(float), 2 * sizeof(float))
+                shader_library.export_names(), 4 * sizeof(float), 2 * sizeof(float))
             .set_max_recursion(1);
 #else
     dxr::RTPipelineBuilder rt_pipeline_builder =
@@ -599,8 +608,13 @@ void RenderDXR::build_raytracing_pipeline()
             .add_miss_shader(PRIMARY_MISS_SHADER_NAME)
             .add_miss_shader(SHADOW_MISS_SHADER_NAME)
             .set_shader_root_sig({RAYGEN_SHADER_NAME}, raygen_root_sig)
+#ifdef DXR_AO
+            .configure_shader_payload(
+                shader_library.export_names(), 4 * sizeof(float), 2 * sizeof(float))
+#else
             .configure_shader_payload(
                 shader_library.export_names(), 8 * sizeof(float), 2 * sizeof(float))
+#endif
             .set_max_recursion(1);
 #endif
 
@@ -615,13 +629,8 @@ void RenderDXR::build_raytracing_pipeline()
                 L"HitGroup_param_mesh" + std::to_wstring(i) + L"_geom" + std::to_wstring(j);
             hg_names.push_back(hg_name);
 
-#ifdef DXR_NG
             rt_pipeline_builder.add_hit_group({dxr::HitGroup(
                 hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, CLOSESTHIT_SHADER_NAME)});
-#else
-            rt_pipeline_builder.add_hit_group({dxr::HitGroup(
-                hg_name, D3D12_HIT_GROUP_TYPE_TRIANGLES, CLOSESTHIT_SHADER_NAME)});
-#endif
         }
     }
     rt_pipeline_builder.set_shader_root_sig(hg_names, hitgroup_root_sig);
