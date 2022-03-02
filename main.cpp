@@ -121,7 +121,9 @@ void run_app(const std::vector<std::string> &args,
     glm::vec3 up(0, 1, 0);
     float fov_y = 65.f;
     size_t camera_id = 0;
+    size_t benchmark_frame_count = 0;
     std::string validation_img_prefix;
+    std::string image_output = "chameleonrt.png";
     for (size_t i = 1; i < args.size(); ++i) {
         if (args[i] == "-eye") {
             eye.x = std::stof(args[++i]);
@@ -147,6 +149,10 @@ void run_app(const std::vector<std::string> &args,
             validation_img_prefix = args[++i];
         } else if (args[i] == "-img") {
             i += 2;
+        } else if (args[i] == "-benchmark-frames") {
+            benchmark_frame_count = std::stoull(args[++i]);
+        } else if (args[i] == "-o") {
+            image_output = args[++i];
         } else if (args[i][0] != '-') {
             scene_file = args[i];
             canonicalize_path(scene_file);
@@ -202,7 +208,6 @@ void run_app(const std::vector<std::string> &args,
     const std::string rt_backend = renderer->name();
     const std::string cpu_brand = get_cpu_brand();
     const std::string gpu_brand = display->gpu_brand();
-    const std::string image_output = "chameleonrt.png";
     const std::string display_frontend = display->name();
 
     size_t frame_id = 0;
@@ -281,6 +286,11 @@ void run_app(const std::vector<std::string> &args,
         ++frame_id;
         camera_changed = false;
 
+        // If we're benchmarking print out the rendering stats and save the image out
+        if (benchmark_frame_count > 0 && frame_id == benchmark_frame_count) {
+            save_image = true;
+        }
+
         if (save_image) {
             save_image = false;
             std::cout << "Image saved to " << image_output << "\n";
@@ -308,6 +318,15 @@ void run_app(const std::vector<std::string> &args,
         } else {
             render_time += stats.render_time;
             rays_per_second += stats.rays_per_second;
+        }
+
+        if (benchmark_frame_count > 0 && frame_id == benchmark_frame_count) {
+            std::cout << "Rendered " << benchmark_frame_count << " frames\n"
+                      << "Render time: " << render_time / frame_id << " ms/frame\n";
+            if (stats.rays_per_second > 0) {
+                std::cout << "Rays per-second: " << rays_per_second / frame_id << " Rays/s\n";
+            }
+            break;
         }
 
         display->new_frame();

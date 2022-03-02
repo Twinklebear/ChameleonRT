@@ -38,6 +38,10 @@ struct RenderDXR : RenderBackend {
     uint32_t frame_id = 0;
     bool native_display = false;
 
+#ifdef DXR_AO
+    float ao_distance = 1e20f;
+#endif
+
 #ifdef REPORT_RAY_STATS
     std::vector<uint16_t> ray_counts;
 #endif

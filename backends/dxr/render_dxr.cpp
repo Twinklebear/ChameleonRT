@@ -128,7 +128,12 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
 void RenderDXR::set_scene(const Scene &scene)
 {
     frame_id = 0;
-
+#ifdef DXR_AO
+    // For AO we need to compute the AO distance to use, we set it to 10% of the scene bounding
+    // diagonal length
+    glm::vec3 scene_min(std::numeric_limits<float>::infinity());
+    glm::vec3 scene_max(-std::numeric_limits<float>::infinity());
+#endif
     // TODO: We can actually run all these uploads and BVH builds in parallel
     // using multiple command lists, as long as the BVH builds don't need so
     // much build + scratch that we run out of GPU memory.
@@ -137,6 +142,13 @@ void RenderDXR::set_scene(const Scene &scene)
     for (const auto &mesh : scene.meshes) {
         std::vector<dxr::Geometry> geometries;
         for (const auto &geom : mesh.geometries) {
+#ifdef DXR_AO
+            // A parallel reduction would be nicer here for big scenes
+            for (const auto &v : geom.vertices) {
+                scene_min = glm::min(v, scene_min);
+                scene_max = glm::max(v, scene_max);
+            }
+#endif
             // Upload the mesh to the vertex buffer, build accel structures
             // Place the data in an upload heap first, then do a GPU-side copy
             // into a default heap (resident in VRAM)
@@ -250,6 +262,13 @@ void RenderDXR::set_scene(const Scene &scene)
 
         meshes.back().finalize();
     }
+
+#ifdef DXR_AO
+    ao_distance = .1f * glm::length(scene_max - scene_min);
+    std::cout << "Scene bounds: " << glm::to_string(scene_min) << " to "
+              << glm::to_string(scene_max) << "\n"
+              << "AO distance = " << ao_distance << "\n";
+#endif
 
     parameterized_meshes = scene.parameterized_meshes;
     std::vector<uint32_t> parameterized_mesh_sbt_offsets;
@@ -664,8 +683,12 @@ void RenderDXR::build_shader_binding_table()
         uint8_t *map = rt_pipeline.shader_record(RAYGEN_SHADER_NAME);
         const dxr::RootSignature *sig = rt_pipeline.shader_signature(RAYGEN_SHADER_NAME);
 
+#ifdef DXR_AO
+        std::memcpy(map + sig->offset("SceneParams"), &ao_distance, sizeof(float));
+#else
         const uint32_t num_lights = light_buf.size() / sizeof(QuadLight);
         std::memcpy(map + sig->offset("SceneParams"), &num_lights, sizeof(uint32_t));
+#endif
 
         // Is writing the descriptor heap handle actually needed? It seems to not matter
         // if this is written or not

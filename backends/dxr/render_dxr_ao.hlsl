@@ -30,6 +30,10 @@ struct RayPayloadPrimary {
     float dist;
 };
 
+cbuffer SceneParams : register(b1) {
+    float ao_distance;
+};
+
 [shader("raygeneration")] 
 void RayGen_AO() {
     const uint2 pixel = DispatchRaysIndex().xy;
@@ -58,7 +62,7 @@ void RayGen_AO() {
 
         ray.Origin = ray.Origin + ray.Direction * payload.dist;
         ray.TMin = EPSILON;
-        ray.TMax = 1e20f;
+        ray.TMax = ao_distance;
 
         float n_occluded = 0;
         OcclusionHitInfo shadow_hit;
@@ -78,6 +82,9 @@ void RayGen_AO() {
 
             shadow_hit.hit = 1;
             TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, ray, shadow_hit);
+#ifdef REPORT_RAY_STATS
+            ++ray_count;
+#endif
 
             if (shadow_hit.hit == 1) { 
                 n_occluded += 1.f;
