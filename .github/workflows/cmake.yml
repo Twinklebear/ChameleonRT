@@ -171,6 +171,7 @@ jobs:
           -DENABLE_DXR=ON
           -DENABLE_VULKAN=ON
           -DENABLE_OPTIX=ON
+          -DREPORT_RAY_STATS=ON
           -Dembree_DIR="${env:GITHUB_WORKSPACE}/build/deps/embree-${env:EMBREE_VERSION}.x64.vc14.windows/lib/cmake/embree-${env:EMBREE_VERSION}"
           -DTBB_DIR="${env:GITHUB_WORKSPACE}/build/deps/oneapi-tbb-${env:TBB_VERSION}/lib/cmake/tbb/"
           -DISPC_DIR="${env:GITHUB_WORKSPACE}/build/deps/ispc-v${env:ISPC_VERSION}-windows/bin/"
