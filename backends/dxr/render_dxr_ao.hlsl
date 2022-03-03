@@ -57,7 +57,7 @@ void RayGen_AO() {
     float3 ao_color = 0.f;
     if (payload.dist > 0.f) {
         float3 v_z = payload.normal;
-        if (dot(v_z, -ray.Direction) < 0.0) {
+        if (dot(v_z, ray.Direction) > 0.0) {
             v_z = -v_z;
         }
 

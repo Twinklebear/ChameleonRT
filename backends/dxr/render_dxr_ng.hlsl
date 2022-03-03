@@ -87,6 +87,9 @@ void ClosestHit_NG(inout RayPayloadNg payload, Attributes attrib) {
 
     float3x3 inv_transp = float3x3(WorldToObject4x3()[0], WorldToObject4x3()[1], WorldToObject4x3()[2]);
     ng = normalize(mul(inv_transp, ng));
+    if (dot(ng, WorldRayDirection()) > 0.0) {
+        ng = -ng;
+    }
     payload.color = 0.5f * (ng + float3(1, 1, 1));
 }
 
