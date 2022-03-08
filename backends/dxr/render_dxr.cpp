@@ -582,6 +582,12 @@ void RenderDXR::create_device_objects()
         align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
         D3D12_RESOURCE_STATE_GENERIC_READ);
 
+    // Testing perf of having view params on the device as well
+    view_param_device_buf = dxr::Buffer::device(
+        device.Get(),
+        align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
     // Our query heap will store two timestamps, the time that DispatchRays starts and the time
     // it ends
     D3D12_QUERY_HEAP_DESC timing_query_heap_desc = {};
@@ -916,6 +922,19 @@ void RenderDXR::record_command_lists()
 {
     CHECK_ERR(render_cmd_allocator->Reset());
     CHECK_ERR(render_cmd_list->Reset(render_cmd_allocator.Get(), nullptr));
+
+    // Copy the updated view params from the upload heap to the device buffer
+    {
+        auto barrier =
+            barrier_transition(view_param_device_buf, D3D12_RESOURCE_STATE_COPY_DEST);
+        render_cmd_list->ResourceBarrier(1, &barrier);
+    }
+    render_cmd_list->CopyResource(view_param_device_buf.get(), view_param_buf.get());
+    {
+        auto barrier = barrier_transition(view_param_device_buf,
+                                          D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        render_cmd_list->ResourceBarrier(1, &barrier);
+    }
 
     // TODO: We'll need a second desc. heap for the sampler and bind both of them here
     std::array<ID3D12DescriptorHeap *, 2> desc_heaps = {raygen_desc_heap.get(),
