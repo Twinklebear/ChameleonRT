@@ -38,6 +38,10 @@ struct RenderDXR : RenderBackend {
     uint32_t frame_id = 0;
     bool native_display = false;
 
+    // Query pool to measure just dispatch rays perf
+    Microsoft::WRL::ComPtr<ID3D12QueryHeap> timing_query_heap;
+    dxr::Buffer query_resolve_buffer;
+
 #ifdef REPORT_RAY_STATS
     std::vector<uint16_t> ray_counts;
 #endif

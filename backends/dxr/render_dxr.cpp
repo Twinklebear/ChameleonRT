@@ -433,6 +433,21 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     // Wait for the image readback commands to complete as well
     sync_gpu();
 
+    // Read back the timestamps for DispatchRays to compute the true time spent rendering
+    {
+        const uint64_t *timestamps = static_cast<const uint64_t *>(query_resolve_buffer.map());
+        uint64_t timestamp_freq = 0;
+        cmd_queue->GetTimestampFrequency(&timestamp_freq);
+
+        const uint64_t delta = timestamps[1] - timestamps[0];
+        const double elapsed_time = static_cast<double>(delta) / timestamp_freq * 1000.0;
+        std::cout << "dispatch time: " << elapsed_time
+                  << " cmd list time: " << stats.render_time << "\n";
+        stats.render_time = elapsed_time;
+
+        query_resolve_buffer.unmap();
+    }
+
     if (need_readback) {
         // Map the readback buf and copy out the rendered image
         // We may have needed some padding for the readback buffer, so we might have to read
@@ -527,6 +542,17 @@ void RenderDXR::create_device_objects()
         device.Get(),
         align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
         D3D12_RESOURCE_STATE_GENERIC_READ);
+
+    // Our query heap will store two timestamps, the time that DispatchRays starts and the time
+    // it ends
+    D3D12_QUERY_HEAP_DESC timing_query_heap_desc = {};
+    timing_query_heap_desc.Count = 2;
+    timing_query_heap_desc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+    device->CreateQueryHeap(&timing_query_heap_desc, IID_PPV_ARGS(&timing_query_heap));
+
+    // Buffer to readback query results in to
+    query_resolve_buffer = dxr::Buffer::readback(
+        device.Get(), sizeof(uint64_t) * 2, D3D12_RESOURCE_STATE_COPY_DEST);
 }
 
 void RenderDXR::build_raytracing_pipeline()
@@ -827,8 +853,19 @@ void RenderDXR::record_command_lists()
     render_cmd_list->SetPipelineState1(rt_pipeline.get());
     render_cmd_list->SetComputeRootSignature(rt_pipeline.global_sig());
 
+    render_cmd_list->EndQuery(timing_query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
+
     D3D12_DISPATCH_RAYS_DESC dispatch_rays = rt_pipeline.dispatch_rays(render_target.dims());
     render_cmd_list->DispatchRays(&dispatch_rays);
+
+    render_cmd_list->EndQuery(timing_query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
+
+    render_cmd_list->ResolveQueryData(timing_query_heap.Get(),
+                                      D3D12_QUERY_TYPE_TIMESTAMP,
+                                      0,
+                                      2,
+                                      query_resolve_buffer.get(),
+                                      0);
 
     CHECK_ERR(render_cmd_list->Close());
 
