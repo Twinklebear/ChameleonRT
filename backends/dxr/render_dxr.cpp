@@ -441,8 +441,6 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
 
         const uint64_t delta = timestamps[1] - timestamps[0];
         const double elapsed_time = static_cast<double>(delta) / timestamp_freq * 1000.0;
-        std::cout << "dispatch time: " << elapsed_time
-                  << " cmd list time: " << stats.render_time << "\n";
         stats.render_time = elapsed_time;
 
         query_resolve_buffer.unmap();
