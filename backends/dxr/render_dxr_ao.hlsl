@@ -1,8 +1,6 @@
 #include "util.hlsl"
 #include "lcg_rng.hlsl"
 
-#define NUM_AO_SAMPLES 2
-
 // Raytracing output texture, accessed as a UAV
 RWTexture2D<float4> output : register(u0);
 

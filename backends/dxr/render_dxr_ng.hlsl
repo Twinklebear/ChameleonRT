@@ -32,22 +32,26 @@ void RayGen_NG() {
     const uint2 pixel = DispatchRaysIndex().xy;
     const float2 dims = float2(DispatchRaysDimensions().xy);
     LCGRand rng = get_rng(frame_id);
-    const float2 d = (pixel + float2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
 
-    RayDesc ray;
-    ray.Origin = cam_pos.xyz;
-    ray.Direction = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
-    ray.TMin = 0;
-    ray.TMax = 1e20f;
+    float3 total_color = float3(0.f, 0.f, 0.f);
+    for (int i = 0; i < NUM_PIXEL_SAMPLES; ++i) {
+        const float2 d = (pixel + float2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
 
-    uint ray_count = 0;
-    RayPayloadNg payload;
-    TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
-#ifdef REPORT_RAY_STATS
-    ++ray_count;
-#endif
+        RayDesc ray;
+        ray.Origin = cam_pos.xyz;
+        ray.Direction = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
+        ray.TMin = 0;
+        ray.TMax = 1e20f;
 
-    const float4 accum_color = (float4(payload.color, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
+        uint ray_count = 0;
+        RayPayloadNg payload;
+        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
+
+        total_color += payload.color;
+    }
+    total_color /= NUM_PIXEL_SAMPLES;
+
+    const float4 accum_color = (float4(total_color, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
     accum_buffer[pixel] = accum_color;
 
     output[pixel] = float4(linear_to_srgb(accum_color.r),
@@ -55,7 +59,7 @@ void RayGen_NG() {
             linear_to_srgb(accum_color.b), 1.f);
 
 #ifdef REPORT_RAY_STATS
-    ray_stats[pixel] = ray_count;
+    ray_stats[pixel] = NUM_PIXEL_SAMPLES;
 #endif
 }
 

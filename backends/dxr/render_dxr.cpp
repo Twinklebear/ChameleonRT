@@ -10,26 +10,19 @@
 #include "util.h"
 #include <glm/ext.hpp>
 
-#ifdef DXR_NG
-#include "render_dxr_ng_embedded_dxil.h"
-#define SHADER_BYTECODE_NAME render_dxr_ng_dxil
+#include DXIL_EMBED_INCLUDE
 
+#ifdef DXR_NG
 const auto *RAYGEN_SHADER_NAME = L"RayGen_NG";
 const auto *PRIMARY_MISS_SHADER_NAME = L"Miss_NG";
 const auto *CLOSESTHIT_SHADER_NAME = L"ClosestHit_NG";
 #elif defined(DXR_AO)
-#include "render_dxr_ao_embedded_dxil.h"
-#define SHADER_BYTECODE_NAME render_dxr_ao_dxil
-
 const auto *RAYGEN_SHADER_NAME = L"RayGen_AO";
 const auto *PRIMARY_MISS_SHADER_NAME = L"Miss_AO";
 const auto *SHADOW_MISS_SHADER_NAME = L"ShadowMiss_AO";
 const auto *CLOSESTHIT_SHADER_NAME = L"ClosestHit_AO";
 
 #else
-#include "render_dxr_embedded_dxil.h"
-#define SHADER_BYTECODE_NAME render_dxr_dxil
-
 const auto *RAYGEN_SHADER_NAME = L"RayGen";
 const auto *PRIMARY_MISS_SHADER_NAME = L"Miss";
 const auto *SHADOW_MISS_SHADER_NAME = L"ShadowMiss";
@@ -81,7 +74,13 @@ RenderDXR::~RenderDXR()
 
 std::string RenderDXR::name()
 {
+#ifdef DXR_NG
+    return "DirectX Ray Tracing - NG" + std::to_string(NUM_PIXEL_SAMPLES);
+#elif defined(DXR_AO)
+    return "DirectX Ray Tracing - AO" + std::to_string(NUM_AO_SAMPLES);
+#else
     return "DirectX Ray Tracing";
+#endif
 }
 
 void RenderDXR::initialize(const int fb_width, const int fb_height)
