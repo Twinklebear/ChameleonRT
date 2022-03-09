@@ -1,6 +1,10 @@
 #include "util.hlsl"
 #include "lcg_rng.hlsl"
 
+struct AORayPayload {
+    int n_occluded;
+};
+
 // Raytracing output texture, accessed as a UAV
 RWTexture2D<float4> output : register(u0);
 
@@ -66,8 +70,10 @@ void RayGen_AO() {
         ray.TMin = EPSILON;
         ray.TMax = ao_distance;
 
-        float n_occluded = 0;
-        OcclusionHitInfo shadow_hit;
+        // We don't run closest hit at all here so we actually use the miss shader to count
+        //misses by decrementing the payload's occluded value
+        AORayPayload ao_payload;
+        ao_payload.n_occluded = NUM_AO_SAMPLES;
         for (int i = 0; i < NUM_AO_SAMPLES; ++i) {
             const float theta = sqrt(lcg_randomf(rng));
             const float phi = 2.f * M_PI * lcg_randomf(rng);
@@ -82,17 +88,12 @@ void RayGen_AO() {
                 | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
                 | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER;
 
-            shadow_hit.hit = 1;
-            TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, ray, shadow_hit);
 #ifdef REPORT_RAY_STATS
             ++ray_count;
 #endif
-
-            if (shadow_hit.hit == 1) { 
-                n_occluded += 1.f;
-            }
+            TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, ray, ao_payload);
         }
-        ao_color = 1.f - n_occluded / NUM_AO_SAMPLES;
+        ao_color = 1.f - float(ao_payload.n_occluded) / NUM_AO_SAMPLES;
     }
 
     const float4 accum_color = (float4(ao_color, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
@@ -114,8 +115,8 @@ void Miss_AO(inout RayPayloadPrimary payload : SV_RayPayload) {
 }
 
 [shader("miss")]
-void ShadowMiss_AO(inout OcclusionHitInfo occlusion : SV_RayPayload) {
-    occlusion.hit = 0;
+void ShadowMiss_AO(inout AORayPayload occlusion : SV_RayPayload) {
+    --occlusion.n_occluded;
 }
 
 // Per-mesh parameters for the closest hit

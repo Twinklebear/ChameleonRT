@@ -33,7 +33,8 @@ void RayGen_NG() {
     const float2 dims = float2(DispatchRaysDimensions().xy);
     LCGRand rng = get_rng(frame_id);
 
-    float3 total_color = float3(0.f, 0.f, 0.f);
+    RayPayloadNg payload;
+    payload.color = float3(0.f, 0.f, 0.f);
     for (int i = 0; i < NUM_PIXEL_SAMPLES; ++i) {
         const float2 d = (pixel + float2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
 
@@ -44,14 +45,11 @@ void RayGen_NG() {
         ray.TMax = 1e20f;
 
         uint ray_count = 0;
-        RayPayloadNg payload;
         TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
-
-        total_color += payload.color;
     }
-    total_color /= NUM_PIXEL_SAMPLES;
+    payload.color /= NUM_PIXEL_SAMPLES;
 
-    const float4 accum_color = (float4(total_color, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
+    const float4 accum_color = (float4(payload.color, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
     accum_buffer[pixel] = accum_color;
 
     output[pixel] = float4(linear_to_srgb(accum_color.r),
@@ -94,7 +92,7 @@ void ClosestHit_NG(inout RayPayloadNg payload, Attributes attrib) {
     if (dot(ng, WorldRayDirection()) > 0.0) {
         ng = -ng;
     }
-    payload.color = 0.5f * (ng + float3(1, 1, 1));
+    payload.color += 0.5f * (ng + float3(1, 1, 1));
 }
 
 
