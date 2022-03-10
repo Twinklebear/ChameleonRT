@@ -243,19 +243,18 @@ void RenderDXR::set_scene(const Scene &scene)
     // TODO: May be best to move this into the top-level BVH build step,
     // and have it take the parameterized mesh info as well, similar to what
     // I have in the Metal backend
-    instance_buf = dxr::Buffer::upload(
+    auto upload_instance_buf = dxr::Buffer::upload(
         device.Get(),
         align_to(scene.instances.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
                  D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT),
         D3D12_RESOURCE_STATE_GENERIC_READ);
-
     {
         // TODO: We want to keep some of the instance to BLAS mapping info for setting up the
         // hitgroups/sbt so the toplevel bvh can become something a bit higher-level to manage
         // this and filling out the instance buffers
         // Write the data about our instance
         D3D12_RAYTRACING_INSTANCE_DESC *buf =
-            static_cast<D3D12_RAYTRACING_INSTANCE_DESC *>(instance_buf.map());
+            static_cast<D3D12_RAYTRACING_INSTANCE_DESC *>(upload_instance_buf.map());
 
         for (size_t i = 0; i < scene.instances.size(); ++i) {
             const auto &inst = scene.instances[i];
@@ -277,7 +276,30 @@ void RenderDXR::set_scene(const Scene &scene)
                 }
             }
         }
-        instance_buf.unmap();
+        upload_instance_buf.unmap();
+    }
+
+    // Copy instance data to the device heap
+    instance_buf = dxr::Buffer::device(
+        device.Get(),
+        align_to(scene.instances.size() * sizeof(D3D12_RAYTRACING_INSTANCE_DESC),
+                 D3D12_RAYTRACING_INSTANCE_DESCS_BYTE_ALIGNMENT),
+        D3D12_RESOURCE_STATE_COPY_DEST);
+    {
+        CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+
+        // Enqueue the copy into GPU memory
+        cmd_list->CopyResource(instance_buf.get(), upload_instance_buf.get());
+
+        auto b =
+            barrier_transition(instance_buf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+        cmd_list->ResourceBarrier(1, &b);
+
+        CHECK_ERR(cmd_list->Close());
+        ID3D12CommandList *cmd_lists = cmd_list.Get();
+        cmd_queue->ExecuteCommandLists(1, &cmd_lists);
+        sync_gpu();
     }
 
     // Now build the top level acceleration structure on our instance
