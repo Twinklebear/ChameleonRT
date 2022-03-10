@@ -36,6 +36,8 @@ DXDisplay::DXDisplay(SDL_Window *window)
 #endif
     CHECK_ERR(CreateDXGIFactory2(factory_flags, IID_PPV_ARGS(&factory)));
 
+    allow_tearing = dxr::system_supports_tearing(factory);
+
     device = dxr::create_dxr_device(factory);
     if (!device) {
         std::cout << "Failed to find DXR capable GPU!" << std::endl;
@@ -113,6 +115,7 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
     upload_texture = dxr::Buffer::upload(
         device.Get(), fb_linear_row_pitch() * fb_dims.y, D3D12_RESOURCE_STATE_GENERIC_READ);
 
+    const uint32_t swap_chain_flags = allow_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
     if (!swap_chain) {
         // Describe and create the swap chain.
         DXGI_SWAP_CHAIN_DESC1 swap_chain_desc = {0};
@@ -123,6 +126,7 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
         swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         swap_chain_desc.SampleDesc.Count = 1;
+        swap_chain_desc.Flags = swap_chain_flags;
 
         ComPtr<IDXGISwapChain1> sc;
         CHECK_ERR(factory->CreateSwapChainForHwnd(
@@ -131,8 +135,8 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
         CHECK_ERR(sc.As(&swap_chain));
     } else {
         // If the swap chain already exists, resize it
-        CHECK_ERR(
-            swap_chain->ResizeBuffers(2, fb_dims.x, fb_dims.y, DXGI_FORMAT_R8G8B8A8_UNORM, 0));
+        CHECK_ERR(swap_chain->ResizeBuffers(
+            2, fb_dims.x, fb_dims.y, DXGI_FORMAT_R8G8B8A8_UNORM, swap_chain_flags));
     }
 
     const uint32_t rtv_descriptor_size =
@@ -210,7 +214,11 @@ void DXDisplay::display_native(dxr::Texture2D &img)
     // Execute the command list and present
     ID3D12CommandList *cmd_lists = cmd_list.Get();
     cmd_queue->ExecuteCommandLists(1, &cmd_lists);
-    CHECK_ERR(swap_chain->Present(1, 0));
+    if (allow_tearing) {
+        CHECK_ERR(swap_chain->Present(0, DXGI_PRESENT_ALLOW_TEARING));
+    } else {
+        CHECK_ERR(swap_chain->Present(1, 0));
+    }
 
     // Sync with the fence to wait for the frame to be presented
     const uint64_t signal_val = fence_value++;

@@ -2,6 +2,7 @@
 #include <cassert>
 #include <codecvt>
 #include <locale>
+#include "dxgi1_5.h"
 #include "util.h"
 
 namespace dxr {
@@ -56,6 +57,19 @@ ComPtr<ID3D12Device5> create_dxr_device(ComPtr<IDXGIFactory2> &factory)
         }
     }
     return nullptr;
+}
+
+bool system_supports_tearing(Microsoft::WRL::ComPtr<IDXGIFactory2> &factory)
+{
+    ComPtr<IDXGIFactory5> factory5;
+    auto res = factory.As(&factory5);
+    if (SUCCEEDED(res)) {
+        BOOL tearing_supported = FALSE;
+        res = factory5->CheckFeatureSupport(
+            DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing_supported, sizeof(BOOL));
+        return SUCCEEDED(res) && tearing_supported;
+    }
+    return false;
 }
 
 D3D12_RESOURCE_BARRIER barrier_transition(ID3D12Resource *res,

@@ -31,6 +31,8 @@ struct DXDisplay : Display {
     Microsoft::WRL::ComPtr<ID3D12Fence> fence;
     HANDLE fence_evt;
 
+    bool allow_tearing = false;
+
     DXDisplay(SDL_Window *window);
 
     ~DXDisplay();
