@@ -30,6 +30,8 @@ extern const D3D12_HEAP_PROPERTIES READBACK_HEAP_PROPS;
 Microsoft::WRL::ComPtr<ID3D12Device5> create_dxr_device(
     Microsoft::WRL::ComPtr<IDXGIFactory2> &factory);
 
+bool system_supports_tearing(Microsoft::WRL::ComPtr<IDXGIFactory2> &factory);
+
 // Convenience for making resource transition barriers
 D3D12_RESOURCE_BARRIER barrier_transition(ID3D12Resource *res,
                                           D3D12_RESOURCE_STATES before,
