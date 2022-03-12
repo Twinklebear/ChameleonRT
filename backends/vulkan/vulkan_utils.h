@@ -39,6 +39,7 @@ class Device {
 
     uint32_t graphics_queue_index = -1;
 
+    VkPhysicalDeviceLimits vk_physical_device_limits = {};
     VkPhysicalDeviceMemoryProperties mem_props = {};
     VkPhysicalDeviceAccelerationStructurePropertiesKHR as_props = {};
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR rt_pipeline_props = {};
@@ -69,6 +70,9 @@ public:
 
     uint32_t memory_type_index(uint32_t type_filter, VkMemoryPropertyFlags props) const;
     VkDeviceMemory alloc(size_t nbytes, uint32_t type_filter, VkMemoryPropertyFlags props);
+
+    // Return the ticks/s measured by timestamps in the queue
+    double get_timestamp_frequency() const;
 
     const VkPhysicalDeviceMemoryProperties &memory_properties() const;
     const VkPhysicalDeviceAccelerationStructurePropertiesKHR &

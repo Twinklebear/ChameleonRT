@@ -195,6 +195,11 @@ VkDeviceMemory Device::alloc(size_t nbytes, uint32_t type_filter, VkMemoryProper
     return mem;
 }
 
+double Device::get_timestamp_frequency() const {
+    // Vulkan timestamp period is in nanoseconds/tick
+    return 1e9 / static_cast<double>(vk_physical_device_limits.timestampPeriod);
+}
+
 const VkPhysicalDeviceMemoryProperties &Device::memory_properties() const
 {
     return mem_props;
@@ -277,6 +282,7 @@ void Device::select_physical_device()
 
         if (khr_accel_struct != extensions.end() && khr_ray_pipeline != extensions.end()) {
             vk_physical_device = d;
+            vk_physical_device_limits = properties.limits;
             break;
         }
     }

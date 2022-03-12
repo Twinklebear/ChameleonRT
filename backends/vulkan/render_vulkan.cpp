@@ -46,6 +46,13 @@ RenderVulkan::RenderVulkan(std::shared_ptr<vkrt::Device> dev)
                                         4 * sizeof(glm::vec4) + sizeof(uint32_t),
                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    VkQueryPoolCreateInfo pool_ci = {};
+    pool_ci.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    pool_ci.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    pool_ci.queryCount = 2;
+    CHECK_VULKAN(
+        vkCreateQueryPool(device->logical_device(), &pool_ci, nullptr, &timing_query_pool));
 }
 
 RenderVulkan::RenderVulkan() : RenderVulkan(std::make_shared<vkrt::Device>())
@@ -55,6 +62,7 @@ RenderVulkan::RenderVulkan() : RenderVulkan(std::make_shared<vkrt::Device>())
 
 RenderVulkan::~RenderVulkan()
 {
+    vkDestroyQueryPool(device->logical_device(), timing_query_pool, nullptr);
     vkDestroySampler(device->logical_device(), sampler, nullptr);
     vkDestroyCommandPool(device->logical_device(), command_pool, nullptr);
     vkDestroyCommandPool(device->logical_device(), render_cmd_pool, nullptr);
@@ -677,7 +685,6 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos,
 
     CHECK_VULKAN(vkResetFences(device->logical_device(), 1, &fence));
 
-    auto start = high_resolution_clock::now();
     VkSubmitInfo submit_info = {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
@@ -696,11 +703,22 @@ RenderStats RenderVulkan::render(const glm::vec3 &pos,
         CHECK_VULKAN(vkQueueSubmit(device->graphics_queue(), 1, &submit_info, VK_NULL_HANDLE));
     }
 
-    // Wait for just the rendering commands to complete to only time the ray tracing time
+    // Wait for just the rendering commands to complete and read back the ray tracing
+    // timestamps we recorded
     CHECK_VULKAN(vkWaitForFences(
         device->logical_device(), 1, &fence, true, std::numeric_limits<uint64_t>::max()));
-    auto end = high_resolution_clock::now();
-    stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
+
+    std::array<uint64_t, 2> render_timestamps;
+    CHECK_VULKAN(vkGetQueryPoolResults(device->logical_device(),
+                                       timing_query_pool,
+                                       0,
+                                       2,
+                                       render_timestamps.size() * sizeof(uint64_t),
+                                       render_timestamps.data(),
+                                       sizeof(uint64_t),
+                                       VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT));
+    stats.render_time = static_cast<double>(render_timestamps[1] - render_timestamps[0]) /
+                        device->get_timestamp_frequency() * 1e3;
 
     // Now wait for the device to finish the readback copy as well
     if (need_readback) {
@@ -989,6 +1007,8 @@ void RenderVulkan::record_command_buffers()
     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     CHECK_VULKAN(vkBeginCommandBuffer(render_cmd_buf, &begin_info));
 
+    vkCmdResetQueryPool(render_cmd_buf, timing_query_pool, 0, 2);
+
     vkCmdBindPipeline(
         render_cmd_buf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rt_pipeline.handle());
 
@@ -1006,6 +1026,8 @@ void RenderVulkan::record_command_buffers()
     VkStridedDeviceAddressRegionKHR callable_table = {};
     callable_table.deviceAddress = 0;
 
+    vkCmdWriteTimestamp(
+        render_cmd_buf, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, timing_query_pool, 0);
     vkrt::CmdTraceRaysKHR(render_cmd_buf,
                           &shader_table.raygen,
                           &shader_table.miss,
@@ -1014,6 +1036,8 @@ void RenderVulkan::record_command_buffers()
                           render_target->dims().x,
                           render_target->dims().y,
                           1);
+    vkCmdWriteTimestamp(
+        render_cmd_buf, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, timing_query_pool, 1);
 
     // Queue a barrier for rendering to finish
     vkCmdPipelineBarrier(render_cmd_buf,
