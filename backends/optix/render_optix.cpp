@@ -57,7 +57,11 @@ RenderOptiX::RenderOptiX(bool native_display) : native_display(native_display)
 
     CHECK_OPTIX(optixDeviceContextCreate(cuda_context, 0, &device));
     // TODO: set this val. based on the debug level
-    CHECK_OPTIX(optixDeviceContextSetLogCallback(device, log_callback, nullptr, 0));
+    // CHECK_OPTIX(optixDeviceContextSetLogCallback(device, log_callback, nullptr, 0));
+
+    for (auto &evt : render_time_events) {
+        cudaEventCreate(&evt);
+    }
 
     launch_params = optix::Buffer(sizeof(LaunchParams));
 }
@@ -71,6 +75,9 @@ RenderOptiX::~RenderOptiX()
     optixPipelineDestroy(pipeline);
     optixDeviceContextDestroy(device);
     cudaStreamDestroy(cuda_stream);
+    for (auto &evt : render_time_events) {
+        cudaEventDestroy(evt);
+    }
 }
 
 std::string RenderOptiX::name()
@@ -380,8 +387,7 @@ RenderStats RenderOptiX::render(const glm::vec3 &pos,
 
     update_view_parameters(pos, dir, up, fovy);
 
-    auto start = high_resolution_clock::now();
-
+    cudaEventRecord(render_time_events[0]);
     CHECK_OPTIX(optixLaunch(pipeline,
                             cuda_stream,
                             launch_params.device_ptr(),
@@ -390,11 +396,11 @@ RenderStats RenderOptiX::render(const glm::vec3 &pos,
                             width,
                             height,
                             1));
+    cudaEventRecord(render_time_events[1]);
 
-    // Sync with the GPU to ensure it actually finishes rendering
-    sync_gpu();
-    auto end = high_resolution_clock::now();
-    stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
+    // Sync with the rendering completion event
+    cudaEventSynchronize(render_time_events[1]);
+    cudaEventElapsedTime(&stats.render_time, render_time_events[0], render_time_events[1]);
 
 #ifdef REPORT_RAY_STATS
     const bool need_readback = true;

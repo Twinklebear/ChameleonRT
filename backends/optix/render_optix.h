@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cuda.h>
 #include <optix.h>
 #include "display/gldisplay.h"
 #include "glad/glad.h"
@@ -30,6 +32,8 @@ struct RenderOptiX : GLNativeRenderer {
 
     bool native_display = false;
     cudaGraphicsResource_t cu_display_texture;
+
+    std::array<cudaEvent_t, 2> render_time_events;
 
 #ifdef REPORT_RAY_STATS
     std::vector<uint16_t> ray_counts;
