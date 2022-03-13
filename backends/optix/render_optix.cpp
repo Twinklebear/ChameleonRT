@@ -57,7 +57,7 @@ RenderOptiX::RenderOptiX(bool native_display) : native_display(native_display)
 
     CHECK_OPTIX(optixDeviceContextCreate(cuda_context, 0, &device));
     // TODO: set this val. based on the debug level
-    // CHECK_OPTIX(optixDeviceContextSetLogCallback(device, log_callback, nullptr, 0));
+    CHECK_OPTIX(optixDeviceContextSetLogCallback(device, log_callback, nullptr, 0));
 
     for (auto &evt : render_time_events) {
         cudaEventCreate(&evt);
