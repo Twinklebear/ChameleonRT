@@ -10,12 +10,14 @@ extern "C" {
 }
 
 struct RayPayload {
+    // payload registers 0, 1
     float2 uv;
+    // payload register 2
     float t_hit;
+    // payload register 3
     uint32_t material_id;
-
+    // payload registers 4, 5, 6
     float3 normal;
-    float pad;
 };
 
 __device__ RayPayload make_ray_payload() {
@@ -149,12 +151,25 @@ extern "C" __global__ void __raygen__perspective_camera() {
     float3 path_throughput = make_float3(1.f);
     do {
         RayPayload payload = make_ray_payload();
-        uint2 payload_ptr;
-        pack_ptr(&payload, payload_ptr.x, payload_ptr.y);
 
-        optixTrace(launch_params.scene, ray_origin, ray_dir, EPSILON, 1e20f, 0.f,
-                0xff, OPTIX_RAY_FLAG_DISABLE_ANYHIT, PRIMARY_RAY, 1, PRIMARY_RAY,
-                payload_ptr.x, payload_ptr.y);
+        optixTrace(launch_params.scene,
+                ray_origin,
+                ray_dir,
+                EPSILON,
+                1e20f,
+                0.f,
+                0xff,
+                OPTIX_RAY_FLAG_DISABLE_ANYHIT,
+                PRIMARY_RAY,
+                1,
+                PRIMARY_RAY,
+                reinterpret_cast<uint32_t&>(payload.uv.x),
+                reinterpret_cast<uint32_t&>(payload.uv.y),
+                reinterpret_cast<uint32_t&>(payload.t_hit),
+                payload.material_id,
+                reinterpret_cast<uint32_t&>(payload.normal.x),
+                reinterpret_cast<uint32_t&>(payload.normal.y),
+                reinterpret_cast<uint32_t&>(payload.normal.z));
 #ifdef REPORT_RAY_STATS
         ++ray_count;
 #endif
@@ -215,8 +230,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
 }
 
 extern "C" __global__ void __miss__miss() {
-    RayPayload &payload = get_payload<RayPayload>();
-    payload.t_hit = -1.f;
+    optixSetPayload_1(float_as_int(-1.f));
     float3 dir = optixGetWorldRayDirection();
     // Apply our miss "shader" to draw the checkerboard background
     float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
@@ -226,9 +240,13 @@ extern "C" __global__ void __miss__miss() {
     int check_y = v * 10.f;
 
     if (dir.y > -0.1f && (check_x + check_y) % 2 == 0) {
-        payload.normal = make_float3(0.5f);
+        optixSetPayload_4(float_as_int(-0.5f));
+        optixSetPayload_5(float_as_int(-0.5f));
+        optixSetPayload_6(float_as_int(-0.5f));
     } else {
-        payload.normal = make_float3(0.1f);
+        optixSetPayload_4(float_as_int(0.1f));
+        optixSetPayload_5(float_as_int(0.1f));
+        optixSetPayload_6(float_as_int(0.1f));
     }
 }
 
@@ -244,7 +262,8 @@ extern "C" __global__ void __closesthit__closest_hit() {
     const float3 v0 = params.vertex_buffer[indices.x];
     const float3 v1 = params.vertex_buffer[indices.y];
     const float3 v2 = params.vertex_buffer[indices.z];
-    const float3 normal = normalize(cross(v1 - v0, v2 - v0));
+    float3 normal = normalize(cross(v1 - v0, v2 - v0));
+    normal = normalize(optixTransformNormalFromObjectToWorldSpace(normal));
 
     float2 uv = make_float2(0.f);
     if (params.uv_buffer) {
@@ -255,10 +274,14 @@ extern "C" __global__ void __closesthit__closest_hit() {
             + bary.x * uvb + bary.y * uvc;
     }
 
-    RayPayload &payload = get_payload<RayPayload>();
-    payload.uv = uv;
-    payload.t_hit = optixGetRayTmax();
-    payload.material_id = params.material_id;
-    payload.normal = normalize(optixTransformNormalFromObjectToWorldSpace(normal));
+    optixSetPayload_0(float_as_int(uv.x));
+    optixSetPayload_1(float_as_int(uv.y));
+
+    optixSetPayload_2(float_as_int(optixGetRayTmax()));
+    optixSetPayload_3(params.material_id);
+
+    optixSetPayload_4(float_as_int(normal.x));
+    optixSetPayload_5(float_as_int(normal.y));
+    optixSetPayload_6(float_as_int(normal.z));
 }
 

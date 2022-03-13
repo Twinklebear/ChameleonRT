@@ -268,12 +268,10 @@ void RenderOptiX::set_scene(const Scene &scene)
 void RenderOptiX::build_raytracing_pipeline()
 {
     // Setup the OptiX Module (DXR equivalent is the Shader Library)
-
     OptixPipelineCompileOptions pipeline_opts = {};
     pipeline_opts.traversableGraphFlags =
         OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
-    // We pack a pointer to the payload stack var into 2 32bit ints
-    pipeline_opts.numPayloadValues = 2;
+    pipeline_opts.numPayloadValues = 8;
     pipeline_opts.numAttributeValues = 2;
     pipeline_opts.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
     pipeline_opts.pipelineLaunchParamsVariableName = "launch_params";

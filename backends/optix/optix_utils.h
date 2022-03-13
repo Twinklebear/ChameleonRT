@@ -205,7 +205,8 @@ const static OptixModuleCompileOptions DEFAULT_MODULE_COMPILE_OPTIONS = {
     OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
     OPTIX_COMPILE_OPTIMIZATION_LEVEL_3,
     OPTIX_COMPILE_DEBUG_LEVEL_NONE,
-};
+    nullptr,
+    0};
 
 class Module {
     OptixModule module;
