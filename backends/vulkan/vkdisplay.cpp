@@ -84,6 +84,23 @@ VKDisplay::VKDisplay(SDL_Window *window)
         throw std::runtime_error("Present is not supported on the graphics queue!?");
     }
 
+    // Check if the surface supports tearing
+    {
+        uint32_t n_present_modes = 0;
+        CHECK_VULKAN(vkGetPhysicalDeviceSurfacePresentModesKHR(
+            device->physical_device(), surface, &n_present_modes, nullptr));
+
+        // We can init to FIFO, since FIFO is required to be supported
+        std::vector<VkPresentModeKHR> present_modes(n_present_modes, VK_PRESENT_MODE_FIFO_KHR);
+        CHECK_VULKAN(vkGetPhysicalDeviceSurfacePresentModesKHR(
+            device->physical_device(), surface, &n_present_modes, present_modes.data()));
+        if (std::find(present_modes.begin(),
+                      present_modes.end(),
+                      VK_PRESENT_MODE_IMMEDIATE_KHR) != present_modes.end()) {
+            present_mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        }
+    }
+
     // Setup ImGui render pass
     {
         VkAttachmentDescription attachment = {};
@@ -252,7 +269,7 @@ void VKDisplay::resize(const int fb_width, const int fb_height)
     create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     create_info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    create_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    create_info.presentMode = present_mode;
     create_info.clipped = true;
     create_info.oldSwapchain = VK_NULL_HANDLE;
     CHECK_VULKAN(
