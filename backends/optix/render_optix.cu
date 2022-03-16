@@ -240,9 +240,9 @@ extern "C" __global__ void __miss__miss() {
     int check_y = v * 10.f;
 
     if (dir.y > -0.1f && (check_x + check_y) % 2 == 0) {
-        optixSetPayload_4(float_as_int(-0.5f));
-        optixSetPayload_5(float_as_int(-0.5f));
-        optixSetPayload_6(float_as_int(-0.5f));
+        optixSetPayload_4(float_as_int(0.5f));
+        optixSetPayload_5(float_as_int(0.5f));
+        optixSetPayload_6(float_as_int(0.5f));
     } else {
         optixSetPayload_4(float_as_int(0.1f));
         optixSetPayload_5(float_as_int(0.1f));
