@@ -262,7 +262,6 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
             uv = bary.z * uva + bary.x * uvb + bary.y * uvc;
         }
 
-
         float3 normal = normalize(cross(vb - va, vc - va));
         /*
         if (geom.num_normals > 0) {
