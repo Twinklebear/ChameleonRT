@@ -214,6 +214,7 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
         ViewParams view_params = compute_view_parameters(pos, dir, up, fovy);
 
         auto start = high_resolution_clock::now();
+        // TODO: Look into using an indirect command buffer to improve perf/latency issue
         id<MTLCommandBuffer> command_buffer = context->command_buffer();
         id<MTLComputeCommandEncoder> command_encoder = [command_buffer computeCommandEncoder];
 
