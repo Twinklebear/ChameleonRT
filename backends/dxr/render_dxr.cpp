@@ -909,8 +909,8 @@ void RenderDXR::build_descriptor_heap()
 
     // Write the view params constants buffer
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = {0};
-    cbv_desc.BufferLocation = view_param_buf->GetGPUVirtualAddress();
-    cbv_desc.SizeInBytes = view_param_buf.size();
+    cbv_desc.BufferLocation = view_param_device_buf->GetGPUVirtualAddress();
+    cbv_desc.SizeInBytes = view_param_device_buf.size();
     device->CreateConstantBufferView(&cbv_desc, heap_handle);
     heap_handle.ptr +=
         device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
