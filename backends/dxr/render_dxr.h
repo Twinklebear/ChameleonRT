@@ -4,6 +4,7 @@
 #include <dxgi1_4.h>
 #include <wrl.h>
 #include "dx12_utils.h"
+#include "dxdisplay.h"
 #include "dxr_utils.h"
 #include "render_backend.h"
 
@@ -14,7 +15,8 @@ struct RenderDXR : RenderBackend {
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmd_allocator;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
 
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> render_cmd_allocator;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> render_cmd_allocator,
+        readback_cmd_allocator;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> render_cmd_list, readback_cmd_list;
 
     dxr::Buffer view_param_buf, img_readback_buf, instance_buf, material_param_buf, light_buf,
@@ -50,7 +52,7 @@ struct RenderDXR : RenderBackend {
     std::vector<uint16_t> ray_counts;
 #endif
 
-    RenderDXR(Microsoft::WRL::ComPtr<ID3D12Device5> device);
+    RenderDXR(DXDisplay *display);
 
     RenderDXR();
 
@@ -69,8 +71,14 @@ struct RenderDXR : RenderBackend {
                        const bool camera_changed,
                        const bool readback_framebuffer) override;
 
-private:
-    void create_device_objects();
+    RenderStats readback_render_stats(const bool readback_framebuffer) override;
+
+    // TODO: Need a readback stats/results function to override here that returns the render
+    // stats. Render should just submit the rendering work to be done, then here we'd do any
+    // sync/readback kind of stuff
+
+    // public:
+    void create_device_objects(DXDisplay *display = nullptr);
 
     void build_raytracing_pipeline();
 

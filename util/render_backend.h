@@ -28,4 +28,10 @@ struct RenderBackend {
                                const float fovy,
                                const bool camera_changed,
                                const bool readback_framebuffer) = 0;
+
+    // DX only for now for this test
+    virtual RenderStats readback_render_stats(const bool readback_framebuffer)
+    {
+        return RenderStats{};
+    };
 };

@@ -11,6 +11,8 @@
 #include "dx12_utils.h"
 #include <glm/glm.hpp>
 
+struct RenderDXR;
+
 struct DXDisplay : Display {
     HWND win_handle;
 
@@ -22,6 +24,8 @@ struct DXDisplay : Display {
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> render_target_desc_heap, imgui_desc_heap;
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 2> render_targets;
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> back_buffers;
+    size_t back_buffer_idx = 0;
 
     glm::uvec2 fb_dims;
     dxr::Buffer upload_texture;
@@ -47,7 +51,7 @@ struct DXDisplay : Display {
 
     void display(RenderBackend *renderer) override;
 
-    void display_native(dxr::Texture2D &img);
+    void display_native(RenderDXR *dxr_renderer, dxr::Texture2D &img);
 
 private:
     size_t fb_linear_row_pitch() const;

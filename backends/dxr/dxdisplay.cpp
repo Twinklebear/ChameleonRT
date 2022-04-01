@@ -115,6 +115,8 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
     upload_texture = dxr::Buffer::upload(
         device.Get(), fb_linear_row_pitch() * fb_dims.y, D3D12_RESOURCE_STATE_GENERIC_READ);
 
+    back_buffers.clear();
+
     const uint32_t swap_chain_flags = allow_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
     if (!swap_chain) {
         // Describe and create the swap chain.
@@ -151,35 +153,42 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
         CHECK_ERR(swap_chain->GetBuffer(i, IID_PPV_ARGS(&target)));
         device->CreateRenderTargetView(target.Get(), nullptr, render_targets[i]);
     }
+
+    // Get the render targets from the swap chain
+    back_buffer_idx = swap_chain->GetCurrentBackBufferIndex();
+    for (size_t i = 0; i < 2; ++i) {
+        ComPtr<ID3D12Resource> back_buffer;
+        CHECK_ERR(swap_chain->GetBuffer(i, IID_PPV_ARGS(&back_buffer)));
+        back_buffers.push_back(back_buffer);
+    }
 }
 
 void DXDisplay::new_frame()
 {
-    ImGui_ImplDX12_NewFrame();
+    // ImGui_ImplDX12_NewFrame();
 }
 
 void DXDisplay::display(RenderBackend *renderer)
 {
     auto *dxr_renderer = dynamic_cast<RenderDXR *>(renderer);
     if (dxr_renderer) {
-        display_native(dxr_renderer->render_target);
+        display_native(dxr_renderer, dxr_renderer->render_target);
     } else {
         display(renderer->img);
     }
 }
 
-void DXDisplay::display_native(dxr::Texture2D &img)
+void DXDisplay::display_native(RenderDXR *dxr_renderer, dxr::Texture2D &img)
 {
-    CHECK_ERR(cmd_allocator->Reset());
-    CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
+    // CHECK_ERR(cmd_allocator->Reset());
+    // CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 
-    const uint32_t back_buffer_idx = swap_chain->GetCurrentBackBufferIndex();
-    ComPtr<ID3D12Resource> back_buffer;
-    CHECK_ERR(swap_chain->GetBuffer(back_buffer_idx, IID_PPV_ARGS(&back_buffer)));
+    dxr_renderer->record_command_lists();
 
+    ComPtr<ID3D12GraphicsCommandList4> cmd_list = dxr_renderer->render_cmd_list;
     {
         const std::array<D3D12_RESOURCE_BARRIER, 2> b = {
-            dxr::barrier_transition(back_buffer.Get(),
+            dxr::barrier_transition(back_buffers[back_buffer_idx].Get(),
                                     D3D12_RESOURCE_STATE_PRESENT,
                                     D3D12_RESOURCE_STATE_COPY_DEST),
             dxr::barrier_transition(img, D3D12_RESOURCE_STATE_COPY_SOURCE)};
@@ -187,11 +196,11 @@ void DXDisplay::display_native(dxr::Texture2D &img)
         cmd_list->ResourceBarrier(b.size(), b.data());
     }
 
-    cmd_list->CopyResource(back_buffer.Get(), img.get());
+    cmd_list->CopyResource(back_buffers[back_buffer_idx].Get(), img.get());
 
     {
         const std::array<D3D12_RESOURCE_BARRIER, 2> b = {
-            dxr::barrier_transition(back_buffer.Get(),
+            dxr::barrier_transition(back_buffers[back_buffer_idx].Get(),
                                     D3D12_RESOURCE_STATE_COPY_DEST,
                                     D3D12_RESOURCE_STATE_RENDER_TARGET),
             dxr::barrier_transition(img, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)};
@@ -199,14 +208,16 @@ void DXDisplay::display_native(dxr::Texture2D &img)
         cmd_list->ResourceBarrier(b.size(), b.data());
     }
 
+#if 0
     // Render ImGui to the framebuffer
     cmd_list->OMSetRenderTargets(1, &render_targets[back_buffer_idx], false, nullptr);
     ID3D12DescriptorHeap *desc_heap = imgui_desc_heap.Get();
     cmd_list->SetDescriptorHeaps(1, &desc_heap);
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd_list.Get());
-
-    auto b = dxr::barrier_transition(
-        back_buffer.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+#endif
+    auto b = dxr::barrier_transition(back_buffers[back_buffer_idx].Get(),
+                                     D3D12_RESOURCE_STATE_RENDER_TARGET,
+                                     D3D12_RESOURCE_STATE_PRESENT);
     cmd_list->ResourceBarrier(1, &b);
 
     CHECK_ERR(cmd_list->Close());
@@ -214,6 +225,13 @@ void DXDisplay::display_native(dxr::Texture2D &img)
     // Execute the command list and present
     ID3D12CommandList *cmd_lists = cmd_list.Get();
     cmd_queue->ExecuteCommandLists(1, &cmd_lists);
+
+    // TODO: this is a total hack vs. merging the cmd lists? will it miss the dependency?
+#if 0
+     std::array<ID3D12CommandList *, 2> cmd_lists = {dxr_renderer->render_cmd_list.Get(),
+                                                    cmd_list.Get()};
+    cmd_queue->ExecuteCommandLists(2, cmd_lists.data());
+#endif
     if (allow_tearing) {
         CHECK_ERR(swap_chain->Present(0, DXGI_PRESENT_ALLOW_TEARING));
     } else {
@@ -228,6 +246,7 @@ void DXDisplay::display_native(dxr::Texture2D &img)
         CHECK_ERR(fence->SetEventOnCompletion(signal_val, fence_evt));
         WaitForSingleObject(fence_evt, INFINITE);
     }
+    back_buffer_idx = (back_buffer_idx + 1) % back_buffers.size();
 }
 
 size_t DXDisplay::fb_linear_row_pitch() const
@@ -253,16 +272,13 @@ void DXDisplay::display(const std::vector<uint32_t> &img)
     CHECK_ERR(cmd_allocator->Reset());
     CHECK_ERR(cmd_list->Reset(cmd_allocator.Get(), nullptr));
 
-    const uint32_t back_buffer_idx = swap_chain->GetCurrentBackBufferIndex();
-    ComPtr<ID3D12Resource> back_buffer;
-    CHECK_ERR(swap_chain->GetBuffer(back_buffer_idx, IID_PPV_ARGS(&back_buffer)));
-
-    auto b = dxr::barrier_transition(
-        back_buffer.Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
+    auto b = dxr::barrier_transition(back_buffers[back_buffer_idx].Get(),
+                                     D3D12_RESOURCE_STATE_PRESENT,
+                                     D3D12_RESOURCE_STATE_COPY_DEST);
     cmd_list->ResourceBarrier(1, &b);
 
     D3D12_TEXTURE_COPY_LOCATION dst_desc = {0};
-    dst_desc.pResource = back_buffer.Get();
+    dst_desc.pResource = back_buffers[back_buffer_idx].Get();
     dst_desc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     dst_desc.SubresourceIndex = 0;
 
@@ -285,8 +301,9 @@ void DXDisplay::display(const std::vector<uint32_t> &img)
     region.back = 1;
     cmd_list->CopyTextureRegion(&dst_desc, 0, 0, 0, &src_desc, &region);
 
-    b = dxr::barrier_transition(
-        back_buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    b = dxr::barrier_transition(back_buffers[back_buffer_idx].Get(),
+                                D3D12_RESOURCE_STATE_COPY_DEST,
+                                D3D12_RESOURCE_STATE_RENDER_TARGET);
     cmd_list->ResourceBarrier(1, &b);
 
     // Render ImGui to the framebuffer
@@ -295,8 +312,9 @@ void DXDisplay::display(const std::vector<uint32_t> &img)
     cmd_list->SetDescriptorHeaps(1, &desc_heap);
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd_list.Get());
 
-    b = dxr::barrier_transition(
-        back_buffer.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+    b = dxr::barrier_transition(back_buffers[back_buffer_idx].Get(),
+                                D3D12_RESOURCE_STATE_RENDER_TARGET,
+                                D3D12_RESOURCE_STATE_PRESENT);
     cmd_list->ResourceBarrier(1, &b);
 
     CHECK_ERR(cmd_list->Close());

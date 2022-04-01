@@ -31,10 +31,9 @@ const auto *CLOSESTHIT_SHADER_NAME = L"ClosestHit";
 
 using Microsoft::WRL::ComPtr;
 
-RenderDXR::RenderDXR(Microsoft::WRL::ComPtr<ID3D12Device5> device)
-    : device(device), native_display(true)
+RenderDXR::RenderDXR(DXDisplay *display) : device(display->device), native_display(true)
 {
-    create_device_objects();
+    create_device_objects(display);
 }
 
 RenderDXR::RenderDXR() : native_display(false)
@@ -120,7 +119,7 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
 
     if (rt_pipeline.get()) {
         build_descriptor_heap();
-        record_command_lists();
+        // record_command_lists();
     }
 }
 
@@ -446,7 +445,7 @@ void RenderDXR::set_scene(const Scene &scene)
     build_raytracing_pipeline();
     build_shader_binding_table();
     build_descriptor_heap();
-    record_command_lists();
+    // record_command_lists();
 }
 
 RenderStats RenderDXR::render(const glm::vec3 &pos,
@@ -466,14 +465,14 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
 
     update_view_parameters(pos, dir, up, fovy);
 
-    auto start = high_resolution_clock::now();
-    ID3D12CommandList *render_cmds = render_cmd_list.Get();
-    cmd_queue->ExecuteCommandLists(1, &render_cmds);
+    // auto start = high_resolution_clock::now();
+    // ID3D12CommandList *render_cmds = render_cmd_list.Get();
+    // cmd_queue->ExecuteCommandLists(1, &render_cmds);
 
     // Signal specifically on the completion of the ray tracing work so we can time it
     // separately from the image readback
-    const uint64_t render_signal_val = fence_value++;
-    CHECK_ERR(cmd_queue->Signal(fence.Get(), render_signal_val));
+    // const uint64_t render_signal_val = fence_value++;
+    // CHECK_ERR(cmd_queue->Signal(fence.Get(), render_signal_val));
 
 #ifdef REPORT_RAY_STATS
     const bool need_readback = true;
@@ -486,16 +485,30 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
         cmd_queue->ExecuteCommandLists(1, &readback_cmds);
     }
 
+#if 0
     if (fence->GetCompletedValue() < render_signal_val) {
         CHECK_ERR(fence->SetEventOnCompletion(render_signal_val, fence_evt));
         WaitForSingleObject(fence_evt, INFINITE);
     }
     auto end = high_resolution_clock::now();
     stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
-
+#endif
     // Wait for the image readback commands to complete as well
-    sync_gpu();
+    // sync_gpu();
 
+    ++frame_id;
+    return stats;
+}
+
+RenderStats RenderDXR::readback_render_stats(const bool readback_framebuffer)
+{
+    RenderStats stats;
+
+#ifdef REPORT_RAY_STATS
+    const bool need_readback = true;
+#else
+    const bool need_readback = !native_display || readback_framebuffer;
+#endif
     // Read back the timestamps for DispatchRays to compute the true time spent rendering
     {
         const uint64_t *timestamps = static_cast<const uint64_t *>(query_resolve_buffer.map());
@@ -508,7 +521,6 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
 
         query_resolve_buffer.unmap();
     }
-
     if (need_readback) {
         // Map the readback buf and copy out the rendered image
         // We may have needed some padding for the readback buffer, so we might have to read
@@ -548,26 +560,31 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
                         [](const uint64_t &total, const uint16_t &c) { return total + c; });
     stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
 #endif
-
-    ++frame_id;
     return stats;
 }
 
-void RenderDXR::create_device_objects()
+void RenderDXR::create_device_objects(DXDisplay *display)
 {
     device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
     fence_evt = CreateEvent(nullptr, false, false, nullptr);
 
     // Create the command queue and command allocator
-    D3D12_COMMAND_QUEUE_DESC queue_desc = {0};
-    queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-    queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-    CHECK_ERR(device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&cmd_queue)));
+    if (!display) {
+        D3D12_COMMAND_QUEUE_DESC queue_desc = {0};
+        queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+        queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+        CHECK_ERR(device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&cmd_queue)));
+    } else {
+        cmd_queue = display->cmd_queue;
+    }
     CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
                                              IID_PPV_ARGS(&cmd_allocator)));
 
     CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
                                              IID_PPV_ARGS(&render_cmd_allocator)));
+
+    CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                             IID_PPV_ARGS(&readback_cmd_allocator)));
 
     // Make the command lists
     CHECK_ERR(device->CreateCommandList(0,
@@ -610,8 +627,8 @@ void RenderDXR::create_device_objects()
         align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
         D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
-    // Our query heap will store two timestamps, the time that DispatchRays starts and the time
-    // it ends
+    // Our query heap will store two timestamps, the time that DispatchRays starts and the
+    // time it ends
     D3D12_QUERY_HEAP_DESC timing_query_heap_desc = {};
     timing_query_heap_desc.Count = 2;
     timing_query_heap_desc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
@@ -689,8 +706,9 @@ void RenderDXR::build_raytracing_pipeline()
 #endif
 
     // Setup hit groups and shader root signatures for our instances.
-    // For now this is also easy since they all share the same programs and root signatures,
-    // but we just need different hitgroups to set the different params for the meshes
+    // For now this is also easy since they all share the same programs and root
+    // signatures, but we just need different hitgroups to set the different params for the
+    // meshes
     std::vector<std::wstring> hg_names;
     for (size_t i = 0; i < parameterized_meshes.size(); ++i) {
         const auto &pm = parameterized_meshes[i];
@@ -710,8 +728,8 @@ void RenderDXR::build_raytracing_pipeline()
 
 void RenderDXR::build_shader_resource_heap()
 {
-    // The CBV/SRV/UAV resource heap has the pointers/views things to our output image buffer
-    // and the top level acceleration structure, and any textures
+    // The CBV/SRV/UAV resource heap has the pointers/views things to our output image
+    // buffer and the top level acceleration structure, and any textures
     raygen_desc_heap = dxr::DescriptorHeapBuilder()
 #if REPORT_RAY_STATS
                            .add_uav_range(3, 0, 0)
@@ -979,12 +997,13 @@ void RenderDXR::record_command_lists()
                                       query_resolve_buffer.get(),
                                       0);
 
-    CHECK_ERR(render_cmd_list->Close());
+    // CHECK_ERR(render_cmd_list->Close());
 
     // Now copy the rendered image into our readback heap so we can give it back
-    // to our simple window to blit the image (TODO: Maybe in the future keep this on the GPU?
-    // would we be able to share with GL or need a separate DX window backend?)
-    CHECK_ERR(readback_cmd_list->Reset(render_cmd_allocator.Get(), nullptr));
+    // to our simple window to blit the image (TODO: Maybe in the future keep this on the
+    // GPU? would we be able to share with GL or need a separate DX window backend?)
+    CHECK_ERR(readback_cmd_allocator->Reset());
+    CHECK_ERR(readback_cmd_list->Reset(readback_cmd_allocator.Get(), nullptr));
     {
         // Render target from UA -> Copy Source
         auto b = barrier_transition(render_target, D3D12_RESOURCE_STATE_COPY_SOURCE);

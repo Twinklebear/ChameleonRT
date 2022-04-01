@@ -220,7 +220,7 @@ void run_app(const std::vector<std::string> &args,
     while (!done) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL2_ProcessEvent(&event);
+            // ImGui_ImplSDL2_ProcessEvent(&event);
             if (event.type == SDL_QUIT) {
                 done = true;
             }
@@ -278,6 +278,7 @@ void run_app(const std::vector<std::string> &args,
         if (camera_changed) {
             frame_id = 0;
         }
+        display->new_frame();
 
         const bool need_readback = save_image || !validation_img_prefix.empty();
         RenderStats stats = renderer->render(
@@ -285,6 +286,40 @@ void run_app(const std::vector<std::string> &args,
 
         ++frame_id;
         camera_changed = false;
+#if 0
+        ImGui_ImplSDL2_NewFrame(window);
+        ImGui::NewFrame();
+
+        ImGui::Begin("Render Info");
+        ImGui::Text("Render Time: %.3f ms/frame (%.1f FPS)",
+                    render_time / frame_id,
+                    1000.f / (render_time / frame_id));
+
+        if (stats.rays_per_second > 0) {
+            const std::string rays_per_sec = pretty_print_count(rays_per_second / frame_id);
+            ImGui::Text("Rays per-second: %sRay/s", rays_per_sec.c_str());
+        }
+
+        ImGui::Text("Total Application Time: %.3f ms/frame (%.1f FPS)",
+                    1000.0f / ImGui::GetIO().Framerate,
+                    ImGui::GetIO().Framerate);
+        ImGui::Text("RT Backend: %s", rt_backend.c_str());
+        ImGui::Text("CPU: %s", cpu_brand.c_str());
+        ImGui::Text("GPU: %s", gpu_brand.c_str());
+        ImGui::Text("Accumulated Frames: %llu", frame_id);
+        ImGui::Text("Display Frontend: %s", display_frontend.c_str());
+        ImGui::Text("%s", scene_info.c_str());
+
+        if (ImGui::Button("Save Image")) {
+            save_image = true;
+        }
+
+        ImGui::End();
+        ImGui::Render();
+#endif
+        display->display(renderer.get());
+
+        stats = renderer->readback_render_stats(need_readback);
 
         // If we're benchmarking print out the rendering stats and save the image out
         if (benchmark_frame_count > 0 && frame_id == benchmark_frame_count) {
@@ -319,6 +354,10 @@ void run_app(const std::vector<std::string> &args,
             render_time += stats.render_time;
             rays_per_second += stats.rays_per_second;
         }
+        if (frame_id % 50 == 0) {
+            std::cout << "Render time: " << stats.render_time << "ms\n"
+                      << "Avg.: " << render_time / frame_id << "ms\n";
+        }
 
         if (benchmark_frame_count > 0 && frame_id == benchmark_frame_count) {
             std::cout << "Rendered " << benchmark_frame_count << " frames\n"
@@ -328,39 +367,5 @@ void run_app(const std::vector<std::string> &args,
             }
             break;
         }
-
-        display->new_frame();
-
-        ImGui_ImplSDL2_NewFrame(window);
-        ImGui::NewFrame();
-
-        ImGui::Begin("Render Info");
-        ImGui::Text("Render Time: %.3f ms/frame (%.1f FPS)",
-                    render_time / frame_id,
-                    1000.f / (render_time / frame_id));
-
-        if (stats.rays_per_second > 0) {
-            const std::string rays_per_sec = pretty_print_count(rays_per_second / frame_id);
-            ImGui::Text("Rays per-second: %sRay/s", rays_per_sec.c_str());
-        }
-
-        ImGui::Text("Total Application Time: %.3f ms/frame (%.1f FPS)",
-                    1000.0f / ImGui::GetIO().Framerate,
-                    ImGui::GetIO().Framerate);
-        ImGui::Text("RT Backend: %s", rt_backend.c_str());
-        ImGui::Text("CPU: %s", cpu_brand.c_str());
-        ImGui::Text("GPU: %s", gpu_brand.c_str());
-        ImGui::Text("Accumulated Frames: %llu", frame_id);
-        ImGui::Text("Display Frontend: %s", display_frontend.c_str());
-        ImGui::Text("%s", scene_info.c_str());
-
-        if (ImGui::Button("Save Image")) {
-            save_image = true;
-        }
-
-        ImGui::End();
-        ImGui::Render();
-
-        display->display(renderer.get());
     }
 }

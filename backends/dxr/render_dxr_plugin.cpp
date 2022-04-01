@@ -23,7 +23,7 @@ std::unique_ptr<RenderBackend> make_renderer(Display *display)
 {
     auto *dx_display = dynamic_cast<DXDisplay *>(display);
     if (dx_display) {
-        return std::make_unique<RenderDXR>(dx_display->device);
+        return std::make_unique<RenderDXR>(dx_display);
     }
     return std::make_unique<RenderDXR>();
 }
