@@ -471,6 +471,10 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     using namespace std::chrono;
     RenderStats stats;
 
+#ifdef ENABLE_PIX_RUNTIME
+    PIXBeginEvent(PIX_COLOR(0, 0, 255), "RenderDXR::render set = %u", active_set);
+#endif
+
     // TODO: probably just pass frame_id directly
     if (camera_changed) {
         frame_id = 0;
@@ -525,6 +529,10 @@ RenderStats RenderDXR::readback_render_stats(const bool readback_framebuffer)
     const bool need_readback = !native_display || readback_framebuffer;
 #endif
 
+#ifdef ENABLE_PIX_RUNTIME
+    PIXEndEvent();
+#endif
+
     // Readback the oldest frame we submitted
     const uint32_t readback_set = (active_set + 1) % N_FRAMES_IN_FLIGHT;
     active_set = (active_set + 1) % N_FRAMES_IN_FLIGHT;
@@ -534,6 +542,9 @@ RenderStats RenderDXR::readback_render_stats(const bool readback_framebuffer)
         return stats;
     }
 
+#ifdef ENABLE_PIX_RUNTIME
+    PIXBeginEvent(PIX_COLOR(255, 0, 0), "Readback timers for %u", readback_set);
+#endif
     if (frame_fences[readback_set]->GetCompletedValue() < frame_signal_vals[readback_set]) {
         CHECK_ERR(frame_fences[readback_set]->SetEventOnCompletion(
             frame_signal_vals[readback_set], frame_events[readback_set]));
@@ -552,6 +563,9 @@ RenderStats RenderDXR::readback_render_stats(const bool readback_framebuffer)
 
         query_resolve_buffers[readback_set].unmap();
     }
+#ifdef ENABLE_PIX_RUNTIME
+    PIXEndEvent();
+#endif
     if (need_readback) {
         // Map the readback buf and copy out the rendered image
         // We may have needed some padding for the readback buffer, so we might have to read
