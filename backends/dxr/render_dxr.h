@@ -8,6 +8,8 @@
 #include "dxr_utils.h"
 #include "render_backend.h"
 
+#define N_FRAMES_IN_FLIGHT 2
+
 struct RenderDXR : RenderBackend {
     Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
     Microsoft::WRL::ComPtr<ID3D12Device5> device;
@@ -15,13 +17,36 @@ struct RenderDXR : RenderBackend {
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmd_allocator;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
 
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> render_cmd_allocator,
-        readback_cmd_allocator;
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> render_cmd_list, readback_cmd_list;
+    // TODO: Need render cmd alloc and render cmd list per frame in flight
+    std::array<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>, N_FRAMES_IN_FLIGHT>
+        render_cmd_allocators;
+    std::array<Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>, N_FRAMES_IN_FLIGHT>
+        render_cmd_lists;
 
-    dxr::Buffer view_param_buf, img_readback_buf, instance_buf, material_param_buf, light_buf,
-        ray_stats_readback_buf, view_param_device_buf;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> readback_cmd_list;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> readback_cmd_allocator;
 
+    dxr::Buffer img_readback_buf, instance_buf, material_param_buf, light_buf,
+        ray_stats_readback_buf;
+
+    // Do technically need 2 view param device bufs, but it's tough to swap them out because
+    // they're in the SBT Hacky testing solution is to just not change the view params after
+    // the first frame?
+    dxr::Buffer view_param_upload_buf;
+    dxr::Buffer view_param_device_buf;
+    bool camera_params_dirty = false;
+
+    uint32_t active_set = 0;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> active_render_cmd_allocator;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> active_render_cmd_list;
+
+    // TODO: I want to still output to the same accum buffer
+    // So then I'd just have one frame in flight while I record the commands for the next one
+    // I think that should be fine because the app design is really that the RT (GPU) work
+    // will be the slower part. The NG1/etc. are just very cheap to run. So if we're building
+    // the next frame on the CPU and can submit it right while the prev rendering is in flight
+    // with a gpu side wait, that should be fine. Then for fast rendering we can still fill the
+    // GPU with frames
     dxr::Texture2D render_target, accum_buffer, ray_stats;
     std::vector<dxr::Texture2D> textures;
 
@@ -42,7 +67,12 @@ struct RenderDXR : RenderBackend {
 
     // Query pool to measure just dispatch rays perf
     Microsoft::WRL::ComPtr<ID3D12QueryHeap> timing_query_heap;
-    dxr::Buffer query_resolve_buffer;
+    std::array<dxr::Buffer, N_FRAMES_IN_FLIGHT> query_resolve_buffers;
+
+    std::array<uint32_t, N_FRAMES_IN_FLIGHT> frame_signal_vals;
+
+    std::array<Microsoft::WRL::ComPtr<ID3D12Fence>, N_FRAMES_IN_FLIGHT> frame_fences;
+    std::array<HANDLE, N_FRAMES_IN_FLIGHT> frame_events;
 
 #ifdef DXR_AO
     float ao_distance = 1e20f;

@@ -23,7 +23,9 @@ struct DXDisplay : Display {
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> cmd_list;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> render_target_desc_heap, imgui_desc_heap;
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 2> render_targets;
+    // I'll need 3 render targets for the double-buffering one so that I have 2 "back" buffers
+    // to work with
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> render_targets;
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> back_buffers;
     size_t back_buffer_idx = 0;
 

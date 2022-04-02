@@ -121,7 +121,7 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
     if (!swap_chain) {
         // Describe and create the swap chain.
         DXGI_SWAP_CHAIN_DESC1 swap_chain_desc = {0};
-        swap_chain_desc.BufferCount = 2;
+        swap_chain_desc.BufferCount = render_targets.size();
         swap_chain_desc.Width = fb_dims.x;
         swap_chain_desc.Height = fb_dims.y;
         swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -137,8 +137,11 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
         CHECK_ERR(sc.As(&swap_chain));
     } else {
         // If the swap chain already exists, resize it
-        CHECK_ERR(swap_chain->ResizeBuffers(
-            2, fb_dims.x, fb_dims.y, DXGI_FORMAT_R8G8B8A8_UNORM, swap_chain_flags));
+        CHECK_ERR(swap_chain->ResizeBuffers(render_targets.size(),
+                                            fb_dims.x,
+                                            fb_dims.y,
+                                            DXGI_FORMAT_R8G8B8A8_UNORM,
+                                            swap_chain_flags));
     }
 
     const uint32_t rtv_descriptor_size =
@@ -156,7 +159,7 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
 
     // Get the render targets from the swap chain
     back_buffer_idx = swap_chain->GetCurrentBackBufferIndex();
-    for (size_t i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < render_targets.size(); ++i) {
         ComPtr<ID3D12Resource> back_buffer;
         CHECK_ERR(swap_chain->GetBuffer(i, IID_PPV_ARGS(&back_buffer)));
         back_buffers.push_back(back_buffer);
@@ -185,7 +188,7 @@ void DXDisplay::display_native(RenderDXR *dxr_renderer, dxr::Texture2D &img)
 
     dxr_renderer->record_command_lists();
 
-    ComPtr<ID3D12GraphicsCommandList4> cmd_list = dxr_renderer->render_cmd_list;
+    ComPtr<ID3D12GraphicsCommandList4> cmd_list = dxr_renderer->active_render_cmd_list;
     {
         const std::array<D3D12_RESOURCE_BARRIER, 2> b = {
             dxr::barrier_transition(back_buffers[back_buffer_idx].Get(),
@@ -238,14 +241,11 @@ void DXDisplay::display_native(RenderDXR *dxr_renderer, dxr::Texture2D &img)
         CHECK_ERR(swap_chain->Present(1, 0));
     }
 
-    // Sync with the fence to wait for the frame to be presented
+    // Set up signal to watch for when this frame finishes
     const uint64_t signal_val = fence_value++;
-    CHECK_ERR(cmd_queue->Signal(fence.Get(), signal_val));
-
-    if (fence->GetCompletedValue() < signal_val) {
-        CHECK_ERR(fence->SetEventOnCompletion(signal_val, fence_evt));
-        WaitForSingleObject(fence_evt, INFINITE);
-    }
+    CHECK_ERR(cmd_queue->Signal(dxr_renderer->frame_fences[dxr_renderer->active_set].Get(),
+                                signal_val));
+    dxr_renderer->frame_signal_vals[dxr_renderer->active_set] = signal_val;
     back_buffer_idx = (back_buffer_idx + 1) % back_buffers.size();
 }
 

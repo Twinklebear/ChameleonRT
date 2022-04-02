@@ -68,6 +68,15 @@ RenderDXR::RenderDXR() : native_display(false)
 
 RenderDXR::~RenderDXR()
 {
+    // Wait for any pending frames
+    for (size_t i = 0; i < frame_fences.size(); ++i) {
+        if (frame_signal_vals[i] != std::numeric_limits<uint32_t>::max() &&
+            frame_fences[i]->GetCompletedValue() < frame_signal_vals[i]) {
+            frame_fences[i]->SetEventOnCompletion(frame_signal_vals[i], frame_events[i]);
+            WaitForSingleObject(frame_events[i], INFINITE);
+        }
+        CloseHandle(frame_events[i]);
+    }
     CloseHandle(fence_evt);
 }
 
@@ -461,9 +470,11 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     // TODO: probably just pass frame_id directly
     if (camera_changed) {
         frame_id = 0;
+        update_view_parameters(pos, dir, up, fovy);
     }
 
-    update_view_parameters(pos, dir, up, fovy);
+    active_render_cmd_allocator = render_cmd_allocators[active_set];
+    active_render_cmd_list = render_cmd_lists[active_set];
 
     // auto start = high_resolution_clock::now();
     // ID3D12CommandList *render_cmds = render_cmd_list.Get();
@@ -480,7 +491,7 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     const bool need_readback = !native_display || readback_framebuffer;
 #endif
 
-    if (need_readback) {
+    if (false) {
         ID3D12CommandList *readback_cmds = readback_cmd_list.Get();
         cmd_queue->ExecuteCommandLists(1, &readback_cmds);
     }
@@ -509,9 +520,25 @@ RenderStats RenderDXR::readback_render_stats(const bool readback_framebuffer)
 #else
     const bool need_readback = !native_display || readback_framebuffer;
 #endif
+
+    // Readback the oldest frame we submitted
+    const uint32_t readback_set = (active_set + 1) % N_FRAMES_IN_FLIGHT;
+    active_set = (active_set + 1) % N_FRAMES_IN_FLIGHT;
+
+    // If the frame hasn't been rendered yet we don't have anything to wait for
+    if (frame_signal_vals[readback_set] == std::numeric_limits<uint32_t>::max()) {
+        return stats;
+    }
+
+    if (frame_fences[readback_set]->GetCompletedValue() < frame_signal_vals[readback_set]) {
+        CHECK_ERR(frame_fences[readback_set]->SetEventOnCompletion(
+            frame_signal_vals[readback_set], frame_events[readback_set]));
+        WaitForSingleObject(frame_events[readback_set], INFINITE);
+    }
     // Read back the timestamps for DispatchRays to compute the true time spent rendering
     {
-        const uint64_t *timestamps = static_cast<const uint64_t *>(query_resolve_buffer.map());
+        const uint64_t *timestamps =
+            static_cast<const uint64_t *>(query_resolve_buffers[readback_set].map());
         uint64_t timestamp_freq = 0;
         cmd_queue->GetTimestampFrequency(&timestamp_freq);
 
@@ -519,7 +546,7 @@ RenderStats RenderDXR::readback_render_stats(const bool readback_framebuffer)
         const double elapsed_time = static_cast<double>(delta) / timestamp_freq * 1000.0;
         stats.render_time = elapsed_time;
 
-        query_resolve_buffer.unmap();
+        query_resolve_buffers[readback_set].unmap();
     }
     if (need_readback) {
         // Map the readback buf and copy out the rendered image
@@ -568,6 +595,12 @@ void RenderDXR::create_device_objects(DXDisplay *display)
     device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
     fence_evt = CreateEvent(nullptr, false, false, nullptr);
 
+    for (size_t i = 0; i < frame_events.size(); ++i) {
+        device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&frame_fences[i]));
+        frame_events[i] = CreateEvent(nullptr, false, false, nullptr);
+    }
+    frame_signal_vals.fill(std::numeric_limits<uint32_t>::max());
+
     // Create the command queue and command allocator
     if (!display) {
         D3D12_COMMAND_QUEUE_DESC queue_desc = {0};
@@ -580,9 +613,10 @@ void RenderDXR::create_device_objects(DXDisplay *display)
     CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
                                              IID_PPV_ARGS(&cmd_allocator)));
 
-    CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                             IID_PPV_ARGS(&render_cmd_allocator)));
-
+    for (size_t i = 0; i < render_cmd_allocators.size(); ++i) {
+        CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                                 IID_PPV_ARGS(&render_cmd_allocators[i])));
+    }
     CHECK_ERR(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
                                              IID_PPV_ARGS(&readback_cmd_allocator)));
 
@@ -594,12 +628,15 @@ void RenderDXR::create_device_objects(DXDisplay *display)
                                         IID_PPV_ARGS(&cmd_list)));
     CHECK_ERR(cmd_list->Close());
 
-    CHECK_ERR(device->CreateCommandList(0,
-                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                        cmd_allocator.Get(),
-                                        nullptr,
-                                        IID_PPV_ARGS(&render_cmd_list)));
-    CHECK_ERR(render_cmd_list->Close());
+    for (size_t i = 0; i < render_cmd_lists.size(); ++i) {
+        CHECK_ERR(device->CreateCommandList(0,
+                                            D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                            cmd_allocator.Get(),
+                                            nullptr,
+                                            IID_PPV_ARGS(&render_cmd_lists[i])));
+
+        CHECK_ERR(render_cmd_lists[i]->Close());
+    }
 
     CHECK_ERR(device->CreateCommandList(0,
                                         D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -616,7 +653,7 @@ void RenderDXR::create_device_objects(DXDisplay *display)
     // vec4 cam_dv
     // vec4 cam_dir_top_left
     // uint32_t frame_id
-    view_param_buf = dxr::Buffer::upload(
+    view_param_upload_buf = dxr::Buffer::upload(
         device.Get(),
         align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
         D3D12_RESOURCE_STATE_GENERIC_READ);
@@ -630,13 +667,15 @@ void RenderDXR::create_device_objects(DXDisplay *display)
     // Our query heap will store two timestamps, the time that DispatchRays starts and the
     // time it ends
     D3D12_QUERY_HEAP_DESC timing_query_heap_desc = {};
-    timing_query_heap_desc.Count = 2;
+    timing_query_heap_desc.Count = render_cmd_allocators.size() * 2;
     timing_query_heap_desc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
     device->CreateQueryHeap(&timing_query_heap_desc, IID_PPV_ARGS(&timing_query_heap));
 
     // Buffer to readback query results in to
-    query_resolve_buffer = dxr::Buffer::readback(
-        device.Get(), sizeof(uint64_t) * 2, D3D12_RESOURCE_STATE_COPY_DEST);
+    for (size_t i = 0; i < query_resolve_buffers.size(); ++i) {
+        query_resolve_buffers[i] = dxr::Buffer::readback(
+            device.Get(), sizeof(uint64_t) * 2, D3D12_RESOURCE_STATE_COPY_DEST);
+    }
 }
 
 void RenderDXR::build_raytracing_pipeline()
@@ -834,6 +873,7 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos,
                                        const glm::vec3 &up,
                                        const float fovy)
 {
+    camera_params_dirty = true;
     glm::vec2 img_plane_size;
     img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
     img_plane_size.x =
@@ -843,7 +883,7 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos,
     const glm::vec3 dir_dv = -glm::normalize(glm::cross(dir_du, dir)) * img_plane_size.y;
     const glm::vec3 dir_top_left = dir - 0.5f * dir_du - 0.5f * dir_dv;
 
-    uint8_t *buf = static_cast<uint8_t *>(view_param_buf.map());
+    uint8_t *buf = static_cast<uint8_t *>(view_param_upload_buf.map());
     {
         glm::vec4 *vecs = reinterpret_cast<glm::vec4 *>(buf);
         vecs[0] = glm::vec4(pos, 0.f);
@@ -856,7 +896,7 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos,
         *fid = frame_id;
     }
 
-    view_param_buf.unmap();
+    view_param_upload_buf.unmap();
 }
 
 void RenderDXR::build_descriptor_heap()
@@ -960,42 +1000,48 @@ void RenderDXR::build_descriptor_heap()
 
 void RenderDXR::record_command_lists()
 {
-    CHECK_ERR(render_cmd_allocator->Reset());
-    CHECK_ERR(render_cmd_list->Reset(render_cmd_allocator.Get(), nullptr));
+    CHECK_ERR(active_render_cmd_allocator->Reset());
+    CHECK_ERR(active_render_cmd_list->Reset(active_render_cmd_allocator.Get(), nullptr));
 
     // Copy the updated view params from the upload heap to the device buffer
-    {
-        auto barrier =
-            barrier_transition(view_param_device_buf, D3D12_RESOURCE_STATE_COPY_DEST);
-        render_cmd_list->ResourceBarrier(1, &barrier);
-    }
-    render_cmd_list->CopyResource(view_param_device_buf.get(), view_param_buf.get());
-    {
-        auto barrier = barrier_transition(view_param_device_buf,
-                                          D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        render_cmd_list->ResourceBarrier(1, &barrier);
+    if (camera_params_dirty) {
+        camera_params_dirty = false;
+        {
+            auto barrier =
+                barrier_transition(view_param_device_buf, D3D12_RESOURCE_STATE_COPY_DEST);
+            active_render_cmd_list->ResourceBarrier(1, &barrier);
+        }
+        active_render_cmd_list->CopyResource(view_param_device_buf.get(),
+                                             view_param_upload_buf.get());
+        {
+            auto barrier = barrier_transition(view_param_device_buf,
+                                              D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            active_render_cmd_list->ResourceBarrier(1, &barrier);
+        }
     }
 
     // TODO: We'll need a second desc. heap for the sampler and bind both of them here
     std::array<ID3D12DescriptorHeap *, 2> desc_heaps = {raygen_desc_heap.get(),
                                                         raygen_sampler_heap.get()};
-    render_cmd_list->SetDescriptorHeaps(desc_heaps.size(), desc_heaps.data());
-    render_cmd_list->SetPipelineState1(rt_pipeline.get());
-    render_cmd_list->SetComputeRootSignature(rt_pipeline.global_sig());
+    active_render_cmd_list->SetDescriptorHeaps(desc_heaps.size(), desc_heaps.data());
+    active_render_cmd_list->SetPipelineState1(rt_pipeline.get());
+    active_render_cmd_list->SetComputeRootSignature(rt_pipeline.global_sig());
 
-    render_cmd_list->EndQuery(timing_query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
+    active_render_cmd_list->EndQuery(
+        timing_query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, active_set * 2);
 
     D3D12_DISPATCH_RAYS_DESC dispatch_rays = rt_pipeline.dispatch_rays(render_target.dims());
-    render_cmd_list->DispatchRays(&dispatch_rays);
+    active_render_cmd_list->DispatchRays(&dispatch_rays);
 
-    render_cmd_list->EndQuery(timing_query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
+    active_render_cmd_list->EndQuery(
+        timing_query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, active_set * 2 + 1);
 
-    render_cmd_list->ResolveQueryData(timing_query_heap.Get(),
-                                      D3D12_QUERY_TYPE_TIMESTAMP,
-                                      0,
-                                      2,
-                                      query_resolve_buffer.get(),
-                                      0);
+    active_render_cmd_list->ResolveQueryData(timing_query_heap.Get(),
+                                             D3D12_QUERY_TYPE_TIMESTAMP,
+                                             active_set * 2,
+                                             2,
+                                             query_resolve_buffers[active_set].get(),
+                                             0);
 
     // CHECK_ERR(render_cmd_list->Close());
 
