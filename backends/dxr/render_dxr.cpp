@@ -11,6 +11,10 @@
 #include "util.h"
 #include <glm/ext.hpp>
 
+#ifdef ENABLE_PIX_RUNTIME
+#include <pix3.h>
+#endif
+
 #define NUM_RAY_TYPES 2
 
 using Microsoft::WRL::ComPtr;
