@@ -10,6 +10,10 @@
 #include "util.h"
 #include <glm/ext.hpp>
 
+#ifdef ENABLE_PIX_RUNTIME
+#include <pix3.h>
+#endif
+
 #include DXIL_EMBED_INCLUDE
 
 #ifdef DXR_NG
@@ -543,7 +547,7 @@ RenderStats RenderDXR::readback_render_stats(const bool readback_framebuffer)
         cmd_queue->GetTimestampFrequency(&timestamp_freq);
 
         const uint64_t delta = timestamps[1] - timestamps[0];
-        const double elapsed_time = static_cast<double>(delta) / timestamp_freq * 1000.0;
+        const double elapsed_time = static_cast<double>(delta) / timestamp_freq * 1e3;
         stats.render_time = elapsed_time;
 
         query_resolve_buffers[readback_set].unmap();

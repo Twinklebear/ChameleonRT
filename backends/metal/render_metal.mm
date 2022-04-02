@@ -39,17 +39,19 @@ void RenderMetal::initialize(const int fb_width, const int fb_height)
         frame_id = 0;
         img.resize(fb_width * fb_height);
 
-        render_target = std::make_shared<metal::Texture2D>(*context,
-                                                           fb_width,
-                                                           fb_height,
-                                                           MTLPixelFormatRGBA8Unorm,
-                                                           MTLTextureUsageShaderWrite);
+        render_target = std::make_shared<metal::Texture2D>(
+            *context,
+            fb_width,
+            fb_height,
+            MTLPixelFormatRGBA8Unorm,
+            MTLTextureUsageShaderWrite | MTLTextureUsageShaderRead);
 
-        accum_buffer = std::make_shared<metal::Texture2D>(*context,
-                                                          fb_width,
-                                                          fb_height,
-                                                          MTLPixelFormatRGBA32Float,
-                                                          MTLTextureUsageShaderWrite);
+        accum_buffer = std::make_shared<metal::Texture2D>(
+            *context,
+            fb_width,
+            fb_height,
+            MTLPixelFormatRGBA32Float,
+            MTLTextureUsageShaderWrite | MTLTextureUsageShaderRead);
 
 #ifdef REPORT_RAY_STATS
         ray_stats_readback.resize(fb_width * fb_height);
@@ -178,7 +180,9 @@ void RenderMetal::set_scene(const Scene &scene)
             const size_t tex_args_size = args_builder.encoded_length();
 
             texture_arg_buffer = std::make_shared<metal::Buffer>(
-                *context, tex_args_size * textures.size(), MTLResourceStorageModeManaged);
+                *context,
+                tex_args_size * std::max(textures.size(), size_t(1)),
+                MTLResourceStorageModeManaged);
 
             size_t tex_args_offset = 0;
             for (const auto &t : textures) {
@@ -210,6 +214,7 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
         ViewParams view_params = compute_view_parameters(pos, dir, up, fovy);
 
         auto start = high_resolution_clock::now();
+        // TODO: Look into using an indirect command buffer to improve perf/latency issue
         id<MTLCommandBuffer> command_buffer = context->command_buffer();
         id<MTLComputeCommandEncoder> command_encoder = [command_buffer computeCommandEncoder];
 

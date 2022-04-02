@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <unordered_map>
 #include <vulkan/vulkan.h>
@@ -58,6 +59,8 @@ struct RenderVulkan : RenderBackend {
     vkrt::ShaderBindingTable shader_table;
 
     VkFence fence = VK_NULL_HANDLE;
+
+    VkQueryPool timing_query_pool;
 
     size_t frame_id = 0;
     bool native_display = false;

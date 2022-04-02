@@ -35,7 +35,7 @@ void main(void){
 GLDisplay::GLDisplay(SDL_Window *win)
     : window(win), gl_context(SDL_GL_CreateContext(win)), render_texture(-1)
 {
-    SDL_GL_SetSwapInterval(1);
+    SDL_GL_SetSwapInterval(0);
     SDL_GL_MakeCurrent(window, gl_context);
 
     if (!gladLoadGL()) {

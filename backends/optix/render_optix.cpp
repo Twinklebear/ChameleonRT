@@ -59,6 +59,10 @@ RenderOptiX::RenderOptiX(bool native_display) : native_display(native_display)
     // TODO: set this val. based on the debug level
     CHECK_OPTIX(optixDeviceContextSetLogCallback(device, log_callback, nullptr, 0));
 
+    for (auto &evt : render_time_events) {
+        cudaEventCreate(&evt);
+    }
+
     launch_params = optix::Buffer(sizeof(LaunchParams));
 }
 
@@ -71,6 +75,9 @@ RenderOptiX::~RenderOptiX()
     optixPipelineDestroy(pipeline);
     optixDeviceContextDestroy(device);
     cudaStreamDestroy(cuda_stream);
+    for (auto &evt : render_time_events) {
+        cudaEventDestroy(evt);
+    }
 }
 
 std::string RenderOptiX::name()
@@ -261,12 +268,10 @@ void RenderOptiX::set_scene(const Scene &scene)
 void RenderOptiX::build_raytracing_pipeline()
 {
     // Setup the OptiX Module (DXR equivalent is the Shader Library)
-
     OptixPipelineCompileOptions pipeline_opts = {};
     pipeline_opts.traversableGraphFlags =
         OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
-    // We pack a pointer to the payload stack var into 2 32bit ints
-    pipeline_opts.numPayloadValues = 2;
+    pipeline_opts.numPayloadValues = 8;
     pipeline_opts.numAttributeValues = 2;
     pipeline_opts.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
     pipeline_opts.pipelineLaunchParamsVariableName = "launch_params";
@@ -380,8 +385,7 @@ RenderStats RenderOptiX::render(const glm::vec3 &pos,
 
     update_view_parameters(pos, dir, up, fovy);
 
-    auto start = high_resolution_clock::now();
-
+    cudaEventRecord(render_time_events[0]);
     CHECK_OPTIX(optixLaunch(pipeline,
                             cuda_stream,
                             launch_params.device_ptr(),
@@ -390,11 +394,11 @@ RenderStats RenderOptiX::render(const glm::vec3 &pos,
                             width,
                             height,
                             1));
+    cudaEventRecord(render_time_events[1]);
 
-    // Sync with the GPU to ensure it actually finishes rendering
-    sync_gpu();
-    auto end = high_resolution_clock::now();
-    stats.render_time = duration_cast<nanoseconds>(end - start).count() * 1.0e-6;
+    // Sync with the rendering completion event
+    cudaEventSynchronize(render_time_events[1]);
+    cudaEventElapsedTime(&stats.render_time, render_time_events[0], render_time_events[1]);
 
 #ifdef REPORT_RAY_STATS
     const bool need_readback = true;

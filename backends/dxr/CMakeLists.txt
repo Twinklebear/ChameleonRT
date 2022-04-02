@@ -5,9 +5,17 @@ if (NOT ENABLE_DXR)
     return()
 endif()
 
+cmake_dependent_option(ENABLE_PIX_RUNTIME
+    "Build support for WinPixEventRuntime tracing. Set WinPixEventRuntime_DIR" OFF
+    "ENABLE_DXR" OFF)
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 find_package(D3D12 REQUIRED)
+
+if (ENABLE_PIX_RUNTIME)
+    find_package(WinPixEventRuntime REQUIRED)
+endif()
 
 set(HLSL_COMPILE_DEFNS "")
 if (REPORT_RAY_STATS)
@@ -85,6 +93,15 @@ foreach (VARIANT_SUFFIX SHADER_VARIANT_SUFFIX VARIANT_DEFINE SHADER_VARIANT_DEFI
         util
         display
         ${D3D12_LIBRARIES})
+
+    if (ENABLE_PIX_RUNTIME)
+        target_compile_options(crt_dxr${VARIANT_SUFFIX} PUBLIC
+            -DUSE_PIX=1
+            -DENABLE_PIX_RUNTIME=1)
+
+        target_link_libraries(crt_dxr${VARIANT_SUFFIX} PUBLIC
+            PIX::WinPixEventRuntime)
+    endif()
 
     install(TARGETS crt_dxr${VARIANT_SUFFIX}
         LIBRARY DESTINATION bin)

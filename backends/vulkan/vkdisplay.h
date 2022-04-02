@@ -31,6 +31,8 @@ struct VKDisplay : Display {
     VkSemaphore present_ready_semaphore = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
 
+    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
+
     VKDisplay(SDL_Window *window);
 
     ~VKDisplay();

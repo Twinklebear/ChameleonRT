@@ -31,6 +31,7 @@ MetalDisplay::MetalDisplay(SDL_Window *window)
         data->layer.device = context->device;
         data->layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
         data->layer.framebufferOnly = NO;
+        data->layer.displaySyncEnabled = NO;
 
         NSWindow *nswindow = wm_info.info.cocoa.window;
         nswindow.contentView.layer = data->layer;

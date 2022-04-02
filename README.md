@@ -10,7 +10,7 @@ The San Miguel,
 Sponza and Rungholt models shown below are from Morgan McGuire's [Computer Graphics Data Archive](https://casual-effects.com/data/).
 
 Binaries built for each platform with support for all rendering backends available on that platform
-can be downloaded from the latest [Actions](https://github.com/Twinklebear/ChameleonRT/actions).
+can be downloaded from the [Releases](https://github.com/Twinklebear/ChameleonRT/releases) or the latest [Actions](https://github.com/Twinklebear/ChameleonRT/actions) artifacts.
 On Linux set the `LD_LIBRARY_PATH` to include the directory where you extract the
 application, on macOS do the same for `DYLD_LIBRARY_PATH`. On macOS you may need to do some
 tweaking/security allowances to get the application to run. Only x86_64 binaries are provided for macOS at the moment.
