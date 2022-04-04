@@ -124,9 +124,12 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
                                        DXGI_FORMAT_R16_UINT,
                                        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
-    ray_stats_readback_buf = dxr::Buffer::readback(device.Get(),
-                                                   ray_stats.linear_row_pitch() * fb_height,
-                                                   D3D12_RESOURCE_STATE_COPY_DEST);
+    for (size_t i = 0; i < ray_stats_readback_bufs.size(); ++i) {
+        ray_stats_readback_bufs[i] =
+            dxr::Buffer::readback(device.Get(),
+                                  ray_stats.linear_row_pitch() * fb_height,
+                                  D3D12_RESOURCE_STATE_COPY_DEST);
+    }
     ray_counts.resize(ray_stats.dims().x * ray_stats.dims().y, 0);
 #endif
 
@@ -481,8 +484,10 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
         update_view_parameters(pos, dir, up, fovy);
     }
 
+    if (readback_framebuffer) {
+        readback_image = true;
+    }
     active_render_cmd_allocator = render_cmd_allocators[active_set];
-    active_render_cmd_list = render_cmd_lists[active_set];
 
     // auto start = high_resolution_clock::now();
     // ID3D12CommandList *render_cmds = render_cmd_list.Get();
@@ -492,17 +497,6 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     // separately from the image readback
     // const uint64_t render_signal_val = fence_value++;
     // CHECK_ERR(cmd_queue->Signal(fence.Get(), render_signal_val));
-
-#ifdef REPORT_RAY_STATS
-    const bool need_readback = true;
-#else
-    const bool need_readback = !native_display || readback_framebuffer;
-#endif
-
-    if (false) {
-        ID3D12CommandList *readback_cmds = readback_cmd_list.Get();
-        cmd_queue->ExecuteCommandLists(1, &readback_cmds);
-    }
 
 #if 0
     if (fence->GetCompletedValue() < render_signal_val) {
@@ -519,15 +513,9 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
     return stats;
 }
 
-RenderStats RenderDXR::readback_render_stats(const bool readback_framebuffer)
+RenderStats RenderDXR::readback_render_stats()
 {
     RenderStats stats;
-
-#ifdef REPORT_RAY_STATS
-    const bool need_readback = true;
-#else
-    const bool need_readback = !native_display || readback_framebuffer;
-#endif
 
 #ifdef ENABLE_PIX_RUNTIME
     PIXEndEvent();
@@ -566,13 +554,13 @@ RenderStats RenderDXR::readback_render_stats(const bool readback_framebuffer)
 #ifdef ENABLE_PIX_RUNTIME
     PIXEndEvent();
 #endif
-    if (need_readback) {
+    if (readback_image) {
         // Map the readback buf and copy out the rendered image
         // We may have needed some padding for the readback buffer, so we might have to read
         // row by row.
         if (render_target.linear_row_pitch() ==
             render_target.dims().x * render_target.pixel_size()) {
-            std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
+            std::memcpy(pg.data(), img_readback_buf.map(), img_readback_buf.size());
         } else {
             uint8_t *buf = static_cast<uint8_t *>(img_readback_buf.map());
             for (uint32_t y = 0; y < render_target.dims().y; ++y) {
@@ -582,27 +570,34 @@ RenderStats RenderDXR::readback_render_stats(const bool readback_framebuffer)
             }
         }
         img_readback_buf.unmap();
+        readback_image = false;
     }
 
 #ifdef REPORT_RAY_STATS
+#ifdef DXR_NG
+    // For NG we know how many rays are traced, it's just # pixels * # samples per pixel
+    const uint64_t total_rays = ray_stats.dims().x * ray_stats.dims().y * NUM_PIXEL_SAMPLES;
+#else
     if (ray_stats.linear_row_pitch() == ray_stats.dims().x * ray_stats.pixel_size()) {
-        std::memcpy(
-            ray_counts.data(), ray_stats_readback_buf.map(), ray_stats_readback_buf.size());
+        std::memcpy(ray_counts.data(),
+                    ray_stats_readback_bufs[readback_set].map(),
+                    ray_stats_readback_bufs[readback_set].size());
     } else {
-        uint8_t *buf = static_cast<uint8_t *>(ray_stats_readback_buf.map());
+        uint8_t *buf = static_cast<uint8_t *>(ray_stats_readback_bufs[readback_set].map());
         for (uint32_t y = 0; y < ray_stats.dims().y; ++y) {
             std::memcpy(ray_counts.data() + y * ray_stats.dims().x,
                         buf + y * ray_stats.linear_row_pitch(),
                         ray_stats.dims().x * ray_stats.pixel_size());
         }
     }
-    ray_stats_readback_buf.unmap();
+    ray_stats_readback_bufs[readback_set].unmap();
 
     const uint64_t total_rays =
         std::accumulate(ray_counts.begin(),
                         ray_counts.end(),
                         uint64_t(0),
                         [](const uint64_t &total, const uint16_t &c) { return total + c; });
+#endif
     stats.rays_per_second = total_rays / (stats.render_time * 1.0e-3);
 #endif
     return stats;
@@ -646,15 +641,13 @@ void RenderDXR::create_device_objects(DXDisplay *display)
                                         IID_PPV_ARGS(&cmd_list)));
     CHECK_ERR(cmd_list->Close());
 
-    for (size_t i = 0; i < render_cmd_lists.size(); ++i) {
-        CHECK_ERR(device->CreateCommandList(0,
-                                            D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                            cmd_allocator.Get(),
-                                            nullptr,
-                                            IID_PPV_ARGS(&render_cmd_lists[i])));
+    CHECK_ERR(device->CreateCommandList(0,
+                                        D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                        cmd_allocator.Get(),
+                                        nullptr,
+                                        IID_PPV_ARGS(&render_cmd_list)));
 
-        CHECK_ERR(render_cmd_lists[i]->Close());
-    }
+    CHECK_ERR(render_cmd_list->Close());
 
     CHECK_ERR(device->CreateCommandList(0,
                                         D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -670,16 +663,15 @@ void RenderDXR::create_device_objects(DXDisplay *display)
     // vec4 cam_du
     // vec4 cam_dv
     // vec4 cam_dir_top_left
-    // uint32_t frame_id
     view_param_upload_buf = dxr::Buffer::upload(
         device.Get(),
-        align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+        align_to(4 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
         D3D12_RESOURCE_STATE_GENERIC_READ);
 
     // Testing perf of having view params on the device as well
     view_param_device_buf = dxr::Buffer::device(
         device.Get(),
-        align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
+        align_to(4 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
         D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
     // Our query heap will store two timestamps, the time that DispatchRays starts and the
@@ -712,8 +704,9 @@ void RenderDXR::build_raytracing_pipeline()
                                        CLOSESTHIT_SHADER_NAME});
 #endif
 
-    dxr::RootSignature global_root_sig =
-        dxr::RootSignatureBuilder::global().create(device.Get());
+    dxr::RootSignature global_root_sig = dxr::RootSignatureBuilder::global()
+                                             .add_constants("FrameId", 2, 1, 0)
+                                             .create(device.Get());
 
     // Create the root signature for our ray gen shader
     dxr::RootSignature raygen_root_sig =
@@ -909,10 +902,6 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos,
         vecs[2] = glm::vec4(dir_dv, 0.f);
         vecs[3] = glm::vec4(dir_top_left, 0.f);
     }
-    {
-        uint32_t *fid = reinterpret_cast<uint32_t *>(buf + 4 * sizeof(glm::vec4));
-        *fid = frame_id;
-    }
 
     view_param_upload_buf.unmap();
 }
@@ -1019,7 +1008,7 @@ void RenderDXR::build_descriptor_heap()
 void RenderDXR::record_command_lists()
 {
     CHECK_ERR(active_render_cmd_allocator->Reset());
-    CHECK_ERR(active_render_cmd_list->Reset(active_render_cmd_allocator.Get(), nullptr));
+    CHECK_ERR(render_cmd_list->Reset(active_render_cmd_allocator.Get(), nullptr));
 
     // Copy the updated view params from the upload heap to the device buffer
     if (camera_params_dirty) {
@@ -1027,70 +1016,60 @@ void RenderDXR::record_command_lists()
         {
             auto barrier =
                 barrier_transition(view_param_device_buf, D3D12_RESOURCE_STATE_COPY_DEST);
-            active_render_cmd_list->ResourceBarrier(1, &barrier);
+            render_cmd_list->ResourceBarrier(1, &barrier);
         }
-        active_render_cmd_list->CopyResource(view_param_device_buf.get(),
-                                             view_param_upload_buf.get());
+        render_cmd_list->CopyResource(view_param_device_buf.get(),
+                                      view_param_upload_buf.get());
         {
             auto barrier = barrier_transition(view_param_device_buf,
                                               D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            active_render_cmd_list->ResourceBarrier(1, &barrier);
+            render_cmd_list->ResourceBarrier(1, &barrier);
         }
     }
 
     // TODO: We'll need a second desc. heap for the sampler and bind both of them here
     std::array<ID3D12DescriptorHeap *, 2> desc_heaps = {raygen_desc_heap.get(),
                                                         raygen_sampler_heap.get()};
-    active_render_cmd_list->SetDescriptorHeaps(desc_heaps.size(), desc_heaps.data());
-    active_render_cmd_list->SetPipelineState1(rt_pipeline.get());
-    active_render_cmd_list->SetComputeRootSignature(rt_pipeline.global_sig());
+    render_cmd_list->SetDescriptorHeaps(desc_heaps.size(), desc_heaps.data());
+    render_cmd_list->SetPipelineState1(rt_pipeline.get());
+    render_cmd_list->SetComputeRootSignature(rt_pipeline.global_sig());
+    render_cmd_list->SetComputeRoot32BitConstant(0, frame_id, 0);
 
-    active_render_cmd_list->EndQuery(
+    render_cmd_list->EndQuery(
         timing_query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, active_set * 2);
 
     D3D12_DISPATCH_RAYS_DESC dispatch_rays = rt_pipeline.dispatch_rays(render_target.dims());
-    active_render_cmd_list->DispatchRays(&dispatch_rays);
+    render_cmd_list->DispatchRays(&dispatch_rays);
 
-    active_render_cmd_list->EndQuery(
+    render_cmd_list->EndQuery(
         timing_query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, active_set * 2 + 1);
 
-    active_render_cmd_list->ResolveQueryData(timing_query_heap.Get(),
-                                             D3D12_QUERY_TYPE_TIMESTAMP,
-                                             active_set * 2,
-                                             2,
-                                             query_resolve_buffers[active_set].get(),
-                                             0);
+    render_cmd_list->ResolveQueryData(timing_query_heap.Get(),
+                                      D3D12_QUERY_TYPE_TIMESTAMP,
+                                      active_set * 2,
+                                      2,
+                                      query_resolve_buffers[active_set].get(),
+                                      0);
 
-    // CHECK_ERR(render_cmd_list->Close());
-
-    // Now copy the rendered image into our readback heap so we can give it back
-    // to our simple window to blit the image (TODO: Maybe in the future keep this on the
-    // GPU? would we be able to share with GL or need a separate DX window backend?)
-    CHECK_ERR(readback_cmd_allocator->Reset());
-    CHECK_ERR(readback_cmd_list->Reset(readback_cmd_allocator.Get(), nullptr));
-    {
-        // Render target from UA -> Copy Source
+    // Render target from UA -> Copy Source
+    // We don't double-buffer this readback since we're rarely saving frames back anyways
+    if (readback_image) {
         auto b = barrier_transition(render_target, D3D12_RESOURCE_STATE_COPY_SOURCE);
-        readback_cmd_list->ResourceBarrier(1, &b);
-#ifdef REPORT_RAY_STATS
-        b = barrier_transition(ray_stats, D3D12_RESOURCE_STATE_COPY_SOURCE);
-        readback_cmd_list->ResourceBarrier(1, &b);
-#endif
-
-        render_target.readback(readback_cmd_list.Get(), img_readback_buf);
-#ifdef REPORT_RAY_STATS
-        ray_stats.readback(readback_cmd_list.Get(), ray_stats_readback_buf);
-#endif
-
-        // Transition the render target back to UA so we can write to it in the next frame
+        render_cmd_list->ResourceBarrier(1, &b);
+        render_target.readback(render_cmd_list.Get(), img_readback_buf);
         b = barrier_transition(render_target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        readback_cmd_list->ResourceBarrier(1, &b);
-#ifdef REPORT_RAY_STATS
-        b = barrier_transition(ray_stats, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        readback_cmd_list->ResourceBarrier(1, &b);
-#endif
+        render_cmd_list->ResourceBarrier(1, &b);
     }
-    CHECK_ERR(readback_cmd_list->Close());
+
+#if !defined(DXR_NG) && defined(REPORT_RAY_STATS)
+    // We don't need to read the ray counts for NG since it's just # pixels * # samples per
+    // pixel
+    auto b = barrier_transition(ray_stats, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    render_cmd_list->ResourceBarrier(1, &b);
+    ray_stats.readback(render_cmd_list.Get(), ray_stats_readback_bufs[active_set]);
+    b = barrier_transition(ray_stats, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    render_cmd_list->ResourceBarrier(1, &b);
+#endif
 }
 
 void RenderDXR::sync_gpu()

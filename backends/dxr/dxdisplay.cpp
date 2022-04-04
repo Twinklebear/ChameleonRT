@@ -168,7 +168,7 @@ void DXDisplay::resize(const int fb_width, const int fb_height)
 
 void DXDisplay::new_frame()
 {
-    // ImGui_ImplDX12_NewFrame();
+    ImGui_ImplDX12_NewFrame();
 }
 
 void DXDisplay::display(RenderBackend *renderer)
@@ -188,7 +188,7 @@ void DXDisplay::display_native(RenderDXR *dxr_renderer, dxr::Texture2D &img)
 
     dxr_renderer->record_command_lists();
 
-    ComPtr<ID3D12GraphicsCommandList4> cmd_list = dxr_renderer->active_render_cmd_list;
+    ComPtr<ID3D12GraphicsCommandList4> cmd_list = dxr_renderer->render_cmd_list;
     {
         const std::array<D3D12_RESOURCE_BARRIER, 2> b = {
             dxr::barrier_transition(back_buffers[back_buffer_idx].Get(),
@@ -211,7 +211,7 @@ void DXDisplay::display_native(RenderDXR *dxr_renderer, dxr::Texture2D &img)
         cmd_list->ResourceBarrier(b.size(), b.data());
     }
 
-#if 0
+#if 1
     // Render ImGui to the framebuffer
     cmd_list->OMSetRenderTargets(1, &render_targets[back_buffer_idx], false, nullptr);
     ID3D12DescriptorHeap *desc_heap = imgui_desc_heap.Get();
@@ -229,12 +229,6 @@ void DXDisplay::display_native(RenderDXR *dxr_renderer, dxr::Texture2D &img)
     ID3D12CommandList *cmd_lists = cmd_list.Get();
     cmd_queue->ExecuteCommandLists(1, &cmd_lists);
 
-    // TODO: this is a total hack vs. merging the cmd lists? will it miss the dependency?
-#if 0
-     std::array<ID3D12CommandList *, 2> cmd_lists = {dxr_renderer->render_cmd_list.Get(),
-                                                    cmd_list.Get()};
-    cmd_queue->ExecuteCommandLists(2, cmd_lists.data());
-#endif
     if (allow_tearing) {
         CHECK_ERR(swap_chain->Present(0, DXGI_PRESENT_ALLOW_TEARING));
     } else {

@@ -30,7 +30,7 @@ struct RenderBackend {
                                const bool readback_framebuffer) = 0;
 
     // DX only for now for this test
-    virtual RenderStats readback_render_stats(const bool readback_framebuffer)
+    virtual RenderStats readback_render_stats()
     {
         return RenderStats{};
     };

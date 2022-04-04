@@ -7,16 +7,15 @@ RWTexture2D<float4> output : register(u0);
 // Accumulation buffer for progressive refinement
 RWTexture2D<float4> accum_buffer : register(u1);
 
-#ifdef REPORT_RAY_STATS
-RWTexture2D<uint> ray_stats : register(u2);
-#endif
-
 // View params buffer
 cbuffer ViewParams : register(b0) {
     float4 cam_pos;
     float4 cam_du;
     float4 cam_dv;
     float4 cam_dir_top_left;
+}
+
+cbuffer FrameId : register(b2) {
     uint32_t frame_id;
 }
 
@@ -55,10 +54,6 @@ void RayGen_NG() {
     output[pixel] = float4(linear_to_srgb(accum_color.r),
             linear_to_srgb(accum_color.g),
             linear_to_srgb(accum_color.b), 1.f);
-
-#ifdef REPORT_RAY_STATS
-    ray_stats[pixel] = NUM_PIXEL_SAMPLES;
-#endif
 }
 
 [shader("miss")]

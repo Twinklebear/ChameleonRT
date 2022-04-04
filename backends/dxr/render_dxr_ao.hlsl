@@ -21,7 +21,6 @@ cbuffer ViewParams : register(b0) {
     float4 cam_du;
     float4 cam_dv;
     float4 cam_dir_top_left;
-    uint32_t frame_id;
 }
 
 // Raytracing acceleration structure, accessed as a SRV
@@ -35,6 +34,10 @@ struct RayPayloadPrimary {
 cbuffer SceneParams : register(b1) {
     float ao_distance;
 };
+
+cbuffer FrameId : register(b2) {
+    uint32_t frame_id;
+}
 
 [shader("raygeneration")] 
 void RayGen_AO() {

@@ -284,18 +284,18 @@ void run_app(const std::vector<std::string> &args,
         RenderStats stats = renderer->render(
             camera.eye(), camera.dir(), camera.up(), fov_y, camera_changed, need_readback);
 
-        ++frame_id;
         camera_changed = false;
-#if 0
+#if 1
         ImGui_ImplSDL2_NewFrame(window);
         ImGui::NewFrame();
 
         ImGui::Begin("Render Info");
+
         ImGui::Text("Render Time: %.3f ms/frame (%.1f FPS)",
                     render_time / frame_id,
                     1000.f / (render_time / frame_id));
 
-        if (stats.rays_per_second > 0) {
+        if (rays_per_second > 0) {
             const std::string rays_per_sec = pretty_print_count(rays_per_second / frame_id);
             ImGui::Text("Rays per-second: %sRay/s", rays_per_sec.c_str());
         }
@@ -319,12 +319,8 @@ void run_app(const std::vector<std::string> &args,
 #endif
         display->display(renderer.get());
 
-        stats = renderer->readback_render_stats(need_readback);
-
-        // If we're benchmarking print out the rendering stats and save the image out
-        if (benchmark_frame_count > 0 && frame_id == benchmark_frame_count) {
-            save_image = true;
-        }
+        stats = renderer->readback_render_stats();
+        ++frame_id;
 
         if (save_image) {
             save_image = false;
@@ -353,10 +349,6 @@ void run_app(const std::vector<std::string> &args,
         } else {
             render_time += stats.render_time;
             rays_per_second += stats.rays_per_second;
-        }
-        if (frame_id % 50 == 0) {
-            std::cout << "Render time: " << stats.render_time << "ms\n"
-                      << "Avg.: " << render_time / frame_id << "ms\n";
         }
 
         if (benchmark_frame_count > 0 && frame_id == benchmark_frame_count) {

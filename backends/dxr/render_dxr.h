@@ -20,14 +20,15 @@ struct RenderDXR : RenderBackend {
     // TODO: Need render cmd alloc and render cmd list per frame in flight
     std::array<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>, N_FRAMES_IN_FLIGHT>
         render_cmd_allocators;
-    std::array<Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>, N_FRAMES_IN_FLIGHT>
-        render_cmd_lists;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> render_cmd_list;
 
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> readback_cmd_list;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> readback_cmd_allocator;
 
-    dxr::Buffer img_readback_buf, instance_buf, material_param_buf, light_buf,
-        ray_stats_readback_buf;
+    dxr::Buffer img_readback_buf, instance_buf, material_param_buf, light_buf;
+    // We need one readback ray stats buffer per frame in flight so they don't trample each
+    // other's data
+    std::array<dxr::Buffer, N_FRAMES_IN_FLIGHT> ray_stats_readback_bufs;
 
     // Do technically need 2 view param device bufs, but it's tough to swap them out because
     // they're in the SBT Hacky testing solution is to just not change the view params after
@@ -35,10 +36,10 @@ struct RenderDXR : RenderBackend {
     dxr::Buffer view_param_upload_buf;
     dxr::Buffer view_param_device_buf;
     bool camera_params_dirty = false;
+    bool readback_image = false;
 
     uint32_t active_set = 0;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> active_render_cmd_allocator;
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> active_render_cmd_list;
 
     // TODO: I want to still output to the same accum buffer
     // So then I'd just have one frame in flight while I record the commands for the next one
@@ -101,7 +102,7 @@ struct RenderDXR : RenderBackend {
                        const bool camera_changed,
                        const bool readback_framebuffer) override;
 
-    RenderStats readback_render_stats(const bool readback_framebuffer) override;
+    RenderStats readback_render_stats() override;
 
     // TODO: Need a readback stats/results function to override here that returns the render
     // stats. Render should just submit the rendering work to be done, then here we'd do any

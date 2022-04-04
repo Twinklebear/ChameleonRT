@@ -39,12 +39,15 @@ cbuffer ViewParams : register(b0) {
     float4 cam_du;
     float4 cam_dv;
     float4 cam_dir_top_left;
-    uint32_t frame_id;
 }
 
 cbuffer SceneParams : register(b1) {
     uint32_t num_lights;
 };
+
+cbuffer FrameId : register(b2) {
+    uint32_t frame_id;
+}
 
 // Raytracing acceleration structure, accessed as a SRV
 RaytracingAccelerationStructure scene : register(t0);
