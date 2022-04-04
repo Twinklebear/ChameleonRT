@@ -25,25 +25,65 @@ endif()
 set(DXR_VARIANT_SUFFIXES
     ""
     "_ng1"
+    "_ng2"
+    "_ng4"
+    "_ng8"
+    "_ng16"
+    "_ng32"
     "_ao1"
+    "_ao2"
+    "_ao4"
+    "_ao8"
+    "_ao16"
+    "_ao32"
 )
 
 set(DXR_SHADER_VARIANT_SUFFIXES
     ""
     "_ng"
+    "_ng"
+    "_ng"
+    "_ng"
+    "_ng"
+    "_ng"
+    "_ao"
+    "_ao"
+    "_ao"
+    "_ao"
+    "_ao"
     "_ao"
 )
 
 set(DXR_VARIANT_DEFINES
     ""
     "-DDXR_NG"
+    "-DDXR_NG"
+    "-DDXR_NG"
+    "-DDXR_NG"
+    "-DDXR_NG"
+    "-DDXR_NG"
+    "-DDXR_AO"
+    "-DDXR_AO"
+    "-DDXR_AO"
+    "-DDXR_AO"
+    "-DDXR_AO"
     "-DDXR_AO"
 )
 
 set(DXR_SHADER_VARIANT_DEFINES
     ""
-    "NUM_PIXEL_SAMPLES=1"
-    "NUM_AO_SAMPLES=1"
+    "NUM_SAMPLES=1"
+    "NUM_SAMPLES=2"
+    "NUM_SAMPLES=4"
+    "NUM_SAMPLES=8"
+    "NUM_SAMPLES=16"
+    "NUM_SAMPLES=32"
+    "NUM_SAMPLES=1"
+    "NUM_SAMPLES=2"
+    "NUM_SAMPLES=4"
+    "NUM_SAMPLES=8"
+    "NUM_SAMPLES=16"
+    "NUM_SAMPLES=32"
 )
 
 foreach (VARIANT_SUFFIX SHADER_VARIANT_SUFFIX VARIANT_DEFINE SHADER_VARIANT_DEFINE

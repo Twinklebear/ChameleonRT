@@ -87,9 +87,9 @@ RenderDXR::~RenderDXR()
 std::string RenderDXR::name()
 {
 #ifdef DXR_NG
-    return "DirectX Ray Tracing - NG" + std::to_string(NUM_PIXEL_SAMPLES);
+    return "DirectX Ray Tracing - NG" + std::to_string(NUM_SAMPLES);
 #elif defined(DXR_AO)
-    return "DirectX Ray Tracing - AO" + std::to_string(NUM_AO_SAMPLES);
+    return "DirectX Ray Tracing - AO" + std::to_string(NUM_SAMPLES);
 #else
     return "DirectX Ray Tracing";
 #endif
@@ -560,7 +560,7 @@ RenderStats RenderDXR::readback_render_stats()
         // row by row.
         if (render_target.linear_row_pitch() ==
             render_target.dims().x * render_target.pixel_size()) {
-            std::memcpy(pg.data(), img_readback_buf.map(), img_readback_buf.size());
+            std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
         } else {
             uint8_t *buf = static_cast<uint8_t *>(img_readback_buf.map());
             for (uint32_t y = 0; y < render_target.dims().y; ++y) {
@@ -576,7 +576,7 @@ RenderStats RenderDXR::readback_render_stats()
 #ifdef REPORT_RAY_STATS
 #ifdef DXR_NG
     // For NG we know how many rays are traced, it's just # pixels * # samples per pixel
-    const uint64_t total_rays = ray_stats.dims().x * ray_stats.dims().y * NUM_PIXEL_SAMPLES;
+    const uint64_t total_rays = ray_stats.dims().x * ray_stats.dims().y * NUM_SAMPLES;
 #else
     if (ray_stats.linear_row_pitch() == ray_stats.dims().x * ray_stats.pixel_size()) {
         std::memcpy(ray_counts.data(),

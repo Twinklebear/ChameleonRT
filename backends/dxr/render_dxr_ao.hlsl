@@ -76,8 +76,8 @@ void RayGen_AO() {
         // We don't run closest hit at all here so we actually use the miss shader to count
         //misses by decrementing the payload's occluded value
         AORayPayload ao_payload;
-        ao_payload.n_occluded = NUM_AO_SAMPLES;
-        for (int i = 0; i < NUM_AO_SAMPLES; ++i) {
+        ao_payload.n_occluded = NUM_SAMPLES;
+        for (int i = 0; i < NUM_SAMPLES; ++i) {
             const float theta = sqrt(lcg_randomf(rng));
             const float phi = 2.f * M_PI * lcg_randomf(rng);
 
@@ -96,7 +96,7 @@ void RayGen_AO() {
 #endif
             TraceRay(scene, occlusion_flags, 0xff, PRIMARY_RAY, 1, OCCLUSION_RAY, ray, ao_payload);
         }
-        ao_color = 1.f - float(ao_payload.n_occluded) / NUM_AO_SAMPLES;
+        ao_color = 1.f - float(ao_payload.n_occluded) / NUM_SAMPLES;
     }
 
     const float4 accum_color = (float4(ao_color, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);

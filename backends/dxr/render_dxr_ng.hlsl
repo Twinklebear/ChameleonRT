@@ -34,7 +34,7 @@ void RayGen_NG() {
 
     RayPayloadNg payload;
     payload.color = float3(0.f, 0.f, 0.f);
-    for (int i = 0; i < NUM_PIXEL_SAMPLES; ++i) {
+    for (int i = 0; i < NUM_SAMPLES; ++i) {
         const float2 d = (pixel + float2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
 
         RayDesc ray;
@@ -46,7 +46,7 @@ void RayGen_NG() {
         uint ray_count = 0;
         TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
     }
-    payload.color /= NUM_PIXEL_SAMPLES;
+    payload.color /= NUM_SAMPLES;
 
     const float4 accum_color = (float4(payload.color, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
     accum_buffer[pixel] = accum_color;
