@@ -1,3 +1,5 @@
+include(ExternalProject)
+
 ExternalProject_Add(glm_ext
     PREFIX glm
     DOWNLOAD_DIR glm
