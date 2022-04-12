@@ -36,6 +36,12 @@ set(DXR_VARIANT_SUFFIXES
     "_ao8"
     "_ao16"
     "_ao32"
+    "_ao_tailrec1"
+    "_ao_tailrec2"
+    "_ao_tailrec4"
+    "_ao_tailrec8"
+    "_ao_tailrec16"
+    "_ao_tailrec32"
 )
 
 set(DXR_SHADER_VARIANT_SUFFIXES
@@ -52,6 +58,12 @@ set(DXR_SHADER_VARIANT_SUFFIXES
     "_ao"
     "_ao"
     "_ao"
+    "_ao_tailrec"
+    "_ao_tailrec"
+    "_ao_tailrec"
+    "_ao_tailrec"
+    "_ao_tailrec"
+    "_ao_tailrec"
 )
 
 set(DXR_VARIANT_DEFINES
@@ -68,10 +80,22 @@ set(DXR_VARIANT_DEFINES
     "-DDXR_AO"
     "-DDXR_AO"
     "-DDXR_AO"
+    "-DDXR_AO_TAILREC"
+    "-DDXR_AO_TAILREC"
+    "-DDXR_AO_TAILREC"
+    "-DDXR_AO_TAILREC"
+    "-DDXR_AO_TAILREC"
+    "-DDXR_AO_TAILREC"
 )
 
 set(DXR_SHADER_VARIANT_DEFINES
     ""
+    "NUM_SAMPLES=1"
+    "NUM_SAMPLES=2"
+    "NUM_SAMPLES=4"
+    "NUM_SAMPLES=8"
+    "NUM_SAMPLES=16"
+    "NUM_SAMPLES=32"
     "NUM_SAMPLES=1"
     "NUM_SAMPLES=2"
     "NUM_SAMPLES=4"

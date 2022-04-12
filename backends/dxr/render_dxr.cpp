@@ -20,7 +20,7 @@
 const auto *RAYGEN_SHADER_NAME = L"RayGen_NG";
 const auto *PRIMARY_MISS_SHADER_NAME = L"Miss_NG";
 const auto *CLOSESTHIT_SHADER_NAME = L"ClosestHit_NG";
-#elif defined(DXR_AO)
+#elif defined(DXR_AO) || defined(DXR_AO_TAILREC)
 const auto *RAYGEN_SHADER_NAME = L"RayGen_AO";
 const auto *PRIMARY_MISS_SHADER_NAME = L"Miss_AO";
 const auto *SHADOW_MISS_SHADER_NAME = L"ShadowMiss_AO";
@@ -90,6 +90,8 @@ std::string RenderDXR::name()
     return "DirectX Ray Tracing - NG" + std::to_string(NUM_SAMPLES);
 #elif defined(DXR_AO)
     return "DirectX Ray Tracing - AO" + std::to_string(NUM_SAMPLES);
+#elif defined(DXR_AO_TAILREC)
+    return "DirectX Ray Tracing - AO Tail Recursive" + std::to_string(NUM_SAMPLES);
 #else
     return "DirectX Ray Tracing";
 #endif
@@ -142,7 +144,7 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
 void RenderDXR::set_scene(const Scene &scene)
 {
     frame_id = 0;
-#ifdef DXR_AO
+#if defined(DXR_AO) || defined(DXR_AO_TAILREC)
     // For AO we need to compute the AO distance to use, we set it to 10% of the scene bounding
     // diagonal length
     glm::vec3 scene_min(std::numeric_limits<float>::infinity());
@@ -156,7 +158,7 @@ void RenderDXR::set_scene(const Scene &scene)
     for (const auto &mesh : scene.meshes) {
         std::vector<dxr::Geometry> geometries;
         for (const auto &geom : mesh.geometries) {
-#ifdef DXR_AO
+#if defined(DXR_AO) || defined(DXR_AO_TAILREC)
             // A parallel reduction would be nicer here for big scenes
             for (const auto &v : geom.vertices) {
                 scene_min = glm::min(v, scene_min);
@@ -277,7 +279,7 @@ void RenderDXR::set_scene(const Scene &scene)
         meshes.back().finalize();
     }
 
-#ifdef DXR_AO
+#if defined(DXR_AO) || defined(DXR_AO_TAILREC)
     ao_distance = .1f * glm::length(scene_max - scene_min);
     std::cout << "Scene bounds: " << glm::to_string(scene_min) << " to "
               << glm::to_string(scene_max) << "\n"
@@ -704,6 +706,21 @@ void RenderDXR::build_raytracing_pipeline()
                                        CLOSESTHIT_SHADER_NAME});
 #endif
 
+#ifdef DXR_AO_TAILREC
+    // DXR AO TailRec moves the raygen params to globals
+    dxr::RootSignature global_root_sig =
+        dxr::RootSignatureBuilder::global()
+            .add_constants("SceneParams", 1, 1, 0)
+            .add_constants("FrameId", 2, 1, 0)
+            .add_desc_heap("cbv_srv_uav_heap", raygen_desc_heap)
+            .add_desc_heap("sampler_heap", raygen_sampler_heap)
+            .create(device.Get());
+
+    // Create the root signature for our ray gen shader
+    dxr::RootSignature raygen_root_sig =
+        dxr::RootSignatureBuilder::local().create(device.Get());
+
+#else
     dxr::RootSignature global_root_sig = dxr::RootSignatureBuilder::global()
                                              .add_constants("FrameId", 2, 1, 0)
                                              .create(device.Get());
@@ -715,6 +732,7 @@ void RenderDXR::build_raytracing_pipeline()
             .add_desc_heap("cbv_srv_uav_heap", raygen_desc_heap)
             .add_desc_heap("sampler_heap", raygen_sampler_heap)
             .create(device.Get());
+#endif
 
     // Create the root signature for our closest hit function
     dxr::RootSignature hitgroup_root_sig = dxr::RootSignatureBuilder::local()
@@ -744,15 +762,22 @@ void RenderDXR::build_raytracing_pipeline()
             .set_ray_gen(RAYGEN_SHADER_NAME)
             .add_miss_shader(PRIMARY_MISS_SHADER_NAME)
             .add_miss_shader(SHADOW_MISS_SHADER_NAME)
+#ifdef DXR_AO_TAILREC
+            .configure_shader_payload(
+                shader_library.export_names(), 1 * sizeof(float), 2 * sizeof(float))
+            .set_max_recursion(2);
+#else
             .set_shader_root_sig({RAYGEN_SHADER_NAME}, raygen_root_sig)
 #ifdef DXR_AO
             .configure_shader_payload(
                 shader_library.export_names(), 4 * sizeof(float), 2 * sizeof(float))
+
 #else
             .configure_shader_payload(
                 shader_library.export_names(), 8 * sizeof(float), 2 * sizeof(float))
 #endif
             .set_max_recursion(1);
+#endif
 #endif
 
     // Setup hit groups and shader root signatures for our instances.
@@ -798,6 +823,7 @@ void RenderDXR::build_shader_resource_heap()
 void RenderDXR::build_shader_binding_table()
 {
     rt_pipeline.map_shader_table();
+#ifndef DXR_AO_TAILREC
     {
         uint8_t *map = rt_pipeline.shader_record(RAYGEN_SHADER_NAME);
         const dxr::RootSignature *sig = rt_pipeline.shader_signature(RAYGEN_SHADER_NAME);
@@ -822,6 +848,7 @@ void RenderDXR::build_shader_binding_table()
                     &desc_heap_handle,
                     sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
     }
+#endif
     for (size_t i = 0; i < parameterized_meshes.size(); ++i) {
         const auto &pm = parameterized_meshes[i];
         for (size_t j = 0; j < meshes[pm.mesh_id].geometries.size(); ++j) {
@@ -1033,7 +1060,15 @@ void RenderDXR::record_command_lists()
     render_cmd_list->SetDescriptorHeaps(desc_heaps.size(), desc_heaps.data());
     render_cmd_list->SetPipelineState1(rt_pipeline.get());
     render_cmd_list->SetComputeRootSignature(rt_pipeline.global_sig());
+#ifdef DXR_AO_TAILREC
+    render_cmd_list->SetComputeRoot32BitConstant(
+        0, *reinterpret_cast<uint32_t *>(&ao_distance), 0);
+    render_cmd_list->SetComputeRoot32BitConstant(1, frame_id, 0);
+    render_cmd_list->SetComputeRootDescriptorTable(2, raygen_desc_heap.gpu_desc_handle());
+    render_cmd_list->SetComputeRootDescriptorTable(3, raygen_sampler_heap.gpu_desc_handle());
+#else
     render_cmd_list->SetComputeRoot32BitConstant(0, frame_id, 0);
+#endif
 
     render_cmd_list->EndQuery(
         timing_query_heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, active_set * 2);

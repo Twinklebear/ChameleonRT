@@ -75,7 +75,7 @@ struct RenderDXR : RenderBackend {
     std::array<Microsoft::WRL::ComPtr<ID3D12Fence>, N_FRAMES_IN_FLIGHT> frame_fences;
     std::array<HANDLE, N_FRAMES_IN_FLIGHT> frame_events;
 
-#ifdef DXR_AO
+#if defined(DXR_AO) || defined(DXR_AO_TAILREC)
     float ao_distance = 1e20f;
 #endif
 

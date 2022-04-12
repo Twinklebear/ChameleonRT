@@ -586,7 +586,7 @@ RTPipeline RTPipelineBuilder::create(ID3D12Device5 *device)
 
     // Add the raytracing pipeline config
     D3D12_RAYTRACING_PIPELINE_CONFIG pipeline_cfg = {0};
-    pipeline_cfg.MaxTraceRecursionDepth = 1;
+    pipeline_cfg.MaxTraceRecursionDepth = recursion_depth;
     {
         D3D12_STATE_SUBOBJECT o = {0};
         o.Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
