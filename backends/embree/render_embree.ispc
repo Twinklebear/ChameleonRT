@@ -1,12 +1,12 @@
-#include <embree3/rtcore.isph>
-#include "util.ih"
-#include "lcg_rng.ih"
-#include "float3.ih"
-#include "mat4.ih"
-#include "lights.ih"
-#include "texture2d.ih"
+#include <util/texture_channel_mask.h>
 #include "disney_bsdf.ih"
-#include "util/texture_channel_mask.h"
+#include "float3.ih"
+#include "lcg_rng.ih"
+#include "lights.ih"
+#include "mat4.ih"
+#include "texture2d.ih"
+#include "util.ih"
+#include <embree3/rtcore.isph>
 
 struct ViewParams {
     float3 pos, dir_du, dir_dv, dir_top_left;
@@ -62,7 +62,10 @@ struct Tile {
     uint16_t *uniform ray_stats;
 };
 
-float textured_scalar_param(const float x, const float2 &uv, const ISPCTexture2D *uniform textures) {
+float textured_scalar_param(const float x,
+                            const float2 &uv,
+                            const ISPCTexture2D *uniform textures)
+{
     const uint32_t mask = intbits(x);
     if (IS_TEXTURED_PARAM(mask)) {
         const uint32_t tex_id = GET_TEXTURE_ID(mask);
@@ -72,8 +75,10 @@ float textured_scalar_param(const float x, const float2 &uv, const ISPCTexture2D
     return x;
 }
 
-void unpack_material(DisneyMaterial &mat, const MaterialParams *p,
-        const ISPCTexture2D *uniform textures, const float2 uv)
+void unpack_material(DisneyMaterial &mat,
+                     const MaterialParams *p,
+                     const ISPCTexture2D *uniform textures,
+                     const float2 uv)
 {
     uint32_t mask = intbits(p->base_color.x);
     if (IS_TEXTURED_PARAM(mask)) {
@@ -97,11 +102,17 @@ void unpack_material(DisneyMaterial &mat, const MaterialParams *p,
 }
 
 float3 sample_direct_light(const SceneContext *uniform scene,
-        const DisneyMaterial &mat, const float3 &hit_p, const float3 &n,
-        const float3 &v_x, const float3 &v_y, const float3 &w_o,
-        RTCIntersectContext *uniform incoherent_context,
-        QuadLight *uniform lights, uniform uint32_t num_lights,
-        uint16_t &ray_stats, LCGRand &rng)
+                           const DisneyMaterial &mat,
+                           const float3 &hit_p,
+                           const float3 &n,
+                           const float3 &v_x,
+                           const float3 &v_y,
+                           const float3 &w_o,
+                           RTCIntersectContext *uniform incoherent_context,
+                           QuadLight *uniform lights,
+                           uniform uint32_t num_lights,
+                           uint16_t &ray_stats,
+                           LCGRand &rng)
 {
     float3 illum = make_float3(0.f);
 
@@ -113,7 +124,8 @@ float3 sample_direct_light(const SceneContext *uniform scene,
 
     // Sample the light to compute an incident light ray to this point
     {
-        float3 light_pos = sample_quad_light_position(light, make_float2(lcg_randomf(rng), lcg_randomf(rng)));
+        float3 light_pos =
+            sample_quad_light_position(light, make_float2(lcg_randomf(rng), lcg_randomf(rng)));
         float3 light_dir = light_pos - hit_p;
         float light_dist = length(light_dir);
         light_dir = normalize(light_dir);
@@ -142,7 +154,8 @@ float3 sample_direct_light(const SceneContext *uniform scene,
 
         float light_dist;
         float3 light_pos;
-        if (!all_zero(bsdf) && bsdf_pdf >= EPSILON && quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
+        if (!all_zero(bsdf) && bsdf_pdf >= EPSILON &&
+            quad_intersect(light, hit_p, w_i, light_dist, light_pos)) {
             float light_pdf = quad_light_pdf(light, light_pos, hit_p, w_i);
             if (light_pdf >= EPSILON) {
                 float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
@@ -162,44 +175,52 @@ float3 sample_direct_light(const SceneContext *uniform scene,
 }
 
 // A miss "shader" to make the same checkerboard background for testing as in the DXR backend
-float3 miss_shader(const float3 &dir) {
+float3 miss_shader(const float3 &dir)
+{
     float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
     float v = acos(dir.y) * M_1_PI;
 
     int check_x = u * 10.f;
     int check_y = v * 10.f;
 
-    if (dir.y > -0.1 && mod(check_x + check_y,  2) == 0) {
+    if (dir.y > -0.1 && mod(check_x + check_y, 2) == 0) {
         return make_float3(0.5f);
     }
     return make_float3(0.1f);
 }
 
-export void trace_rays(void *uniform _scene, void *uniform _tile, const void *uniform _view_params)
+export void trace_rays(void *uniform _scene,
+                       void *uniform _tile,
+                       const void *uniform _view_params)
 {
-    SceneContext *uniform scene = (SceneContext *uniform)_scene;
+    SceneContext *uniform scene = (SceneContext * uniform) _scene;
     const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
-    Tile *uniform tile = (Tile *uniform)_tile;
+    Tile *uniform tile = (Tile * uniform) _tile;
     uniform RTCIntersectContext context;
     rtcInitIntersectContext(&context);
     context.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
 
-    foreach (ray = 0 ... tile->width * tile->height)  {
+    foreach (ray = 0 ... tile->width * tile->height) {
         const uint32_t i = mod(ray, tile->width);
         const uint32_t j = ray / tile->width;
 
-        LCGRand rng = get_rng((tile->x + i + (tile->y + j) * tile->fb_width), view_params->frame_id + 1);
+        LCGRand rng =
+            get_rng((tile->x + i + (tile->y + j) * tile->fb_width), view_params->frame_id + 1);
 
         const float px_x = (i + tile->x + lcg_randomf(rng)) / tile->fb_width;
         const float px_y = (j + tile->y + lcg_randomf(rng)) / tile->fb_height;
 
         RTCRayHit path_ray;
         {
-            float3 org = make_float3(view_params->pos.x, view_params->pos.y, view_params->pos.z);
-            float3 dir = normalize(make_float3(
-                        view_params->dir_du.x * px_x + view_params->dir_dv.x * px_y + view_params->dir_top_left.x,
-                        view_params->dir_du.y * px_x + view_params->dir_dv.y * px_y + view_params->dir_top_left.y,
-                        view_params->dir_du.z * px_x + view_params->dir_dv.z * px_y + view_params->dir_top_left.z));
+            float3 org =
+                make_float3(view_params->pos.x, view_params->pos.y, view_params->pos.z);
+            float3 dir = normalize(
+                make_float3(view_params->dir_du.x * px_x + view_params->dir_dv.x * px_y +
+                                view_params->dir_top_left.x,
+                            view_params->dir_du.y * px_x + view_params->dir_dv.y * px_y +
+                                view_params->dir_top_left.y,
+                            view_params->dir_du.z * px_x + view_params->dir_dv.z * px_y +
+                                view_params->dir_top_left.z));
 
             set_ray_hit(path_ray, org, dir, 0.f);
         }
@@ -221,22 +242,22 @@ export void trace_rays(void *uniform _scene, void *uniform _tile, const void *un
             const int geom = path_ray.hit.geomID;
             const int prim = path_ray.hit.primID;
 
-            const float3 w_o = make_float3(-path_ray.ray.dir_x, -path_ray.ray.dir_y, -path_ray.ray.dir_z);
+            const float3 w_o =
+                make_float3(-path_ray.ray.dir_x, -path_ray.ray.dir_y, -path_ray.ray.dir_z);
 
-            if (geom == RTC_INVALID_GEOMETRY_ID || inst == RTC_INVALID_GEOMETRY_ID
-                    || prim == RTC_INVALID_GEOMETRY_ID)
-            {
+            if (geom == RTC_INVALID_GEOMETRY_ID || inst == RTC_INVALID_GEOMETRY_ID ||
+                prim == RTC_INVALID_GEOMETRY_ID) {
                 illum = illum + path_throughput * miss_shader(neg(w_o));
                 break;
             }
 
-            const float3 hit_p = make_float3(path_ray.ray.org_x + path_ray.ray.tfar * path_ray.ray.dir_x,
-                    path_ray.ray.org_y + path_ray.ray.tfar * path_ray.ray.dir_y,
-                    path_ray.ray.org_z + path_ray.ray.tfar * path_ray.ray.dir_z);
+            const float3 hit_p =
+                make_float3(path_ray.ray.org_x + path_ray.ray.tfar * path_ray.ray.dir_x,
+                            path_ray.ray.org_y + path_ray.ray.tfar * path_ray.ray.dir_y,
+                            path_ray.ray.org_z + path_ray.ray.tfar * path_ray.ray.dir_z);
 
-            float3 normal = normalize(make_float3(path_ray.hit.Ng_x,
-                        path_ray.hit.Ng_y,
-                        path_ray.hit.Ng_z));
+            float3 normal = normalize(
+                make_float3(path_ray.hit.Ng_x, path_ray.hit.Ng_y, path_ray.hit.Ng_z));
 
             const float2 bary = make_float2(path_ray.hit.u, path_ray.hit.v);
 
@@ -250,8 +271,7 @@ export void trace_rays(void *uniform _scene, void *uniform _tile, const void *un
                 float2 uva = geometry->uv_buf[indices.x];
                 float2 uvb = geometry->uv_buf[indices.y];
                 float2 uvc = geometry->uv_buf[indices.z];
-                uv = (1.f - bary.x - bary.y) * uva
-                    + bary.x * uvb + bary.y * uvc;
+                uv = (1.f - bary.x - bary.y) * uva + bary.x * uvb + bary.y * uvc;
             }
 
             // Transform the normal back to world space
@@ -259,8 +279,8 @@ export void trace_rays(void *uniform _scene, void *uniform _tile, const void *un
             transpose(matrix);
             normal = normalize(mul(matrix, normal));
 
-            unpack_material(mat, &scene->materials[instance->material_ids[geom]],
-                    scene->textures, uv);
+            unpack_material(
+                mat, &scene->materials[instance->material_ids[geom]], scene->textures, uv);
 
             // Direct light sampling
             float3 v_x, v_y;
@@ -268,9 +288,18 @@ export void trace_rays(void *uniform _scene, void *uniform _tile, const void *un
                 normal = neg(normal);
             }
             ortho_basis(v_x, v_y, normal);
-            illum = illum + path_throughput
-                * sample_direct_light(scene, mat, hit_p, normal, v_x, v_y, w_o, &context,
-                        scene->lights, scene->num_lights, ray_stats, rng);
+            illum = illum + path_throughput * sample_direct_light(scene,
+                                                                  mat,
+                                                                  hit_p,
+                                                                  normal,
+                                                                  v_x,
+                                                                  v_y,
+                                                                  w_o,
+                                                                  &context,
+                                                                  scene->lights,
+                                                                  scene->num_lights,
+                                                                  ray_stats,
+                                                                  rng);
 
             // Sample the BSDF to continue the ray
             float pdf;
@@ -287,7 +316,9 @@ export void trace_rays(void *uniform _scene, void *uniform _tile, const void *un
 
             // Russian roulette termination
             if (bounce > 3) {
-                const float q = max(0.05f, 1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
+                const float q = max(
+                    0.05f,
+                    1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
                 if (lcg_randomf(rng) < q) {
                     break;
                 }
@@ -300,15 +331,19 @@ export void trace_rays(void *uniform _scene, void *uniform _tile, const void *un
 #endif
 
         const uint32_t px_id = ray * 3;
-        tile->data[px_id] = (illum.x + view_params->frame_id * tile->data[px_id]) / (view_params->frame_id + 1);
-        tile->data[px_id + 1] = (illum.y + view_params->frame_id * tile->data[px_id + 1]) / (view_params->frame_id + 1);
-        tile->data[px_id + 2] = (illum.z + view_params->frame_id * tile->data[px_id + 2]) / (view_params->frame_id + 1);
+        tile->data[px_id] = (illum.x + view_params->frame_id * tile->data[px_id]) /
+                            (view_params->frame_id + 1);
+        tile->data[px_id + 1] = (illum.y + view_params->frame_id * tile->data[px_id + 1]) /
+                                (view_params->frame_id + 1);
+        tile->data[px_id + 2] = (illum.z + view_params->frame_id * tile->data[px_id + 2]) /
+                                (view_params->frame_id + 1);
     }
 }
 
 // Convert the RGBF32 tile to sRGB and write it to the RGBA8 framebuffer
-export void tile_to_uint8(void *uniform _tile, uniform uint8_t *uniform fb) {
-    Tile *uniform tile = (Tile *uniform)_tile;
+export void tile_to_uint8(void *uniform _tile, uniform uint8_t *uniform fb)
+{
+    Tile *uniform tile = (Tile * uniform) _tile;
     foreach (i = 0 ... tile->width, j = 0 ... tile->height) {
         const uint32_t tile_px = (j * tile->width + i) * 3;
         const uint32_t fb_px = ((j + tile->y) * tile->fb_width + i + tile->x) * 4;
