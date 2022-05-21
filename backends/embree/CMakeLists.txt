@@ -18,7 +18,6 @@ add_ispc_library(ispc_kernels render_embree.ispc
 	INCLUDE_DIRECTORIES
         ${EMBREE_INCLUDE_DIRS}
         ${CMAKE_CURRENT_LIST_DIR}
-        ${PROJECT_SOURCE_DIR}
 	COMPILE_DEFINITIONS
         ${ISPC_COMPILE_DEFNS})
 

@@ -1,4 +1,4 @@
-#include <util/texture_channel_mask.h>
+#include "../../util/texture_channel_mask.h"
 #include "disney_bsdf.ih"
 #include "float3.ih"
 #include "lcg_rng.ih"
