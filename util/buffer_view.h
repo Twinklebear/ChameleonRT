@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdexcept>
 #include "gltf_types.h"
 #include "tiny_gltf.h"
 
