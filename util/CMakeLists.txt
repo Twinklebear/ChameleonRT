@@ -50,8 +50,9 @@ install(IMPORTED_RUNTIME_ARTIFACTS SDL2::SDL2
 
 crt_add_packaged_dependency(SDL2::SDL2)
 
-find_package(pbrtParser)
-if (${pbrtParser_FOUND})
+option(CHAMELEONRT_PBRT_SUPPORT "Enable support for loading pbrtv3 files using Ingo Wald's PBRT parser" OFF)
+if (CHAMELEONRT_PBRT_SUPPORT)
+    find_package(pbrtParser REQUIRED)
     target_link_libraries(util PUBLIC pbrtParser)
     target_compile_definitions(util PUBLIC PBRT_PARSER_ENABLED)
 endif()
