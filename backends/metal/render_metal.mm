@@ -231,6 +231,9 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
         // Also mark all BLAS's used
         // TODO: Seems like we can't do a similar heap thing for the BLAS's to mark
         // them all used at once?
+        // TODO: In Metal 3 it is now possible to allocate the acceleration structures on a
+        // heap, update this code to do that
+        // Metal 3 indirect command buffers also now support RT
         for (auto &mesh : bvh->meshes) {
             [command_encoder useResource:mesh->bvh usage:MTLResourceUsageRead];
         }
