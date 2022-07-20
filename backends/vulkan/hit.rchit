@@ -6,20 +6,20 @@ layout(location = PRIMARY_RAY) rayPayloadInEXT RayPayload payload;
 
 hitAttributeEXT vec3 attrib;
 
-layout(buffer_reference, buffer_reference_align=8, scalar) buffer VertexBuffer {
+layout(buffer_reference, scalar) buffer VertexBuffer {
     vec3 v[];
 };
 
-layout(buffer_reference, buffer_reference_align=8, scalar) buffer IndexBuffer {
+layout(buffer_reference, scalar) buffer IndexBuffer {
     uvec3 i[];
 };
 
-layout(buffer_reference, buffer_reference_align=8, scalar) buffer NormalBuffer {
+layout(buffer_reference, scalar) buffer NormalBuffer {
     vec3 n[];
 };
 
-layout(buffer_reference, buffer_reference_align=8, scalar) buffer UVBuffer {
-    vec2 uv[];
+layout(buffer_reference, buffer_reference_align=8) buffer UVBuffer {
+    vec2 uv;
 };
 
 layout(shaderRecordEXT, std430) buffer SBT {
@@ -41,9 +41,9 @@ void main() {
 
     vec2 uv = vec2(0);
     if (num_uvs > 0) {
-        const vec2 uva = uvs.uv[idx.x];
-        const vec2 uvb = uvs.uv[idx.y];
-        const vec2 uvc = uvs.uv[idx.z];
+        const vec2 uva = uvs[idx.x].uv;
+        const vec2 uvb = uvs[idx.y].uv;
+        const vec2 uvc = uvs[idx.z].uv;
         uv = (1.f - attrib.x - attrib.y) * uva
             + attrib.x * uvb + attrib.y * uvc;
     }
