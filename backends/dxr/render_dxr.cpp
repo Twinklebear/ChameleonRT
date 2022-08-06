@@ -461,7 +461,11 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
 
     // Read back the timestamps for DispatchRays to compute the true time spent rendering
     {
-        const uint64_t *timestamps = static_cast<const uint64_t *>(query_resolve_buffer.map());
+        D3D12_RANGE read_range;
+        read_range.Begin = 0;
+        read_range.End = query_resolve_buffer.size();
+        const uint64_t *timestamps =
+            static_cast<const uint64_t *>(query_resolve_buffer.map(read_range));
         uint64_t timestamp_freq = 0;
         cmd_queue->GetTimestampFrequency(&timestamp_freq);
 
@@ -476,11 +480,14 @@ RenderStats RenderDXR::render(const glm::vec3 &pos,
         // Map the readback buf and copy out the rendered image
         // We may have needed some padding for the readback buffer, so we might have to read
         // row by row.
+        D3D12_RANGE read_range;
+        read_range.Begin = 0;
+        read_range.End = img_readback_buf.size();
         if (render_target.linear_row_pitch() ==
             render_target.dims().x * render_target.pixel_size()) {
-            std::memcpy(img.data(), img_readback_buf.map(), img_readback_buf.size());
+            std::memcpy(img.data(), img_readback_buf.map(read_range), img_readback_buf.size());
         } else {
-            uint8_t *buf = static_cast<uint8_t *>(img_readback_buf.map());
+            uint8_t *buf = static_cast<uint8_t *>(img_readback_buf.map(read_range));
             for (uint32_t y = 0; y < render_target.dims().y; ++y) {
                 std::memcpy(img.data() + y * render_target.dims().x,
                             buf + y * render_target.linear_row_pitch(),

@@ -206,9 +206,9 @@ void *Buffer::map()
 {
     assert(rheap != D3D12_HEAP_TYPE_DEFAULT);
     void *mapping = nullptr;
-    D3D12_RANGE range = {0};
-    // Explicitly note we want the whole range to silence debug layer warnings
-    range.End = buf_size;
+    D3D12_RANGE range;
+    range.Begin = 0;
+    range.End = 0;
     CHECK_ERR(res->Map(0, &range, &mapping));
     return mapping;
 }
