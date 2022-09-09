@@ -225,6 +225,8 @@ void main() {
             path_throughput = path_throughput / (1.f - q);
         }
 	} while (bounce < MAX_PATH_DEPTH);
+    // Test for AMD shader indexing issue?
+    illum = illum * float(num_lights);
 
     vec4 accum_color = imageLoad(accum_buffer, pixel);
 	accum_color = (vec4(illum, 1.0) + frame_id * accum_color) / (frame_id + 1);
