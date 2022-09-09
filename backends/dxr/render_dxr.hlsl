@@ -237,6 +237,9 @@ void RayGen() {
         }
     } while (bounce < MAX_PATH_DEPTH);
 
+    // Hacky test for AMD bug
+    illum = illum * num_lights;
+
     const float4 accum_color = (float4(illum, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
     accum_buffer[pixel] = accum_color;
 
