@@ -71,7 +71,7 @@ __device__ float power_heuristic(float n_f, float pdf_f, float n_g, float pdf_g)
 }
 
 __device__ float schlick_weight(float cos_theta) {
-	return pow(saturate(1.f - cos_theta), 5.f);
+	return pow(__saturatef(1.f - cos_theta), 5.f);
 }
 
 // Complete Fresnel Dielectric computation, for transmission at ior near 1

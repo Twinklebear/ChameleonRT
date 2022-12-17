@@ -83,7 +83,7 @@ jobs:
           -Dembree_DIR=${{github.workspace}}/build/deps/embree-${EMBREE_VERSION}.x86_64.linux/lib/cmake/embree-${EMBREE_VERSION}
           -DTBB_DIR=${{github.workspace}}/build/deps/oneapi-tbb-${TBB_VERSION}/lib/cmake/tbb/
           -DISPC_DIR=${{github.workspace}}/build/deps/ispc-v${ISPC_VERSION}-linux/bin/
-          -DOptiX_INSTALL_DIR=${{github.workspace}}/build/deps/rt-ci-deps/NVIDIA-OptiX-SDK-${OPTIX_VERSION}-linux64-x86_64
+          -DOptiX_INSTALL_DIR=${{github.workspace}}/build/deps/rt-ci-deps/NVIDIA-OptiX-SDK-${OPTIX_VERSION}-x86_64
 
       - name: Build
         working-directory: ${{github.workspace}}/build
@@ -176,7 +176,7 @@ jobs:
           -DISPC_DIR="${env:GITHUB_WORKSPACE}/build/deps/ispc-v${env:ISPC_VERSION}-windows/bin/"
           -DVULKAN_SDK="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/vulkansdk-${env:VULKAN_SDK_VERSION}-windows-x64"
           -DCUDA_TOOLKIT_ROOT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.4"
-          -DOptiX_INSTALL_DIR="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/NVIDIA-OptiX-SDK-${env:OPTIX_VERSION}-windows-x86_64"
+          -DOptiX_INSTALL_DIR="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/NVIDIA-OptiX-SDK-${env:OPTIX_VERSION}-x86_64"
           -DCMAKE_SYSTEM_VERSION="10.0.19042"
 
       - name: Build

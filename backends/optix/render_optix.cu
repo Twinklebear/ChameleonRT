@@ -230,7 +230,7 @@ extern "C" __global__ void __raygen__perspective_camera() {
 }
 
 extern "C" __global__ void __miss__miss() {
-    optixSetPayload_1(float_as_int(-1.f));
+    optixSetPayload_1(__float_as_int(-1.f));
     float3 dir = optixGetWorldRayDirection();
     // Apply our miss "shader" to draw the checkerboard background
     float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
@@ -240,13 +240,13 @@ extern "C" __global__ void __miss__miss() {
     int check_y = v * 10.f;
 
     if (dir.y > -0.1f && (check_x + check_y) % 2 == 0) {
-        optixSetPayload_4(float_as_int(0.5f));
-        optixSetPayload_5(float_as_int(0.5f));
-        optixSetPayload_6(float_as_int(0.5f));
+        optixSetPayload_4(__float_as_int(0.5f));
+        optixSetPayload_5(__float_as_int(0.5f));
+        optixSetPayload_6(__float_as_int(0.5f));
     } else {
-        optixSetPayload_4(float_as_int(0.1f));
-        optixSetPayload_5(float_as_int(0.1f));
-        optixSetPayload_6(float_as_int(0.1f));
+        optixSetPayload_4(__float_as_int(0.1f));
+        optixSetPayload_5(__float_as_int(0.1f));
+        optixSetPayload_6(__float_as_int(0.1f));
     }
 }
 
@@ -274,14 +274,14 @@ extern "C" __global__ void __closesthit__closest_hit() {
             + bary.x * uvb + bary.y * uvc;
     }
 
-    optixSetPayload_0(float_as_int(uv.x));
-    optixSetPayload_1(float_as_int(uv.y));
+    optixSetPayload_0(__float_as_int(uv.x));
+    optixSetPayload_1(__float_as_int(uv.y));
 
-    optixSetPayload_2(float_as_int(optixGetRayTmax()));
+    optixSetPayload_2(__float_as_int(optixGetRayTmax()));
     optixSetPayload_3(params.material_id);
 
-    optixSetPayload_4(float_as_int(normal.x));
-    optixSetPayload_5(float_as_int(normal.y));
-    optixSetPayload_6(float_as_int(normal.z));
+    optixSetPayload_4(__float_as_int(normal.x));
+    optixSetPayload_5(__float_as_int(normal.y));
+    optixSetPayload_6(__float_as_int(normal.z));
 }
 
