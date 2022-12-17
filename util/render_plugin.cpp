@@ -1,6 +1,7 @@
 #include "render_plugin.h"
 #include <iostream>
 #include <stdexcept>
+#include <SDL.h>
 
 #ifdef _WIN32
 #define PLUGIN_PREFIX ""
@@ -12,7 +13,9 @@
 
 RenderPlugin::RenderPlugin(const std::string &plugin_name) : name(plugin_name)
 {
-    const std::string plugin_file_name = std::string(PLUGIN_PREFIX) + plugin_name + std::string(PLUGIN_SUFFIX);
+    const std::string base_path = SDL_GetBasePath();
+    const std::string plugin_file_name =
+        base_path + std::string(PLUGIN_PREFIX) + plugin_name + std::string(PLUGIN_SUFFIX);
     std::string error_msg;
 #ifdef _WIN32
     plugin = LoadLibrary(plugin_file_name.c_str());
