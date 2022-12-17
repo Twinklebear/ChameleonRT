@@ -1,19 +1,23 @@
 name: CMake
 
-on: [push, pull_request]
+on:
+    push:
+    pull_request:
+    schedule:
+        - cron: "0 0 * * 1"
 
 env:
     BUILD_TYPE: Release
-    VULKAN_SDK_VERSION: 1.2.182
-    EMBREE_VERSION: 3.13.1
-    ISPC_VERSION: 1.16.1
+    VULKAN_SDK_VERSION: 1.3.236
+    EMBREE_VERSION: 3.13.5
+    ISPC_VERSION: 1.18.1
     TBB_VERSION: 2021.2.0
     OPTIX_VERSION: 7.3.0
 
 jobs:
     ubuntu:
       env:
-        PACKAGE_NAME: chameleonrt-ubuntu2004-x86_64
+        PACKAGE_NAME: chameleonrt-ubuntu2204-x86_64
 
       runs-on: ubuntu-latest
 
@@ -31,6 +35,11 @@ jobs:
 
       - name: Setup VulkanSDK
         run: |
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-${VULKAN_SDK_VERSION}-jammy.list https://packages.lunarg.com/vulkan/${VULKAN_SDK_VERSION}/lunarg-vulkan-${VULKAN_SDK_VERSION}-jammy.list
+          sudo apt update
+          sudo apt install vulkan-sdk
+
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
           sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-${VULKAN_SDK_VERSION}-focal.list https://packages.lunarg.com/vulkan/${VULKAN_SDK_VERSION}/lunarg-vulkan-${VULKAN_SDK_VERSION}-focal.list
           sudo apt update
@@ -38,10 +47,8 @@ jobs:
 
       - name: Setup CUDA
         run: |
-          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin
-          sudo mv cuda-ubuntu2004.pin /etc/apt/preferences.d/cuda-repository-pin-600
-          sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub
-          sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /"
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+          sudo dpkg -i cuda-keyring_1.0-1_all.deb
           sudo apt-get update
           sudo apt-get -y install cuda
 
@@ -133,10 +140,10 @@ jobs:
 
       - name: Setup CUDA
         run: |
-          $CUDA_VERSION_FULL = "11.4.2"
-          $CUDA_REPO_PKG_REMOTE = "https://developer.download.nvidia.com/compute/cuda/11.4.2/network_installers/cuda_11.4.2_win10_network.exe"
-          $CUDA_REPO_PKG_LOCAL = "cuda_11.4.2_win10_network.exe"
-          $CUDA_PACKAGES = "nvcc_11.4 cudart_11.4"
+          $CUDA_VERSION_FULL = "12.0.0"
+          $CUDA_REPO_PKG_REMOTE = "https://developer.download.nvidia.com/compute/cuda/12.0.0/network_installers/cuda_12.0.0_win10_network.exe"
+          $CUDA_REPO_PKG_LOCAL = "cuda_12.0.0_win10_network.exe"
+          $CUDA_PACKAGES = "nvcc_12.0 cudart_12.0"
           # Download the cuda network installer
           Invoke-WebRequest $CUDA_REPO_PKG_REMOTE -OutFile $CUDA_REPO_PKG_LOCAL | Out-Null
           # Invoke silent install of CUDA (via network installer)
@@ -175,7 +182,7 @@ jobs:
           -DTBB_DIR="${env:GITHUB_WORKSPACE}/build/deps/oneapi-tbb-${env:TBB_VERSION}/lib/cmake/tbb/"
           -DISPC_DIR="${env:GITHUB_WORKSPACE}/build/deps/ispc-v${env:ISPC_VERSION}-windows/bin/"
           -DVULKAN_SDK="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/vulkansdk-${env:VULKAN_SDK_VERSION}-windows-x64"
-          -DCUDA_TOOLKIT_ROOT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.4"
+          -DCUDA_TOOLKIT_ROOT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.0"
           -DOptiX_INSTALL_DIR="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/NVIDIA-OptiX-SDK-${env:OPTIX_VERSION}-windows-x86_64"
           -DCMAKE_SYSTEM_VERSION="10.0.19042"
 
