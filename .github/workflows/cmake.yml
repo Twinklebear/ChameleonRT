@@ -12,7 +12,7 @@ env:
     EMBREE_VERSION: 3.13.5
     ISPC_VERSION: 1.18.1
     TBB_VERSION: 2021.2.0
-    OPTIX_VERSION: 7.3.0
+    OPTIX_VERSION: 7.6.0
 
 jobs:
     ubuntu:
@@ -136,8 +136,8 @@ jobs:
       - name: Setup CUDA
         run: |
           $CUDA_VERSION_FULL = "12.0.0"
-          $CUDA_REPO_PKG_REMOTE = "https://developer.download.nvidia.com/compute/cuda/12.0.0/network_installers/cuda_12.0.0_win10_network.exe"
-          $CUDA_REPO_PKG_LOCAL = "cuda_12.0.0_win10_network.exe"
+          $CUDA_REPO_PKG_REMOTE = "https://developer.download.nvidia.com/compute/cuda/12.0.0/network_installers/cuda_12.0.0_windows_network.exe"
+          $CUDA_REPO_PKG_LOCAL = "cuda_12.0.0_windows_network.exe"
           $CUDA_PACKAGES = "nvcc_12.0 cudart_12.0"
           # Download the cuda network installer
           Invoke-WebRequest $CUDA_REPO_PKG_REMOTE -OutFile $CUDA_REPO_PKG_LOCAL | Out-Null
