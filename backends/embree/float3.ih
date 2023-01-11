@@ -66,7 +66,7 @@ float3 normalize(const float3 v) {
 	if (l < 0.0) {
 		l = 0.0001;
 	}
-	const float c = 1.f / length(v);
+	const float c = 1.f / l;
 	return make_float3(v.x * c, v.y * c, v.z * c);
 }
 

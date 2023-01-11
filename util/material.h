@@ -28,19 +28,19 @@ struct Image {
 
 struct DisneyMaterial {
     glm::vec3 base_color = glm::vec3(0.9f);
-    float metallic = 0;
+    float metallic = 0.f;
 
-    float specular = 0;
-    float roughness = 1;
-    float specular_tint = 0;
-    float anisotropy = 0;
+    float specular = 0.f;
+    float roughness = 1.f;
+    float specular_tint = 0.f;
+    float anisotropy = 0.f;
 
-    float sheen = 0;
-    float sheen_tint = 0;
-    float clearcoat = 0;
-    float clearcoat_gloss = 0;
+    float sheen = 0.f;
+    float sheen_tint = 0.f;
+    float clearcoat = 0.f;
+    float clearcoat_gloss = 0.f;
 
-    float ior = 1.5;
-    float specular_transmission = 0;
-    glm::vec2 pad = glm::vec2(0);
+    float ior = 1.5f;
+    float specular_transmission = 0.f;
+    glm::vec2 pad = glm::vec2(0.f);
 };
