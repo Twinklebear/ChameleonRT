@@ -146,6 +146,7 @@ struct SceneContext {
     QuadLight *lights;
     ISPCTexture2D *textures;
     uint32_t num_lights;
+    uint32_t samples_per_pixel;
 };
 
 struct Tile {

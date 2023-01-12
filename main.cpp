@@ -24,6 +24,7 @@ const std::string USAGE =
     "\t-center <x> <y> <z>    Set the camera focus point\n"
     "\t-up <x> <y> <z>        Set the camera up vector\n"
     "\t-fov <fovy>            Specify the camera field of view (in degrees)\n"
+    "\t-spp <n>               Specify the number of samples to take per-pixel. Defaults to 1\n"
     "\t-camera <n>            If the scene contains multiple cameras, specify which\n"
     "\t                       should be used. Defaults to the first camera\n"
     "\t-img <x> <y>           Specify the window dimensions. Defaults to 1280x720\n"
@@ -120,6 +121,7 @@ void run_app(const std::vector<std::string> &args,
     glm::vec3 center(0);
     glm::vec3 up(0, 1, 0);
     float fov_y = 65.f;
+    uint32_t samples_per_pixel = 1;
     size_t camera_id = 0;
     std::string validation_img_prefix;
     for (size_t i = 1; i < args.size(); ++i) {
@@ -141,6 +143,8 @@ void run_app(const std::vector<std::string> &args,
         } else if (args[i] == "-fov") {
             fov_y = std::stof(args[++i]);
             got_camera_args = true;
+        } else if (args[i] == "-spp") {
+            samples_per_pixel = std::stoi(args[++i]);
         } else if (args[i] == "-camera") {
             camera_id = std::stol(args[++i]);
         } else if (args[i] == "-validation") {
@@ -170,6 +174,7 @@ void run_app(const std::vector<std::string> &args,
     std::string scene_info;
     {
         Scene scene(scene_file);
+        scene.samples_per_pixel = samples_per_pixel;
 
         std::stringstream ss;
         ss << "Scene '" << scene_file << "':\n"
@@ -182,7 +187,8 @@ void run_app(const std::vector<std::string> &args,
            << "# Materials: " << scene.materials.size() << "\n"
            << "# Textures: " << scene.textures.size() << "\n"
            << "# Lights: " << scene.lights.size() << "\n"
-           << "# Cameras: " << scene.cameras.size();
+           << "# Cameras: " << scene.cameras.size() << "\n"
+           << "# Samples per Pixel: " << scene.samples_per_pixel;
 
         scene_info = ss.str();
         std::cout << scene_info << "\n";

@@ -59,6 +59,8 @@ void RenderEmbree::set_scene(const Scene &scene)
 {
     frame_id = 0;
 
+    samples_per_pixel = scene.samples_per_pixel;
+
     std::vector<std::shared_ptr<embree::TriangleMesh>> meshes;
     for (const auto &mesh : scene.meshes) {
         std::vector<std::shared_ptr<embree::Geometry>> geometries;
@@ -163,6 +165,7 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
     ispc_scene.textures = ispc_textures.data();
     ispc_scene.lights = lights.data();
     ispc_scene.num_lights = lights.size();
+    ispc_scene.samples_per_pixel = samples_per_pixel;
 
     // Round up the number of tiles we need to run in case the
     // framebuffer is not an even multiple of tile size
