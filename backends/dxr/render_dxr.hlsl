@@ -40,6 +40,7 @@ cbuffer ViewParams : register(b0) {
     float4 cam_dv;
     float4 cam_dir_top_left;
     uint32_t frame_id;
+    uint32_t samples_per_pixel;
 }
 
 cbuffer SceneParams : register(b1) {
@@ -170,72 +171,76 @@ float3 sample_direct_light(in const DisneyMaterial mat, in const float3 hit_p, i
 void RayGen() {
     const uint2 pixel = DispatchRaysIndex().xy;
     const float2 dims = float2(DispatchRaysDimensions().xy);
-    LCGRand rng = get_rng(frame_id);
-    const float2 d = (pixel + float2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
-
-    RayDesc ray;
-    ray.Origin = cam_pos.xyz;
-    ray.Direction = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
-    ray.TMin = 0;
-    ray.TMax = 1e20f;
-
-    DisneyMaterial mat;
 
     uint ray_count = 0;
-    int bounce = 0;
     float3 illum = float3(0, 0, 0);
-    float3 path_throughput = float3(1, 1, 1);
-    do {
-        HitInfo payload;
-        payload.color_dist = float4(0, 0, 0, -1);
-        TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
+    for (int s = 0; s < samples_per_pixel; ++s) {
+        LCGRand rng = get_rng(frame_id * samples_per_pixel + s);
+        const float2 d = (pixel + float2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
+
+        RayDesc ray;
+        ray.Origin = cam_pos.xyz;
+        ray.Direction = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
+        ray.TMin = 0;
+        ray.TMax = 1e20f;
+
+        DisneyMaterial mat;
+        int bounce = 0;
+        float3 path_throughput = float3(1, 1, 1);
+        do {
+            HitInfo payload;
+            payload.color_dist = float4(0, 0, 0, -1);
+            TraceRay(scene, RAY_FLAG_FORCE_OPAQUE, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY, ray, payload);
 #ifdef REPORT_RAY_STATS
-        ++ray_count;
+            ++ray_count;
 #endif
 
-        // If we hit nothing, include the scene background color from the miss shader
-        if (payload.color_dist.w <= 0) {
-            illum += path_throughput * payload.color_dist.rgb;
-            break;
-        }
-
-        const float3 w_o = -ray.Direction;
-        const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
-        unpack_material(mat, uint(payload.normal.w), payload.color_dist.rg);
-
-        float3 v_x, v_y;
-        float3 v_z = payload.normal.xyz;
-        // For opaque objects (or in the future, thin ones) make the normal face forward
-        if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
-            v_z = -v_z;
-        }
-        ortho_basis(v_x, v_y, v_z);
-
-        illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, ray_count, rng);
-
-        float3 w_i;
-        float pdf;
-        float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
-        if (pdf == 0.f || all(bsdf == 0.f)) {
-            break;
-        }
-        path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
-
-        ray.Origin = hit_p;
-        ray.Direction = w_i;
-        ray.TMin = EPSILON;
-        ray.TMax = 1e20f;
-        ++bounce;
-
-        // Russian roulette termination
-        if (bounce > 3) {
-            const float q = max(0.05f, 1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
-            if (lcg_randomf(rng) < q) {
+            // If we hit nothing, include the scene background color from the miss shader
+            if (payload.color_dist.w <= 0) {
+                illum += path_throughput * payload.color_dist.rgb;
                 break;
             }
-            path_throughput = path_throughput / (1.f - q);
-        }
-    } while (bounce < MAX_PATH_DEPTH);
+
+            const float3 w_o = -ray.Direction;
+            const float3 hit_p = ray.Origin + payload.color_dist.w * ray.Direction;
+            unpack_material(mat, uint(payload.normal.w), payload.color_dist.rg);
+
+            float3 v_x, v_y;
+            float3 v_z = payload.normal.xyz;
+            // For opaque objects (or in the future, thin ones) make the normal face forward
+            if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
+                v_z = -v_z;
+            }
+            ortho_basis(v_x, v_y, v_z);
+
+            illum += path_throughput *
+                sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, ray_count, rng);
+
+            float3 w_i;
+            float pdf;
+            float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
+            if (pdf == 0.f || all(bsdf == 0.f)) {
+                break;
+            }
+            path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
+
+            ray.Origin = hit_p;
+            ray.Direction = w_i;
+            ray.TMin = EPSILON;
+            ray.TMax = 1e20f;
+            ++bounce;
+
+            // Russian roulette termination
+            if (bounce > 3) {
+                const float q = max(0.05f, 1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
+                if (lcg_randomf(rng) < q) {
+                    break;
+                }
+                path_throughput = path_throughput / (1.f - q);
+            }
+        } while (bounce < MAX_PATH_DEPTH);
+    }
+    illum = illum / samples_per_pixel;
 
     const float4 accum_color = (float4(illum, 1.0) + frame_id * accum_buffer[pixel]) / (frame_id + 1);
     accum_buffer[pixel] = accum_color;

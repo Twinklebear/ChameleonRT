@@ -109,6 +109,7 @@ void RenderDXR::initialize(const int fb_width, const int fb_height)
 void RenderDXR::set_scene(const Scene &scene)
 {
     frame_id = 0;
+    samples_per_pixel = scene.samples_per_pixel;
 
     // TODO: We can actually run all these uploads and BVH builds in parallel
     // using multiple command lists, as long as the BVH builds don't need so
@@ -569,6 +570,7 @@ void RenderDXR::create_device_objects()
     // vec4 cam_dv
     // vec4 cam_dir_top_left
     // uint32_t frame_id
+    // uint32_t samples_per_pixel
     view_param_buf = dxr::Buffer::upload(
         device.Get(),
         align_to(5 * sizeof(glm::vec4), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
@@ -767,7 +769,8 @@ void RenderDXR::update_view_parameters(const glm::vec3 &pos,
     }
     {
         uint32_t *fid = reinterpret_cast<uint32_t *>(buf + 4 * sizeof(glm::vec4));
-        *fid = frame_id;
+        fid[0] = frame_id;
+        fid[1] = samples_per_pixel;
     }
 
     view_param_buf.unmap();
