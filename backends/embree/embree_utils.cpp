@@ -11,40 +11,33 @@ Geometry::Geometry(RTCDevice &device,
                    const std::vector<glm::uvec3> &indices,
                    const std::vector<glm::vec3> &normals,
                    const std::vector<glm::vec2> &uvs)
-    : index_buf(indices),
+    : n_vertices(verts.size()),
+      vertex_buf(verts),
+      index_buf(indices),
       normal_buf(normals),
       uv_buf(uvs),
       geom(rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE))
 {
-    vertex_buf.reserve(verts.size());
-    std::transform(
-        verts.begin(), verts.end(), std::back_inserter(vertex_buf), [](const glm::vec3 &v) {
-            return glm::vec4(v, 0.f);
-        });
+    // Pad the vertex_buf out to align it
+    vertex_buf.push_back(glm::vec3(0.f));
 
-    vbuf =
-        rtcNewSharedBuffer(device, vertex_buf.data(), vertex_buf.size() * sizeof(glm::vec4));
-    ibuf = rtcNewSharedBuffer(device, index_buf.data(), index_buf.size() * sizeof(glm::uvec3));
+    rtcSetSharedGeometryBuffer(geom,
+                               RTC_BUFFER_TYPE_VERTEX,
+                               0,
+                               RTC_FORMAT_FLOAT3,
+                               vertex_buf.data(),
+                               0,
+                               sizeof(glm::vec3),
+                               n_vertices);
+    rtcSetSharedGeometryBuffer(geom,
+                               RTC_BUFFER_TYPE_INDEX,
+                               0,
+                               RTC_FORMAT_UINT3,
+                               index_buf.data(),
+                               0,
+                               sizeof(glm::uvec3),
+                               index_buf.size());
 
-    rtcSetGeometryBuffer(geom,
-                         RTC_BUFFER_TYPE_VERTEX,
-                         0,
-                         RTC_FORMAT_FLOAT3,
-                         vbuf,
-                         0,
-                         sizeof(glm::vec4),
-                         vertex_buf.size());
-    rtcSetGeometryBuffer(geom,
-                         RTC_BUFFER_TYPE_INDEX,
-                         0,
-                         RTC_FORMAT_UINT3,
-                         ibuf,
-                         0,
-                         sizeof(glm::uvec3),
-                         index_buf.size());
-
-    rtcUpdateGeometryBuffer(geom, RTC_BUFFER_TYPE_VERTEX, 0);
-    rtcUpdateGeometryBuffer(geom, RTC_BUFFER_TYPE_INDEX, 0);
     rtcCommitGeometry(geom);
 }
 
@@ -52,8 +45,6 @@ Geometry::~Geometry()
 {
     if (geom) {
         rtcReleaseGeometry(geom);
-        rtcReleaseBuffer(vbuf);
-        rtcReleaseBuffer(ibuf);
     }
 }
 

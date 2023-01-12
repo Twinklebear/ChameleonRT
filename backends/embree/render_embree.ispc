@@ -32,7 +32,7 @@ struct MaterialParams {
 };
 
 struct ISPCGeometry {
-    const float4 *uniform vertex_buf;
+    const float3 *uniform vertex_buf;
     const uint3 *uniform index_buf;
     const float3 *uniform normal_buf;
     const float2 *uniform uv_buf;

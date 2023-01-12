@@ -11,13 +11,13 @@
 namespace embree {
 
 struct Geometry {
-    std::vector<glm::vec4> vertex_buf;
+    // vertex_buf is padded out by an extra vec3 for Embree's alignment requirements
+    // n_vertices = the real # of vertices, ie vertex_buf.size() - 1
+    size_t n_vertices = 0;
+    std::vector<glm::vec3> vertex_buf;
     std::vector<glm::uvec3> index_buf;
     std::vector<glm::vec3> normal_buf;
     std::vector<glm::vec2> uv_buf;
-
-    RTCBuffer vbuf = 0;
-    RTCBuffer ibuf = 0;
 
     RTCGeometry geom = 0;
 
@@ -36,7 +36,7 @@ struct Geometry {
 };
 
 struct ISPCGeometry {
-    const glm::vec4 *vertex_buf = nullptr;
+    const glm::vec3 *vertex_buf = nullptr;
     const glm::uvec3 *index_buf = nullptr;
     const glm::vec3 *normal_buf = nullptr;
     const glm::vec2 *uv_buf = nullptr;
