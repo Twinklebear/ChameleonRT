@@ -37,6 +37,7 @@ struct LaunchParams {
 #endif
 
     uint32_t frame_id;
+    uint32_t samples_per_pixel;
 
 #ifdef __CUDA_ARCH__
     uchar4 *framebuffer;

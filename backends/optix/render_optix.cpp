@@ -124,6 +124,7 @@ void RenderOptiX::initialize(const int fb_width, const int fb_height)
 void RenderOptiX::set_scene(const Scene &scene)
 {
     frame_id = 0;
+    samples_per_pixel = scene.samples_per_pixel;
 
     // TODO: We can actually run all these uploads and BVH builds in parallel
     // using cudaMemcpyAsync, and the builds in parallel on multiple streams.
@@ -463,6 +464,7 @@ void RenderOptiX::update_view_parameters(const glm::vec3 &pos,
     params.cam_dv = glm::vec4(dir_dv, 0);
     params.cam_dir_top_left = glm::vec4(dir_top_left, 0);
     params.frame_id = frame_id;
+    params.samples_per_pixel = samples_per_pixel;
     params.framebuffer = framebuffer.device_ptr();
     params.accum_buffer = accum_buffer.device_ptr();
     params.textures = device_texture_list.device_ptr();
