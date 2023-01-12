@@ -14,7 +14,6 @@ struct RenderEmbree : RenderBackend {
 
     // TODO: should take scene as shared ptr and keep ref to it,
     std::vector<ParameterizedMesh> parameterized_meshes;
-    uint32_t samples_per_pixel = 1;
     std::shared_ptr<embree::TopLevelBVH> scene_bvh;
 
     std::vector<embree::MaterialParams> material_params;

@@ -11,6 +11,7 @@ struct RenderStats {
 
 struct RenderBackend {
     std::vector<uint32_t> img;
+    uint32_t samples_per_pixel = 1;
 
     virtual ~RenderBackend() {}
 

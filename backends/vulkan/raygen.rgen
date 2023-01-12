@@ -35,6 +35,7 @@ layout(binding = 3, set = 0, std140) uniform ViewParams {
     vec4 cam_dv;
     vec4 cam_dir_top_left;
     int frame_id;
+    int samples_per_pixel;
 };
 
 layout(binding = 4, set = 0, scalar) buffer MaterialParamsBuffer {
@@ -162,72 +163,78 @@ vec3 sample_direct_light(in const DisneyMaterial mat, in const vec3 hit_p, in co
 void main() {
     const ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
     const vec2 dims = vec2(gl_LaunchSizeEXT.xy);
-    LCGRand rng = get_rng(frame_id);
-    vec2 d = (pixel + vec2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
 
-    vec3 ray_origin = cam_pos.xyz;
-    vec3 ray_dir = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
-    float t_min = 0;
-    float t_max = 1e20f;
+    uint ray_count = 0;
+    vec3 illum = vec3(0.f);
+    for (int s = 0; s < samples_per_pixel; ++s) {
+        LCGRand rng = get_rng(frame_id * samples_per_pixel + s);
+        vec2 d = (pixel + vec2(lcg_randomf(rng), lcg_randomf(rng))) / dims;
 
-    DisneyMaterial mat;
+        vec3 ray_origin = cam_pos.xyz;
+        vec3 ray_dir = normalize(d.x * cam_du.xyz + d.y * cam_dv.xyz + cam_dir_top_left.xyz);
+        float t_min = 0;
+        float t_max = 1e20f;
 
-	uint ray_count = 0;
-	int bounce = 0;
-	vec3 illum = vec3(0.f);
-	vec3 path_throughput = vec3(1.f);
-    do {
-        traceRayEXT(scene, gl_RayFlagsOpaqueEXT, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY,
-                ray_origin, t_min, ray_dir, t_max, PRIMARY_RAY);
+        int bounce = 0;
+        vec3 path_throughput = vec3(1.f);
+        DisneyMaterial mat;
+        do {
+            traceRayEXT(scene, gl_RayFlagsOpaqueEXT, 0xff, PRIMARY_RAY, 1, PRIMARY_RAY,
+                    ray_origin, t_min, ray_dir, t_max, PRIMARY_RAY);
 #ifdef REPORT_RAY_STATS
-		++ray_count;
+            ++ray_count;
 #endif
-        // If we hit nothing, include the scene background color from the miss shader
-        if (payload.dist < 0.f) {
-            illum += path_throughput * payload.normal.rgb;
-            break;
-        }
-
-		const vec3 w_o = -ray_dir;
-		const vec3 hit_p = ray_origin + payload.dist * ray_dir;
-		unpack_material(mat, payload.material_id, payload.uv);
-
-		vec3 v_x, v_y;
-		vec3 v_z = payload.normal;
-		// For opaque objects (or in the future, thin ones) make the normal face forward
-		if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
-			v_z = -v_z;
-		}
-		ortho_basis(v_x, v_y, v_z);
-
-		illum += path_throughput * sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, ray_count, rng);
-
-		vec3 w_i;
-		float pdf;
-		vec3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
-		if (pdf == 0.f || all(equal(bsdf, vec3(0.f)))) {
-			break;
-		}
-		path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
-
-		ray_origin = hit_p;
-		ray_dir = w_i;
-		t_min = EPSILON;
-		t_max = 1e20f;
-		++bounce;
-
-        // Russian roulette termination
-        if (bounce > 3) {
-            const float q = max(0.05f, 1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
-            if (lcg_randomf(rng) < q) {
+            // If we hit nothing, include the scene background color from the miss shader
+            if (payload.dist < 0.f) {
+                illum += path_throughput * payload.normal.rgb;
                 break;
             }
-            path_throughput = path_throughput / (1.f - q);
-        }
-	} while (bounce < MAX_PATH_DEPTH);
+
+            const vec3 w_o = -ray_dir;
+            const vec3 hit_p = ray_origin + payload.dist * ray_dir;
+            unpack_material(mat, payload.material_id, payload.uv);
+
+            vec3 v_x, v_y;
+            vec3 v_z = payload.normal;
+            // For opaque objects (or in the future, thin ones) make the normal face forward
+            if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
+                v_z = -v_z;
+            }
+            ortho_basis(v_x, v_y, v_z);
+
+            illum += path_throughput *
+                sample_direct_light(mat, hit_p, v_z, v_x, v_y, w_o, ray_count, rng);
+
+            vec3 w_i;
+            float pdf;
+            vec3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
+            if (pdf == 0.f || all(equal(bsdf, vec3(0.f)))) {
+                break;
+            }
+            path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
+
+            ray_origin = hit_p;
+            ray_dir = w_i;
+            t_min = EPSILON;
+            t_max = 1e20f;
+            ++bounce;
+
+            // Russian roulette termination
+            if (bounce > 3) {
+                const float q = max(0.05f,
+                        1.f - max(path_throughput.x,
+                                  max(path_throughput.y, path_throughput.z)));
+                if (lcg_randomf(rng) < q) {
+                    break;
+                }
+                path_throughput = path_throughput / (1.f - q);
+            }
+        } while (bounce < MAX_PATH_DEPTH);
+    }
+    illum = illum / samples_per_pixel;
 
     vec4 accum_color = imageLoad(accum_buffer, pixel);
-	accum_color = (vec4(illum, 1.0) + frame_id * accum_color) / (frame_id + 1);
+    accum_color = (vec4(illum, 1.0) + frame_id * accum_color) / (frame_id + 1);
     imageStore(accum_buffer, pixel, accum_color);
 
     accum_color.xyz = vec3(linear_to_srgb(accum_color.x), linear_to_srgb(accum_color.y),

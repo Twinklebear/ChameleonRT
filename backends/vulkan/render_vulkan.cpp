@@ -43,7 +43,7 @@ RenderVulkan::RenderVulkan(std::shared_ptr<vkrt::Device> dev)
     }
 
     view_param_buf = vkrt::Buffer::host(*device,
-                                        4 * sizeof(glm::vec4) + sizeof(uint32_t),
+                                        4 * sizeof(glm::vec4) + 2 * sizeof(uint32_t),
                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
@@ -184,6 +184,7 @@ void RenderVulkan::initialize(const int fb_width, const int fb_height)
 void RenderVulkan::set_scene(const Scene &scene)
 {
     frame_id = 0;
+    samples_per_pixel = scene.samples_per_pixel;
 
     // TODO: We can actually run all these uploads and BVH builds in parallel
     // using multiple command lists, as long as the BVH builds don't need so
@@ -992,7 +993,8 @@ void RenderVulkan::update_view_parameters(const glm::vec3 &pos,
     }
     {
         uint32_t *fid = reinterpret_cast<uint32_t *>(buf + 4 * sizeof(glm::vec4));
-        *fid = frame_id;
+        fid[0] = frame_id;
+        fid[1] = samples_per_pixel;
     }
     view_param_buf->unmap();
 }
