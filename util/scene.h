@@ -13,6 +13,13 @@
 #include "pbrtParser/Scene.h"
 #endif
 
+/* Different material models for benchmarking
+ * DEFAULT: Use the materials/textures/etc as they are in the file
+ * WHITE_DIFFUSE: Ignore all materials and shade everything using the default white diffuse
+ * material
+ */
+enum class MaterialMode { DEFAULT, WHITE_DIFFUSE };
+
 struct Scene {
     std::vector<Mesh> meshes;
     std::vector<ParameterizedMesh> parameterized_meshes;
@@ -22,8 +29,9 @@ struct Scene {
     std::vector<QuadLight> lights;
     std::vector<Camera> cameras;
     uint32_t samples_per_pixel = 1;
+    MaterialMode material_mode = MaterialMode::DEFAULT;
 
-    Scene(const std::string &fname);
+    Scene(const std::string &fname, MaterialMode material_mode);
     Scene() = default;
 
     // Compute the unique number of triangles in the scene

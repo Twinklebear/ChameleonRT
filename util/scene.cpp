@@ -46,7 +46,8 @@ bool operator==(const glm::uvec3 &a, const glm::uvec3 &b)
     return a.x == b.x && a.y == b.y && a.z == b.z;
 }
 
-Scene::Scene(const std::string &fname)
+Scene::Scene(const std::string &fname, MaterialMode material_mode)
+    : material_mode(material_mode)
 {
     const std::string ext = get_file_extension(fname);
     if (ext == "obj") {
@@ -60,8 +61,8 @@ Scene::Scene(const std::string &fname)
         load_pbrt(fname);
 #endif
     } else {
-        std::cout << "Unsupported file type '" << ext << "'\n";
-        throw std::runtime_error("Unsupported file type " + ext);
+        std::cout << "Unsupported file '" << fname << "'\n";
+        throw std::runtime_error("Unsupported file " + fname);
     }
 }
 
@@ -122,7 +123,11 @@ void Scene::load_obj(const std::string &file)
         phmap::parallel_flat_hash_map<glm::uvec3, uint32_t> index_mapping;
         Geometry geom;
         // Note: not supporting per-primitive materials
-        material_ids.push_back(obj_mesh.material_ids[0]);
+        if (material_mode == MaterialMode::DEFAULT) {
+            material_ids.push_back(obj_mesh.material_ids[0]);
+        } else {
+            material_ids.push_back(-1);
+        }
 
         auto minmax_matid =
             std::minmax_element(obj_mesh.material_ids.begin(), obj_mesh.material_ids.end());
@@ -180,30 +185,32 @@ void Scene::load_obj(const std::string &file)
     parameterized_meshes.emplace_back(0, material_ids);
     instances.emplace_back(glm::mat4(1.f), 0);
 
-    phmap::parallel_flat_hash_map<std::string, int32_t> texture_ids;
-    // Parse the materials over to a similar DisneyMaterial representation
-    for (const auto &m : obj_materials) {
-        DisneyMaterial d;
-        d.base_color = glm::vec3(m.diffuse[0], m.diffuse[1], m.diffuse[2]);
-        d.specular = glm::clamp(m.shininess / 500.f, 0.f, 1.f);
-        d.roughness = glm::clamp(1.f - d.specular, 0.f, 1.f);
-        // Note: need to debug the transmissive materials
-        d.specular_transmission = 0.f;
-        // d.specular_transmission = glm::clamp(1.f - m.dissolve, 0.f, 1.f);
+    if (material_mode == MaterialMode::DEFAULT) {
+        phmap::parallel_flat_hash_map<std::string, int32_t> texture_ids;
+        // Parse the materials over to a similar DisneyMaterial representation
+        for (const auto &m : obj_materials) {
+            DisneyMaterial d;
+            d.base_color = glm::vec3(m.diffuse[0], m.diffuse[1], m.diffuse[2]);
+            d.specular = glm::clamp(m.shininess / 500.f, 0.f, 1.f);
+            d.roughness = glm::clamp(1.f - d.specular, 0.f, 1.f);
+            // Note: need to debug the transmissive materials
+            d.specular_transmission = 0.f;
+            // d.specular_transmission = glm::clamp(1.f - m.dissolve, 0.f, 1.f);
 
-        if (!m.diffuse_texname.empty()) {
-            std::string path = m.diffuse_texname;
-            canonicalize_path(path);
-            if (texture_ids.find(m.diffuse_texname) == texture_ids.end()) {
-                texture_ids[m.diffuse_texname] = textures.size();
-                textures.emplace_back(obj_base_dir + "/" + path, m.diffuse_texname, SRGB);
+            if (!m.diffuse_texname.empty()) {
+                std::string path = m.diffuse_texname;
+                canonicalize_path(path);
+                if (texture_ids.find(m.diffuse_texname) == texture_ids.end()) {
+                    texture_ids[m.diffuse_texname] = textures.size();
+                    textures.emplace_back(obj_base_dir + "/" + path, m.diffuse_texname, SRGB);
+                }
+                const int32_t id = texture_ids[m.diffuse_texname];
+                uint32_t tex_mask = TEXTURED_PARAM_MASK;
+                SET_TEXTURE_ID(tex_mask, id);
+                d.base_color.r = *reinterpret_cast<float *>(&tex_mask);
             }
-            const int32_t id = texture_ids[m.diffuse_texname];
-            uint32_t tex_mask = TEXTURED_PARAM_MASK;
-            SET_TEXTURE_ID(tex_mask, id);
-            d.base_color.r = *reinterpret_cast<float *>(&tex_mask);
+            materials.push_back(d);
         }
-        materials.push_back(d);
     }
 
     validate_materials();
@@ -255,7 +262,11 @@ void Scene::load_gltf(const std::string &fname)
         std::vector<uint32_t> material_ids;
         for (auto &p : m.primitives) {
             Geometry geom;
-            material_ids.push_back(p.material);
+            if (material_mode == MaterialMode::DEFAULT) {
+                material_ids.push_back(p.material);
+            } else {
+                material_ids.push_back(-1);
+            }
 
             if (p.mode != TINYGLTF_MODE_TRIANGLES) {
                 std::cout << "Unsupported primitive mode! File must contain only triangles\n";
@@ -315,64 +326,67 @@ void Scene::load_gltf(const std::string &fname)
         meshes.push_back(mesh);
     }
 
-    // Load images
-    for (const auto &img : model.images) {
-        if (img.component != 4) {
-            std::cout << "WILL: Check non-4 component image support\n";
+    if (material_mode == MaterialMode::DEFAULT) {
+        // Load images
+        for (const auto &img : model.images) {
+            if (img.component != 4) {
+                std::cout << "WILL: Check non-4 component image support\n";
+            }
+            if (img.pixel_type != TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
+                std::cout << "Non-uchar images are not supported\n";
+                throw std::runtime_error("Unsupported image pixel type");
+            }
+
+            Image texture;
+            texture.name = img.name;
+            texture.width = img.width;
+            texture.height = img.height;
+            texture.channels = img.component;
+            texture.img = img.image;
+            // Assume linear unless we find it used as a color texture
+            texture.color_space = LINEAR;
+            textures.push_back(texture);
         }
-        if (img.pixel_type != TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
-            std::cout << "Non-uchar images are not supported\n";
-            throw std::runtime_error("Unsupported image pixel type");
+
+        // Load materials
+        for (const auto &m : model.materials) {
+            DisneyMaterial mat;
+            mat.base_color.x = m.pbrMetallicRoughness.baseColorFactor[0];
+            mat.base_color.y = m.pbrMetallicRoughness.baseColorFactor[1];
+            mat.base_color.z = m.pbrMetallicRoughness.baseColorFactor[2];
+
+            mat.metallic = m.pbrMetallicRoughness.metallicFactor;
+
+            mat.roughness = m.pbrMetallicRoughness.roughnessFactor;
+
+            if (m.pbrMetallicRoughness.baseColorTexture.index != -1) {
+                const int32_t id =
+                    model.textures[m.pbrMetallicRoughness.baseColorTexture.index].source;
+                textures[id].color_space = SRGB;
+
+                uint32_t tex_mask = TEXTURED_PARAM_MASK;
+                SET_TEXTURE_ID(tex_mask, id);
+                mat.base_color.r = *reinterpret_cast<float *>(&tex_mask);
+            }
+            // glTF: metallic is blue channel, roughness is green channel
+            if (m.pbrMetallicRoughness.metallicRoughnessTexture.index != -1) {
+                const int32_t id =
+                    model.textures[m.pbrMetallicRoughness.metallicRoughnessTexture.index]
+                        .source;
+                textures[id].color_space = LINEAR;
+
+                uint32_t tex_mask = TEXTURED_PARAM_MASK;
+                SET_TEXTURE_ID(tex_mask, id);
+                SET_TEXTURE_CHANNEL(tex_mask, 2);
+                mat.metallic = *reinterpret_cast<float *>(&tex_mask);
+
+                tex_mask = TEXTURED_PARAM_MASK;
+                SET_TEXTURE_ID(tex_mask, id);
+                SET_TEXTURE_CHANNEL(tex_mask, 1);
+                mat.roughness = *reinterpret_cast<float *>(&tex_mask);
+            }
+            materials.push_back(mat);
         }
-
-        Image texture;
-        texture.name = img.name;
-        texture.width = img.width;
-        texture.height = img.height;
-        texture.channels = img.component;
-        texture.img = img.image;
-        // Assume linear unless we find it used as a color texture
-        texture.color_space = LINEAR;
-        textures.push_back(texture);
-    }
-
-    // Load materials
-    for (const auto &m : model.materials) {
-        DisneyMaterial mat;
-        mat.base_color.x = m.pbrMetallicRoughness.baseColorFactor[0];
-        mat.base_color.y = m.pbrMetallicRoughness.baseColorFactor[1];
-        mat.base_color.z = m.pbrMetallicRoughness.baseColorFactor[2];
-
-        mat.metallic = m.pbrMetallicRoughness.metallicFactor;
-
-        mat.roughness = m.pbrMetallicRoughness.roughnessFactor;
-
-        if (m.pbrMetallicRoughness.baseColorTexture.index != -1) {
-            const int32_t id =
-                model.textures[m.pbrMetallicRoughness.baseColorTexture.index].source;
-            textures[id].color_space = SRGB;
-
-            uint32_t tex_mask = TEXTURED_PARAM_MASK;
-            SET_TEXTURE_ID(tex_mask, id);
-            mat.base_color.r = *reinterpret_cast<float *>(&tex_mask);
-        }
-        // glTF: metallic is blue channel, roughness is green channel
-        if (m.pbrMetallicRoughness.metallicRoughnessTexture.index != -1) {
-            const int32_t id =
-                model.textures[m.pbrMetallicRoughness.metallicRoughnessTexture.index].source;
-            textures[id].color_space = LINEAR;
-
-            uint32_t tex_mask = TEXTURED_PARAM_MASK;
-            SET_TEXTURE_ID(tex_mask, id);
-            SET_TEXTURE_CHANNEL(tex_mask, 2);
-            mat.metallic = *reinterpret_cast<float *>(&tex_mask);
-
-            tex_mask = TEXTURED_PARAM_MASK;
-            SET_TEXTURE_ID(tex_mask, id);
-            SET_TEXTURE_CHANNEL(tex_mask, 1);
-            mat.roughness = *reinterpret_cast<float *>(&tex_mask);
-        }
-        materials.push_back(mat);
     }
 
     for (const auto &nid : model.scenes[model.defaultScene].nodes) {
@@ -496,47 +510,49 @@ void Scene::load_crts(const std::string &file)
         stbi_image_free(img_data);
     }
 
-    for (size_t i = 0; i < header["materials"].size(); ++i) {
-        auto &m = header["materials"][i];
+    if (material_mode == MaterialMode::DEFAULT) {
+        for (size_t i = 0; i < header["materials"].size(); ++i) {
+            auto &m = header["materials"][i];
 
-        DisneyMaterial mat;
+            DisneyMaterial mat;
 
-        const auto base_color_data = m["base_color"].get<std::vector<float>>();
-        mat.base_color = glm::make_vec3(base_color_data.data());
-        if (m.find("base_color_texture") != m.end()) {
-            const int32_t id = m["base_color_texture"].get<int32_t>();
-            uint32_t tex_mask = TEXTURED_PARAM_MASK;
-            SET_TEXTURE_ID(tex_mask, id);
-            mat.base_color.r = *reinterpret_cast<float *>(&tex_mask);
-        }
-
-        auto parse_float_param = [&](const std::string &param, float &val) {
-            val = m[param].get<float>();
-            const std::string texture_name = param + "_texture";
-            if (m.find(texture_name) != m.end()) {
-                const int32_t id = m[texture_name]["texture"].get<int32_t>();
-                const uint32_t channel = m[texture_name]["channel"].get<uint32_t>();
+            const auto base_color_data = m["base_color"].get<std::vector<float>>();
+            mat.base_color = glm::make_vec3(base_color_data.data());
+            if (m.find("base_color_texture") != m.end()) {
+                const int32_t id = m["base_color_texture"].get<int32_t>();
                 uint32_t tex_mask = TEXTURED_PARAM_MASK;
                 SET_TEXTURE_ID(tex_mask, id);
-                SET_TEXTURE_CHANNEL(tex_mask, channel);
-                val = *reinterpret_cast<float *>(&tex_mask);
+                mat.base_color.r = *reinterpret_cast<float *>(&tex_mask);
             }
-        };
 
-        parse_float_param("metallic", mat.metallic);
-        parse_float_param("specular", mat.specular);
-        parse_float_param("roughness", mat.roughness);
-        parse_float_param("specular_tint", mat.specular_tint);
-        parse_float_param("anisotropic", mat.anisotropy);
-        parse_float_param("sheen", mat.sheen);
-        parse_float_param("sheen_tint", mat.sheen_tint);
-        parse_float_param("clearcoat", mat.clearcoat);
-        // TODO: May need to invert this param coming from Blender to give clearcoat gloss?
-        // or does the disney gloss term = roughness?
-        parse_float_param("clearcoat_roughness", mat.clearcoat_gloss);
-        parse_float_param("ior", mat.ior);
-        parse_float_param("transmission", mat.specular_transmission);
-        materials.push_back(mat);
+            auto parse_float_param = [&](const std::string &param, float &val) {
+                val = m[param].get<float>();
+                const std::string texture_name = param + "_texture";
+                if (m.find(texture_name) != m.end()) {
+                    const int32_t id = m[texture_name]["texture"].get<int32_t>();
+                    const uint32_t channel = m[texture_name]["channel"].get<uint32_t>();
+                    uint32_t tex_mask = TEXTURED_PARAM_MASK;
+                    SET_TEXTURE_ID(tex_mask, id);
+                    SET_TEXTURE_CHANNEL(tex_mask, channel);
+                    val = *reinterpret_cast<float *>(&tex_mask);
+                }
+            };
+
+            parse_float_param("metallic", mat.metallic);
+            parse_float_param("specular", mat.specular);
+            parse_float_param("roughness", mat.roughness);
+            parse_float_param("specular_tint", mat.specular_tint);
+            parse_float_param("anisotropic", mat.anisotropy);
+            parse_float_param("sheen", mat.sheen);
+            parse_float_param("sheen_tint", mat.sheen_tint);
+            parse_float_param("clearcoat", mat.clearcoat);
+            // TODO: May need to invert this param coming from Blender to give clearcoat gloss?
+            // or does the disney gloss term = roughness?
+            parse_float_param("clearcoat_roughness", mat.clearcoat_gloss);
+            parse_float_param("ior", mat.ior);
+            parse_float_param("transmission", mat.specular_transmission);
+            materials.push_back(mat);
+        }
     }
 
     phmap::parallel_flat_hash_map<glm::uvec2, size_t> parameterized_mesh_ids;
@@ -549,7 +565,10 @@ void Scene::load_crts(const std::string &file)
             // CRTS meshes only have one geometry associated with them, so the parameterized
             // mesh can be looked up by the pair of (mesh_id, material_id)
             const auto mesh_id = n["mesh"].get<uint64_t>();
-            const auto mat_id = n["material"].get<uint32_t>();
+            uint32_t mat_id = -1;
+            if (material_mode == MaterialMode::DEFAULT) {
+                mat_id = n["material"].get<uint32_t>();
+            }
             const glm::uvec2 mesh_mat_id(mesh_id, mat_id);
             const auto fnd = parameterized_mesh_ids.find(mesh_mat_id);
             size_t param_mesh_id = -1;
@@ -690,7 +709,7 @@ void Scene::load_pbrt(const std::string &file)
                               << " triangles: " << mesh->toString() << "\n";
 
                     uint32_t material_id = -1;
-                    if (mesh->material) {
+                    if (material_mode == MaterialMode::DEFAULT && mesh->material) {
                         material_id = load_pbrt_materials(mesh->material,
                                                           mesh->textures,
                                                           pbrt_base_dir,

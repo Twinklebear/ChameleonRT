@@ -28,6 +28,8 @@ const std::string USAGE =
     "\t-camera <n>            If the scene contains multiple cameras, specify which\n"
     "\t                       should be used. Defaults to the first camera\n"
     "\t-img <x> <y>           Specify the window dimensions. Defaults to 1280x720\n"
+    "\t-mat-mode <MODE>       Specify the material mode, default (the default) or "
+    "white_diffuse\n"
     "\n";
 
 int win_width = 1280;
@@ -124,6 +126,7 @@ void run_app(const std::vector<std::string> &args,
     uint32_t samples_per_pixel = 1;
     size_t camera_id = 0;
     std::string validation_img_prefix;
+    MaterialMode material_mode = MaterialMode::DEFAULT;
     for (size_t i = 1; i < args.size(); ++i) {
         if (args[i] == "-eye") {
             eye.x = std::stof(args[++i]);
@@ -151,6 +154,10 @@ void run_app(const std::vector<std::string> &args,
             validation_img_prefix = args[++i];
         } else if (args[i] == "-img") {
             i += 2;
+        } else if (args[i] == "-mat-mode") {
+            if (args[++i] == "white_diffuse") {
+                material_mode = MaterialMode::WHITE_DIFFUSE;
+            }
         } else if (args[i][0] != '-') {
             scene_file = args[i];
             canonicalize_path(scene_file);
@@ -173,7 +180,7 @@ void run_app(const std::vector<std::string> &args,
 
     std::string scene_info;
     {
-        Scene scene(scene_file);
+        Scene scene(scene_file, material_mode);
         scene.samples_per_pixel = samples_per_pixel;
 
         std::stringstream ss;
