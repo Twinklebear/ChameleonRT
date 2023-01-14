@@ -10,5 +10,6 @@ struct ViewParams {
     simd::uint2 fb_dims;
     uint32_t frame_id;
     uint32_t num_lights;
+    uint32_t samples_per_pixel;
 };
 

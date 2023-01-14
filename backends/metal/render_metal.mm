@@ -63,6 +63,10 @@ void RenderMetal::initialize(const int fb_width, const int fb_height)
 
 void RenderMetal::set_scene(const Scene &scene)
 {
+    frame_id = 0;
+
+    samples_per_pixel = scene.samples_per_pixel;
+
     @autoreleasepool {
         // Create a heap to hold all the data we'll need to upload
         allocate_heap(scene);
@@ -301,6 +305,7 @@ ViewParams RenderMetal::compute_view_parameters(const glm::vec3 &pos,
     view_params.fb_dims = simd::uint2{fb_dims.x, fb_dims.y};
     view_params.frame_id = frame_id;
     view_params.num_lights = light_buffer->size() / sizeof(QuadLight);
+    view_params.samples_per_pixel = samples_per_pixel;
 
     return view_params;
 }

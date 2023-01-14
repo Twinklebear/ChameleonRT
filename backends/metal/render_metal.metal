@@ -205,129 +205,133 @@ kernel void raygen(uint2 tid [[thread_position_in_grid]],
                    const device QuadLight *lights [[buffer(7)]])
 {
     const float2 pixel = float2(tid);
-    LCGRand rng = get_rng(tid.x + tid.y * view_params.fb_dims.x, view_params.frame_id);
-    const float2 d =
-        (pixel + float2(lcg_randomf(rng), lcg_randomf(rng))) / float2(view_params.fb_dims);
 
-    ray ray;
-    ray.origin = view_params.cam_pos.xyz;
-    ray.direction = normalize(d.x * view_params.cam_du.xyz + d.y * view_params.cam_dv.xyz +
-                              view_params.cam_dir_top_left.xyz);
-    ray.min_distance = 0.f;
-    ray.max_distance = INFINITY;
-
-    DisneyMaterial mat;
     uint ray_count = 0;
-    int bounce = 0;
     float3 illum = float3(0, 0, 0);
-    float3 path_throughput = float3(1, 1, 1);
-
     intersector<instancing, triangle_data> traversal;
     typename intersector<instancing, triangle_data>::result_type hit_result;
     traversal.assume_geometry_type(geometry_type::triangle);
     traversal.force_opacity(forced_opacity::opaque);
+    for (uint32_t s = 0; s < view_params.samples_per_pixel; ++s) {
+        LCGRand rng = get_rng(tid.x + tid.y * view_params.fb_dims.x,
+                              view_params.frame_id * view_params.samples_per_pixel + s);
+        const float2 d =
+            (pixel + float2(lcg_randomf(rng), lcg_randomf(rng))) / float2(view_params.fb_dims);
 
-    do {
-        hit_result = traversal.intersect(ray, scene);
+        ray ray;
+        ray.origin = view_params.cam_pos.xyz;
+        ray.direction = normalize(d.x * view_params.cam_du.xyz + d.y * view_params.cam_dv.xyz +
+                                  view_params.cam_dir_top_left.xyz);
+        ray.min_distance = 0.f;
+        ray.max_distance = INFINITY;
+
+        DisneyMaterial mat;
+        int bounce = 0;
+        float3 path_throughput = float3(1, 1, 1);
+        do {
+            hit_result = traversal.intersect(ray, scene);
 #ifdef REPORT_RAY_STATS
-        ++ray_count;
+            ++ray_count;
 #endif
 
-        if (hit_result.type == intersection_type::none) {
-            illum += path_throughput * miss_shader(ray.direction);
-            break;
-        }
-
-        // Find the instance we hit and look up the geometry we hit within
-        // that instance to find the triangle data
-        device const Instance &instance_data = instance_data_buf[hit_result.instance_id];
-        device const Geometry &geom =
-            geometries[instance_data.geometries[hit_result.geometry_id]];
-
-        const uint3 idx = geom.indices[hit_result.primitive_id];
-        const float3 va = geom.vertices[idx.x];
-        const float3 vb = geom.vertices[idx.y];
-        const float3 vc = geom.vertices[idx.z];
-
-        const float3 bary = float3(hit_result.triangle_barycentric_coord.x,
-                                   hit_result.triangle_barycentric_coord.y,
-                                   1.f - hit_result.triangle_barycentric_coord.x -
-                                       hit_result.triangle_barycentric_coord.y);
-
-        float2 uv = float2(0.f);
-        if (geom.num_uvs > 0) {
-            const float2 uva = geom.uvs[idx.x];
-            const float2 uvb = geom.uvs[idx.y];
-            const float2 uvc = geom.uvs[idx.z];
-            uv = bary.z * uva + bary.x * uvb + bary.y * uvc;
-        }
-
-        float3 normal = normalize(cross(vb - va, vc - va));
-        /*
-        if (geom.num_normals > 0) {
-            const float3 na = geom.normals[idx.x];
-            const float3 nb = geom.normals[idx.y];
-            const float3 nc = geom.normals[idx.z];
-            normal = normalize(bary.z * na + bary.x * nb + bary.y * nc);
-        }
-        */
-
-        // Transform the normal into world space
-        float4x4 normal_transform = transpose(instance_data.inverse_transform);
-        normal = normalize((normal_transform * float4(normal, 0.f)).xyz);
-
-        const uint32_t material_id = instance_data.material_ids[hit_result.geometry_id];
-
-        const float3 w_o = -ray.direction;
-        const float3 hit_p = ray.origin + hit_result.distance * ray.direction;
-
-        unpack_material(mat, materials[material_id], textures, uv);
-
-        float3 v_x, v_y;
-        float3 v_z = normal;
-        // For opaque objects (or in the future, thin ones) make the normal face forward
-        if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
-            v_z = -v_z;
-        }
-        ortho_basis(v_x, v_y, v_z);
-
-        illum += path_throughput * sample_direct_light(scene,
-                                                       mat,
-                                                       hit_p,
-                                                       v_z,
-                                                       v_x,
-                                                       v_y,
-                                                       w_o,
-                                                       lights,
-                                                       view_params.num_lights,
-                                                       ray_count,
-                                                       rng);
-
-        float3 w_i;
-        float pdf;
-        float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
-        if (pdf == 0.f || all(bsdf == 0.f)) {
-            break;
-        }
-        path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
-
-        ray.origin = hit_p;
-        ray.direction = w_i;
-        ray.min_distance = EPSILON;
-        ray.max_distance = 1e20f;
-        ++bounce;
-
-        // Russian roulette termination
-        if (bounce > 3) {
-            const float q =
-                max(0.05f,
-                    1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
-            if (lcg_randomf(rng) < q) {
+            if (hit_result.type == intersection_type::none) {
+                illum += path_throughput * miss_shader(ray.direction);
                 break;
             }
-            path_throughput = path_throughput / (1.f - q);
-        }
-    } while (bounce < MAX_PATH_DEPTH);
+
+            // Find the instance we hit and look up the geometry we hit within
+            // that instance to find the triangle data
+            device const Instance &instance_data = instance_data_buf[hit_result.instance_id];
+            device const Geometry &geom =
+                geometries[instance_data.geometries[hit_result.geometry_id]];
+
+            const uint3 idx = geom.indices[hit_result.primitive_id];
+            const float3 va = geom.vertices[idx.x];
+            const float3 vb = geom.vertices[idx.y];
+            const float3 vc = geom.vertices[idx.z];
+
+            const float3 bary = float3(hit_result.triangle_barycentric_coord.x,
+                                       hit_result.triangle_barycentric_coord.y,
+                                       1.f - hit_result.triangle_barycentric_coord.x -
+                                           hit_result.triangle_barycentric_coord.y);
+
+            float2 uv = float2(0.f);
+            if (geom.num_uvs > 0) {
+                const float2 uva = geom.uvs[idx.x];
+                const float2 uvb = geom.uvs[idx.y];
+                const float2 uvc = geom.uvs[idx.z];
+                uv = bary.z * uva + bary.x * uvb + bary.y * uvc;
+            }
+
+            float3 normal = normalize(cross(vb - va, vc - va));
+            /*
+            if (geom.num_normals > 0) {
+                const float3 na = geom.normals[idx.x];
+                const float3 nb = geom.normals[idx.y];
+                const float3 nc = geom.normals[idx.z];
+                normal = normalize(bary.z * na + bary.x * nb + bary.y * nc);
+            }
+            */
+
+            // Transform the normal into world space
+            float4x4 normal_transform = transpose(instance_data.inverse_transform);
+            normal = normalize((normal_transform * float4(normal, 0.f)).xyz);
+
+            const uint32_t material_id = instance_data.material_ids[hit_result.geometry_id];
+
+            const float3 w_o = -ray.direction;
+            const float3 hit_p = ray.origin + hit_result.distance * ray.direction;
+
+            unpack_material(mat, materials[material_id], textures, uv);
+
+            float3 v_x, v_y;
+            float3 v_z = normal;
+            // For opaque objects (or in the future, thin ones) make the normal face forward
+            if (mat.specular_transmission == 0.f && dot(w_o, v_z) < 0.0) {
+                v_z = -v_z;
+            }
+            ortho_basis(v_x, v_y, v_z);
+
+            illum += path_throughput * sample_direct_light(scene,
+                                                           mat,
+                                                           hit_p,
+                                                           v_z,
+                                                           v_x,
+                                                           v_y,
+                                                           w_o,
+                                                           lights,
+                                                           view_params.num_lights,
+                                                           ray_count,
+                                                           rng);
+
+            float3 w_i;
+            float pdf;
+            float3 bsdf = sample_disney_brdf(mat, v_z, w_o, v_x, v_y, rng, w_i, pdf);
+            if (pdf == 0.f || all(bsdf == 0.f)) {
+                break;
+            }
+            path_throughput *= bsdf * abs(dot(w_i, v_z)) / pdf;
+
+            ray.origin = hit_p;
+            ray.direction = w_i;
+            ray.min_distance = EPSILON;
+            ray.max_distance = 1e20f;
+            ++bounce;
+
+            // Russian roulette termination
+            if (bounce > 3) {
+                const float q = max(
+                    0.05f,
+                    1.f - max(path_throughput.x, max(path_throughput.y, path_throughput.z)));
+                if (lcg_randomf(rng) < q) {
+                    break;
+                }
+                path_throughput = path_throughput / (1.f - q);
+            }
+        } while (bounce < MAX_PATH_DEPTH);
+    }
+
+    illum = illum / view_params.samples_per_pixel;
 
     const float3 accum_color = (illum + view_params.frame_id * accum_buffer.read(tid).xyz) /
                                (view_params.frame_id + 1);
