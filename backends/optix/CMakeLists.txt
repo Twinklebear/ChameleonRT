@@ -37,6 +37,16 @@ add_ptx_embed_library(optix_kernels_barycentrics render_optix_barycentrics.cu
         -Xptxas --warn-on-double-precision-use
         -Xptxas -Werror)
 
+add_ptx_embed_library(optix_kernels_ao render_optix_ao.cu
+    INCLUDE_DIRECTORIES
+        ${OptiX_INCLUDE_DIR} 
+        ${PROJECT_SOURCE_DIR}
+    COMPILE_DEFINITIONS
+        ${CUDA_COMPILE_DEFNS}
+        # These options don't seem to do print any warnings?
+        -Xptxas --warn-on-double-precision-use
+        -Xptxas -Werror)
+
 # Build the different benchmark versions of the backend:
 # pathtracing (no suffix, default)
 # barycentrics
@@ -103,6 +113,37 @@ target_link_libraries(crt_optix_barycentrics PUBLIC
     ${CUDA_LIBRARIES}
     ${CUDA_CUDA_LIBRARY})
 
-install(TARGETS crt_optix crt_optix_barycentrics
+add_library(crt_optix_ao MODULE
+    render_optix_plugin.cpp
+    render_optix.cpp
+    optix_utils.cpp)
+
+set_target_properties(crt_optix_ao PROPERTIES
+    CXX_STANDARD 14
+    CXX_STANDARD_REQUIRED ON)
+
+if (REPORT_RAY_STATS)
+    target_compile_options(crt_optix_ao PUBLIC
+        -DREPORT_RAY_STATS=1)
+endif()
+
+target_include_directories(crt_optix_ao PUBLIC
+    $<BUILD_INTERFACE:${OptiX_INCLUDE_DIR}>
+    $<BUILD_INTERFACE:${CUDA_INCLUDE_DIRS}>)
+
+target_compile_definitions(crt_optix_ao PRIVATE
+    -DINCLUDE_PTX_KERNELS=\"render_optix_ao_embedded_ptx.h\"
+    -DINCLUDE_PTX_VAR=render_optix_ao_ptx
+)
+
+target_link_libraries(crt_optix_ao PUBLIC
+    optix_kernels_ao
+    util
+    glad
+    display
+    ${CUDA_LIBRARIES}
+    ${CUDA_CUDA_LIBRARY})
+
+install(TARGETS crt_optix crt_optix_barycentrics crt_optix_ao
     LIBRARY DESTINATION bin)
 

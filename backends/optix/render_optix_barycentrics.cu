@@ -84,7 +84,7 @@ extern "C" __global__ void __raygen__perspective_camera()
 
 extern "C" __global__ void __miss__miss()
 {
-    optixSetPayload_1(__float_as_int(-1.f));
+    optixSetPayload_2(__float_as_int(-1.f));
 }
 
 extern "C" __global__ void __miss__occlusion_miss()
