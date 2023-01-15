@@ -33,6 +33,17 @@ add_spirv_embed_library(spv_shaders_barycentrics
     COMPILE_DEFINITIONS
         ${GLSL_COMPILE_DEFNS})
 
+add_spirv_embed_library(spv_shaders_ao
+    raygen_ao.rgen
+    miss_ao.rmiss
+    hit_ao.rchit
+    occlusion_miss_ao.rmiss
+	COMPILE_OPTIONS -O
+    INCLUDE_DIRECTORIES
+        ${PROJECT_SOURCE_DIR}
+    COMPILE_DEFINITIONS
+        ${GLSL_COMPILE_DEFNS})
+
 # Build the different benchmark backends
 # defalt: pt (no suffix
 # barycentrics: primary rays w/ barycentrics (_barycentrics)
@@ -106,6 +117,41 @@ target_link_libraries(crt_vulkan_barycentrics PUBLIC
     display
     Vulkan::Vulkan)
 
-install(TARGETS crt_vulkan crt_vulkan_barycentrics
+# ao
+add_library(crt_vulkan_ao MODULE
+    render_vulkan_plugin.cpp
+    render_vulkan.cpp
+    vulkan_utils.cpp
+    vulkanrt_utils.cpp
+    vkdisplay.cpp
+    imgui_impl_vulkan.cpp)
+
+set_target_properties(crt_vulkan_ao PROPERTIES
+	CXX_STANDARD 14
+	CXX_STANDARD_REQUIRED ON)
+
+if (REPORT_RAY_STATS)
+	target_compile_options(crt_vulkan_ao PUBLIC
+		-DREPORT_RAY_STATS=1)
+endif()
+
+target_compile_definitions(crt_vulkan_ao PRIVATE
+    -DINCLUDE_SPV_SHADERS=\"spv_shaders_ao_embedded_spv.h\"
+    -DRAYGEN_SPV_NAME=raygen_ao_spv
+    -DMISS_SPV_NAME=miss_ao_spv
+    -DOCCLUSION_MISS_SPV_NAME=occlusion_miss_ao_spv
+    -DHIT_SPV_NAME=hit_ao_spv
+)
+
+target_compile_options(crt_vulkan_ao PUBLIC
+    -DVK_ENABLE_BETA_EXTENSIONS=1)
+
+target_link_libraries(crt_vulkan_ao PUBLIC
+	spv_shaders_ao
+    util
+    display
+    Vulkan::Vulkan)
+
+install(TARGETS crt_vulkan crt_vulkan_barycentrics crt_vulkan_ao
     LIBRARY DESTINATION bin)
 

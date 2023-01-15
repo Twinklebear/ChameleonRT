@@ -28,6 +28,11 @@ struct BarycentricsPayload {
     float dist;
 };
 
+struct AORayPayload {
+    vec3 normal;
+    float dist;
+};
+
 float linear_to_srgb(float x) {
 	if (x <= 0.0031308f) {
 		return 12.92f * x;
