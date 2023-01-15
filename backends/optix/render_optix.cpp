@@ -13,7 +13,7 @@
 #include <optix_stubs.h>
 #include "optix_params.h"
 #include "optix_utils.h"
-#include "render_optix_embedded_ptx.h"
+#include INCLUDE_PTX_KERNELS
 #include "types.h"
 #include "util.h"
 
@@ -278,8 +278,8 @@ void RenderOptiX::build_raytracing_pipeline()
     pipeline_opts.pipelineLaunchParamsVariableName = "launch_params";
 
     optix::Module module(device,
-                         render_optix_ptx,
-                         sizeof(render_optix_ptx),
+                         INCLUDE_PTX_VAR,
+                         sizeof(INCLUDE_PTX_VAR),
                          optix::DEFAULT_MODULE_COMPILE_OPTIONS,
                          pipeline_opts);
 
