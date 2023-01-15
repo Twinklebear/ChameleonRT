@@ -12,7 +12,7 @@ find_package(OptiX 7 REQUIRED)
 
 include(cmake/Bin2C.cmake)
 
-set(CUDA_COMPILE_DEFNS "-O3;--use_fast_math")
+set(CUDA_COMPILE_DEFNS "-lineinfo;-O3;--use_fast_math")
 if (REPORT_RAY_STATS)
     set(CUDA_COMPILE_DEFNS "${CUDA_COMPILE_DEFNS};-DREPORT_RAY_STATS=1")
 endif()
