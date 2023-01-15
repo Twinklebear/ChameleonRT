@@ -9,7 +9,7 @@ __constant__ LaunchParams launch_params;
 
 struct RayPayload {
     // payload registers 0, 1
-    float2 uv;
+    float2 bary;
     // payload register 2
     float t_hit;
 };
@@ -17,7 +17,7 @@ struct RayPayload {
 __device__ RayPayload make_ray_payload()
 {
     RayPayload p;
-    p.uv = make_float2(0.f);
+    p.bary = make_float2(0.f);
     p.t_hit = -1.f;
     return p;
 }
@@ -55,16 +55,17 @@ extern "C" __global__ void __raygen__perspective_camera()
                    PRIMARY_RAY,
                    1,
                    PRIMARY_RAY,
-                   reinterpret_cast<uint32_t &>(payload.uv.x),
-                   reinterpret_cast<uint32_t &>(payload.uv.y),
+                   reinterpret_cast<uint32_t &>(payload.bary.x),
+                   reinterpret_cast<uint32_t &>(payload.bary.y),
                    reinterpret_cast<uint32_t &>(payload.t_hit));
 #ifdef REPORT_RAY_STATS
         ++ray_count;
 #endif
 
         if (payload.t_hit > 0.f) {
-            illum = illum +
-                    make_float3(payload.uv.x, payload.uv.y, 1.f - payload.uv.x - payload.uv.y);
+            illum = illum + make_float3(payload.bary.x,
+                                        payload.bary.y,
+                                        1.f - payload.bary.x - payload.bary.y);
         }
     }
     illum = illum / launch_params.samples_per_pixel;

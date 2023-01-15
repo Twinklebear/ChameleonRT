@@ -23,6 +23,11 @@ struct RayPayload {
     float pad;
 };
 
+struct BarycentricsPayload {
+    vec2 bary;
+    float dist;
+};
+
 float linear_to_srgb(float x) {
 	if (x <= 0.0031308f) {
 		return 12.92f * x;

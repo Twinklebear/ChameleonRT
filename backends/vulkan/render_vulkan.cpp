@@ -5,7 +5,7 @@
 #include <iostream>
 #include <numeric>
 #include <string>
-#include "spv_shaders_embedded_spv.h"
+#include INCLUDE_SPV_SHADERS
 #include "util.h"
 #include <glm/ext.hpp>
 
@@ -801,16 +801,16 @@ void RenderVulkan::build_raytracing_pipeline()
         device->logical_device(), &pipeline_create_info, nullptr, &pipeline_layout));
 
     // Load the shader modules for our pipeline and build the pipeline
-    auto raygen_shader =
-        std::make_shared<vkrt::ShaderModule>(*device, raygen_spv, sizeof(raygen_spv));
+    auto raygen_shader = std::make_shared<vkrt::ShaderModule>(
+        *device, RAYGEN_SPV_NAME, sizeof(RAYGEN_SPV_NAME));
 
     auto miss_shader =
-        std::make_shared<vkrt::ShaderModule>(*device, miss_spv, sizeof(miss_spv));
+        std::make_shared<vkrt::ShaderModule>(*device, MISS_SPV_NAME, sizeof(MISS_SPV_NAME));
     auto occlusion_miss_shader = std::make_shared<vkrt::ShaderModule>(
-        *device, occlusion_miss_spv, sizeof(occlusion_miss_spv));
+        *device, OCCLUSION_MISS_SPV_NAME, sizeof(OCCLUSION_MISS_SPV_NAME));
 
     auto closest_hit_shader =
-        std::make_shared<vkrt::ShaderModule>(*device, hit_spv, sizeof(hit_spv));
+        std::make_shared<vkrt::ShaderModule>(*device, HIT_SPV_NAME, sizeof(HIT_SPV_NAME));
 
     rt_pipeline = vkrt::RTPipelineBuilder()
                       .set_raygen("raygen", raygen_shader)
