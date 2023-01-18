@@ -125,6 +125,7 @@ void run_app(const std::vector<std::string> &args,
     float fov_y = 65.f;
     uint32_t samples_per_pixel = 1;
     size_t camera_id = 0;
+    size_t benchmark_frames = 0;
     std::string validation_img_prefix;
     MaterialMode material_mode = MaterialMode::DEFAULT;
     for (size_t i = 1; i < args.size(); ++i) {
@@ -158,6 +159,8 @@ void run_app(const std::vector<std::string> &args,
             if (args[++i] == "white_diffuse") {
                 material_mode = MaterialMode::WHITE_DIFFUSE;
             }
+        } else if (args[i] == "-benchmark-frames") {
+            benchmark_frames = std::stoi(args[++i]);
         } else if (args[i][0] != '-') {
             scene_file = args[i];
             canonicalize_path(scene_file);
@@ -287,6 +290,12 @@ void run_app(const std::vector<std::string> &args,
             frame_id = 0;
         }
 
+        bool benchmark_done = false;
+        if (benchmark_frames > 0 && frame_id + 1 == benchmark_frames) {
+            save_image = true;
+            benchmark_done = true;
+        }
+
         const bool need_readback = save_image || !validation_img_prefix.empty();
         RenderStats stats = renderer->render(
             camera.eye(), camera.dir(), camera.up(), fov_y, camera_changed, need_readback);
@@ -321,6 +330,18 @@ void run_app(const std::vector<std::string> &args,
         } else {
             render_time += stats.render_time;
             rays_per_second += stats.rays_per_second;
+        }
+        if (benchmark_done) {
+            std::cout << "Benchmarked " << benchmark_frames << " frames\n"
+                      << "Render Time: " << render_time / frame_id << "ms/frame ("
+                      << 1000.f / (render_time / frame_id) << " FPS)\n";
+            if (stats.rays_per_second > 0) {
+                const std::string rays_per_sec =
+                    pretty_print_count(rays_per_second / frame_id);
+                std::cout << "Rays per-second " << rays_per_second / frame_id << " Ray/s ("
+                          << rays_per_sec << "Ray/s)\n";
+            }
+            done = true;
         }
 
         display->new_frame();
