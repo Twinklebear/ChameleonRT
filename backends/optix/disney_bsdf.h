@@ -100,10 +100,10 @@ __device__ float fresnel_dielectric(float cos_theta_i, float eta_i, float eta_t)
 __device__ float gtr_1(float cos_theta_h, float alpha)
 {
     if (alpha >= 1.f) {
-        return M_1_PI;
+        return M_1_PIF;
     }
     float alpha_sqr = alpha * alpha;
-    return M_1_PI * (alpha_sqr - 1.f) /
+    return M_1_PIF * (alpha_sqr - 1.f) /
            (log(alpha_sqr) * (1.f + (alpha_sqr - 1.f) * cos_theta_h * cos_theta_h));
 }
 
@@ -112,14 +112,14 @@ __device__ float gtr_1(float cos_theta_h, float alpha)
 __device__ float gtr_2(float cos_theta_h, float alpha)
 {
     float alpha_sqr = alpha * alpha;
-    return M_1_PI * alpha_sqr / pow2(1.f + (alpha_sqr - 1.f) * cos_theta_h * cos_theta_h);
+    return M_1_PIF * alpha_sqr / pow2(1.f + (alpha_sqr - 1.f) * cos_theta_h * cos_theta_h);
 }
 
 // D_GTR2 Anisotropic: Anisotropic generalized Trowbridge-Reitz with gamma=2
 // Burley notes eq. 13
 __device__ float gtr_2_aniso(float h_dot_n, float h_dot_x, float h_dot_y, float2 alpha)
 {
-    return M_1_PI /
+    return M_1_PIF /
            (alpha.x * alpha.y *
             pow2(pow2(h_dot_x / alpha.x) + pow2(h_dot_y / alpha.y) + h_dot_n * h_dot_n));
 }
@@ -191,7 +191,7 @@ __device__ float lambertian_pdf(const float3 &w_i, const float3 &n)
 {
     float d = dot(w_i, n);
     if (d > 0.f) {
-        return d * M_1_PI;
+        return d * M_1_PIF;
     }
     return 0.f;
 }
@@ -264,7 +264,7 @@ __device__ float3 disney_diffuse(const DisneyMaterial &mat,
     float fd90 = 0.5f + 2.f * mat.roughness * i_dot_h * i_dot_h;
     float fi = schlick_weight(n_dot_i);
     float fo = schlick_weight(n_dot_o);
-    return mat.base_color * M_1_PI * lerp(1.f, fd90, fi) * lerp(1.f, fd90, fo);
+    return mat.base_color * M_1_PIF * lerp(1.f, fd90, fi) * lerp(1.f, fd90, fo);
 }
 
 __device__ float3 disney_microfacet_isotropic(const DisneyMaterial &mat,
