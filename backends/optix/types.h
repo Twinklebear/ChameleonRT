@@ -1,12 +1,8 @@
 #pragma once
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846f
-#endif
+#define M_PIF 3.14159265358979323846f
 
-#ifndef M_1_PI
-#define M_1_PI 0.318309886183790671538f
-#endif
+#define M_1_PIF 0.318309886183790671538f
 
 #define EPSILON 0.0001f
 

@@ -93,14 +93,13 @@ extern "C" __global__ void __raygen__perspective_camera()
 #endif
             for (int i = 0; i < NUM_AO_SAMPLES; ++i) {
                 const float theta = sqrt(lcg_randomf(rng));
-                const float phi = 2.f * M_PI * lcg_randomf(rng);
+                const float phi = 2.f * M_PIF * lcg_randomf(rng);
 
                 const float x = cos(phi) * theta;
                 const float y = sin(phi) * theta;
                 const float z = sqrt(1.f - theta * theta);
 
                 ray_dir = normalize(x * v_x + y * v_y + z * v_z);
-
                 optixTrace(launch_params.scene,
                            ray_origin,
                            ray_dir,
