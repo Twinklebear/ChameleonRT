@@ -281,8 +281,8 @@ extern "C" __global__ void __miss__miss()
     optixSetPayload_1(__float_as_int(-1.f));
     float3 dir = optixGetWorldRayDirection();
     // Apply our miss "shader" to draw the checkerboard background
-    float u = (1.f + atan2(dir.x, -dir.z) * M_1_PI) * 0.5f;
-    float v = acos(dir.y) * M_1_PI;
+    float u = (1.f + atan2(dir.x, -dir.z) * M_1_PIF) * 0.5f;
+    float v = acos(dir.y) * M_1_PIF;
 
     int check_x = u * 10.f;
     int check_y = v * 10.f;
