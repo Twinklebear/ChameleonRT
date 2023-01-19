@@ -270,8 +270,12 @@ void RenderOptiX::build_raytracing_pipeline()
 {
     // Setup the OptiX Module (DXR equivalent is the Shader Library)
     OptixPipelineCompileOptions pipeline_opts = {};
-    pipeline_opts.traversableGraphFlags =
-        OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
+    if (scene_bvh.num_instances() == 1) {
+        pipeline_opts.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
+    } else {
+        pipeline_opts.traversableGraphFlags =
+            OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
+    }
     pipeline_opts.numPayloadValues = 8;
     pipeline_opts.numAttributeValues = 2;
     pipeline_opts.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
@@ -471,7 +475,11 @@ void RenderOptiX::update_view_parameters(const glm::vec3 &pos,
 #ifdef REPORT_RAY_STATS
     params.ray_stats_buffer = ray_stats_buffer.device_ptr();
 #endif
-    params.scene = scene_bvh.handle();
+    if (scene_bvh.num_instances() == 1) {
+        params.scene = meshes[0].handle();
+    } else {
+        params.scene = scene_bvh.handle();
+    }
 
     launch_params.upload(&params, sizeof(LaunchParams));
 }
