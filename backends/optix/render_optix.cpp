@@ -307,7 +307,7 @@ void RenderOptiX::build_raytracing_pipeline()
 
     OptixPipelineLinkOptions link_opts = {};
     link_opts.maxTraceDepth = 1;
-    link_opts.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+    link_opts.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
 
     pipeline = optix::compile_pipeline(device, pipeline_opts, link_opts, pipeline_progs);
 
