@@ -1,7 +1,6 @@
 #pragma once
 
 #define M_PIF 3.14159265358979323846f
-
 #define M_1_PIF 0.318309886183790671538f
 
 #define EPSILON 0.0001f
