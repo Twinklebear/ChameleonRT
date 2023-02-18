@@ -1,0 +1,242 @@
+#pragma once
+
+namespace kernel {
+
+struct float2 {
+    float x, y;
+};
+
+struct float3 {
+    float x, y, z;
+};
+
+struct float4 {
+    float x, y, z, w;
+};
+
+struct int2 {
+    int x, y;
+};
+
+struct int3 {
+    int x, y, z;
+};
+
+struct uint3 {
+    unsigned int x, y, z;
+};
+
+float4 make_float4(float x, float y, float z, float w)
+{
+    float4 v;
+    v.x = x;
+    v.y = y;
+    v.z = z;
+    v.w = w;
+    return v;
+}
+
+float4 make_float4(float c)
+{
+    return make_float4(c, c, c, c);
+}
+
+float3 make_float3(float x, float y, float z)
+{
+    float3 v;
+    v.x = x;
+    v.y = y;
+    v.z = z;
+    return v;
+}
+
+float3 make_float3(float4 a)
+{
+    float3 v;
+    v.x = a.x;
+    v.y = a.y;
+    v.z = a.z;
+    return v;
+}
+
+float3 make_float3(float c)
+{
+    return make_float3(c, c, c);
+}
+
+float length(const float3 v)
+{
+    return sycl::native::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+float3 normalize(const float3 v)
+{
+    float l = length(v);
+    if (l < 0.f) {
+        l = 0.0001f;
+    }
+    const float c = 1.f / l;
+    return make_float3(v.x * c, v.y * c, v.z * c);
+}
+
+float3 cross(const float3 a, const float3 b)
+{
+    float3 c;
+    c.x = a.y * b.z - a.z * b.y;
+    c.y = a.z * b.x - a.x * b.z;
+    c.z = a.x * b.y - a.y * b.x;
+    return c;
+}
+
+float3 neg(const float3 &a)
+{
+    return make_float3(-a.x, -a.y, -a.z);
+}
+
+bool all_zero(const float3 &v)
+{
+    return v.x == 0.f && v.y == 0.f && v.z == 0.f;
+}
+
+float dot(const float3 a, const float3 b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+float3 operator-(const float3 &a, const float3 &b)
+{
+    return make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+float3 operator-(const float3 &a, const float s)
+{
+    return make_float3(a.x - s, a.y - s, a.z - s);
+}
+
+float3 operator-(const float s, const float3 &a)
+{
+    return make_float3(s - a.x, s - a.y, s - a.z);
+}
+
+float3 operator+(const float3 &a, const float3 &b)
+{
+    return make_float3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+float4 operator+(const float4 &a, const float4 &b)
+{
+    return make_float4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
+}
+
+float3 operator+(const float3 &a, const float s)
+{
+    return make_float3(a.x + s, a.y + s, a.z + s);
+}
+
+float3 operator+(const float s, const float3 &a)
+{
+    return a + s;
+}
+
+float3 operator*(const float3 &a, const float s)
+{
+    return make_float3(a.x * s, a.y * s, a.z * s);
+}
+
+float4 operator*(const float4 &a, const float s)
+{
+    return make_float4(a.x * s, a.y * s, a.z * s, a.w * s);
+}
+
+float3 operator*(const float s, const float3 &a)
+{
+    return a * s;
+}
+
+float4 operator*(const float s, const float4 &a)
+{
+    return a * s;
+}
+
+float3 operator*(const float3 &a, const float3 &b)
+{
+    return make_float3(a.x * b.x, a.y * b.y, a.z * b.z);
+}
+
+float3 operator/(const float3 &a, const float s)
+{
+    return make_float3(a.x / s, a.y / s, a.z / s);
+}
+
+float3 operator/(const float s, const float3 &a)
+{
+    return make_float3(a.x / s, a.y / s, a.z / s);
+}
+
+float3 operator/(const float3 &a, const float3 &b)
+{
+    return make_float3(a.x / b.x, a.y / b.y, a.z / b.z);
+}
+
+float2 make_float2(float x, float y)
+{
+    float2 v;
+    v.x = x;
+    v.y = y;
+    return v;
+}
+
+float2 make_float2(float c)
+{
+    return make_float2(c, c);
+}
+
+float2 operator-(const float2 &a, const float2 &b)
+{
+    return make_float2(a.x - b.x, a.y - b.y);
+}
+
+float2 operator-(const float2 &a, const float s)
+{
+    return make_float2(a.x - s, a.y - s);
+}
+
+float2 operator-(const float s, const float2 &a)
+{
+    return make_float2(s - a.x, s - a.y);
+}
+
+float2 operator+(const float2 &a, const float2 &b)
+{
+    return make_float2(a.x + b.x, a.y + b.y);
+}
+
+float2 operator+(const float2 &a, const float s)
+{
+    return make_float2(a.x + s, a.y + s);
+}
+
+float2 operator+(const float s, const float2 &a)
+{
+    return a + s;
+}
+
+float2 operator*(const float2 &a, const float s)
+{
+    return make_float2(a.x * s, a.y * s);
+}
+
+float2 operator*(const float s, const float2 &a)
+{
+    return a * s;
+}
+
+int2 make_int2(int x, int y)
+{
+    int2 v;
+    v.x = x;
+    v.y = y;
+    return v;
+}
+
+}
