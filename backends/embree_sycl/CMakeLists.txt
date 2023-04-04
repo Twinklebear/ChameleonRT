@@ -5,7 +5,6 @@ if (NOT ENABLE_EMBREE_SYCL)
     return()
 endif()
 
-find_package(IntelDPCPP REQUIRED)
 find_package(embree 4 REQUIRED)
 find_package(TBB REQUIRED)
 
