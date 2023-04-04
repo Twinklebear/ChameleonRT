@@ -2,7 +2,7 @@
 
 [![CMake](https://github.com/Twinklebear/ChameleonRT/actions/workflows/cmake.yml/badge.svg)](https://github.com/Twinklebear/ChameleonRT/actions/workflows/cmake.yml)
 
-An example path tracer that runs on multiple ray tracing backends (Embree/DXR/OptiX/Vulkan/Metal/OSPRay).
+An example path tracer that runs on multiple ray tracing backends (Embree/Embree4+SYCL/DXR/OptiX/Vulkan/Metal/OSPRay).
 Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files,
 [tinygltf](https://github.com/syoyo/tinygltf) to load glTF files and, optionally,
 Ingo Wald's [pbrt-parser](https://github.com/ingowald/pbrt-parser) to load PBRTv3 files.
@@ -87,6 +87,35 @@ cmake .. -DENABLE_EMBREE=ON \
 You can then pass `embree` to use the Embree backend. The `TBBConfig.cmake` will
 be under `<tbb root>/cmake`, while `embree-config.cmake` is in the root of the
 Embree directory.
+
+### Embree4 + SYCL
+
+Dependencies: [Embree 4](https://embree.github.io/),
+[TBB](https://www.threadingbuildingblocks.org/) and Intel's oneAPI SYCL compiler.
+Currently (4/4/2023) the Embree4 + SYCL backend requires the
+[20230304 nightly](https://github.com/intel/llvm/releases/tag/sycl-nightly%2F20230304) build of
+the oneAPI SYCL compiler and the latest Intel Arc GPU drivers.
+I have tested with driver version 31.0.101.4255 on Windows, it seems that the Ubuntu
+drivers are on an older version with their last release showing as being in Oct 2022.
+
+To build the Embree4 + SYCL backend run CMake with:
+
+```
+cmake .. -G Ninja `
+    -DCMAKE_C_COMPILER=<path to dpcpp nightly>/bin/clang.exe `
+    -DCMAKE_CXX_COMPILER=<path to dpcpp nightly>/bin/clang++.exe `
+    -DENABLE_EMBREE_SYCL=ON `
+    -Dembree_DIR=<path to embree-config.cmake> `
+	-DTBB_DIR=<path TBBConfig.cmake> \
+```
+
+You can then pass `embree_sycl` to use the Embree4 + SYCL backend. The `TBBConfig.cmake` will
+be under `<tbb root>/cmake`, while `embree-config.cmake` is in the root of the
+Embree directory.
+
+Note that building the Embree4 + SYCL backend is currently incompatible with OptiX
+since the compiler is not supported by CUDA. You can simply build the OptiX backend
+(or the Embree4 + SYCL) backend in a separate build directory to get builds of both.
 
 ### OptiX
 

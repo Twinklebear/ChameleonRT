@@ -8,10 +8,6 @@ endif()
 find_package(embree 4 REQUIRED)
 find_package(TBB REQUIRED)
 
-# Build benchmark versions for the regular path tracer,
-# barycentrics and AO versions
-
-# regular path tracer
 add_library(crt_embree_sycl MODULE
     render_embree_plugin.cpp
     render_embree.cpp
