@@ -106,7 +106,8 @@ cmake .. -G Ninja `
     -DCMAKE_CXX_COMPILER=<path to dpcpp nightly>/bin/clang++.exe `
     -DENABLE_EMBREE_SYCL=ON `
     -Dembree_DIR=<path to embree-config.cmake> `
-	-DTBB_DIR=<path TBBConfig.cmake> \
+	-DTBB_DIR=<path TBBConfig.cmake>
+cmake --build . --config relwithdebinfo
 ```
 
 You can then pass `embree_sycl` to use the Embree4 + SYCL backend. The `TBBConfig.cmake` will
