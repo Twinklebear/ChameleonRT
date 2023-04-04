@@ -22,27 +22,12 @@ RenderEmbree::RenderEmbree()
       sycl_context(sycl_device),
       sycl_queue(
           sycl_device,
-          {sycl::property::queue::in_order(), sycl::property::queue::enable_profiling()})
-// material_params(make_usm_device_read_only_allocator<embree::MaterialParams>(sycl_queue)),
-// lights(make_usm_device_read_only_allocator<QuadLight>(sycl_queue)),
-// ispc_textures(make_usm_device_read_only_allocator<embree::ISPCTexture2D>(sycl_queue))
+          {sycl::property::queue::in_order(), sycl::property::queue::enable_profiling()}),
+      material_params(make_usm_device_read_only_allocator<embree::MaterialParams>(sycl_queue)),
+      lights(make_usm_device_read_only_allocator<QuadLight>(sycl_queue)),
+      ispc_textures(make_usm_device_read_only_allocator<embree::ISPCTexture2D>(sycl_queue))
 {
-    std::cout << "Embree4 + SYCL on " << sycl_device.get_info<sycl::info::device::name>()
-              << "\n";
-    int *mem = sycl::malloc_shared<int>(8 * 8, sycl_queue);
-
-    auto evt = sycl_queue.submit([&](sycl::handler &handler) {
-        const sycl::range<2> dispatch_size(8, 8);
-        handler.parallel_for(dispatch_size, [=](sycl::item<2> task_idx) {
-            int val = task_idx.get_id(0) + 8 * task_idx.get_id(1);
-            mem[val] = val;
-        });
-    });
-    evt.wait_and_throw();
-    for (size_t i = 0; i < 8 * 8; ++i) {
-        std::cout << "mem[" << i << "] = " << mem[i] << "\n";
-    }
-    // device = rtcNewSYCLDevice(sycl_context, nullptr);
+    device = rtcNewSYCLDevice(sycl_context, nullptr);
 }
 
 RenderEmbree::~RenderEmbree()
@@ -63,7 +48,6 @@ void RenderEmbree::initialize(const int fb_width, const int fb_height)
     fb_dims = glm::ivec2(fb_width, fb_height);
     img.resize(fb_width * fb_height);
 
-    /*
     accum_buffer = std::make_shared<embree::Buffer>(
         fb_width * fb_height * 3 * sizeof(float), embree::MemorySpace::DEVICE, sycl_queue);
 
@@ -78,7 +62,6 @@ void RenderEmbree::initialize(const int fb_width, const int fb_height)
     readback_ray_stats = std::make_shared<embree::Buffer>(
         fb_width * fb_height * sizeof(uint16_t), embree::MemorySpace::HOST, sycl_queue);
 #endif
-*/
 }
 
 void RenderEmbree::set_scene(const Scene &scene)
@@ -86,7 +69,6 @@ void RenderEmbree::set_scene(const Scene &scene)
     frame_id = 0;
     samples_per_pixel = scene.samples_per_pixel;
 
-    /*
     std::vector<std::shared_ptr<embree::TriangleMesh>> meshes;
     for (const auto &mesh : scene.meshes) {
         std::vector<std::shared_ptr<embree::Geometry>> geometries;
@@ -168,7 +150,6 @@ void RenderEmbree::set_scene(const Scene &scene)
     }
 
     std::copy(scene.lights.begin(), scene.lights.end(), std::back_inserter(lights));
-    */
 }
 
 RenderStats RenderEmbree::render(const glm::vec3 &pos,
@@ -185,7 +166,6 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
         frame_id = 0;
     }
 
-    /*
     glm::vec2 img_plane_size;
     img_plane_size.y = 2.f * std::tan(glm::radians(0.5f * fovy));
     img_plane_size.x = img_plane_size.y * static_cast<float>(fb_dims.x) / fb_dims.y;
@@ -218,23 +198,16 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
 #ifdef REPORT_RAY_STATS
     ispc_scene.ray_stats = reinterpret_cast<uint16_t *>(ray_stats->device_ptr());
 #endif
-*/
 
-    std::cout << "Rendering frame\n" << std::flush;
-    /*
     auto host_start = high_resolution_clock::now();
-    auto event = sycl_queue.submit([](sycl::handler &handler) {
-        // const sycl::range<2> dispatch_size(ispc_scene.fb_width, ispc_scene.fb_height);
-        const sycl::range<2> dispatch_size(16, 16);
+    auto event = sycl_queue.submit([=](sycl::handler &handler) {
+        const sycl::range<2> dispatch_size(ispc_scene.fb_width, ispc_scene.fb_height);
         handler.parallel_for(dispatch_size, [=](sycl::item<2> task_idx) {
-            // kernel::trace_ray(ispc_scene, view_params, task_idx.get_id(0),
-            // task_idx.get_id(1));
+            kernel::trace_ray(ispc_scene, view_params, task_idx.get_id(0), task_idx.get_id(1));
         });
     });
     event.wait_and_throw();
-    */
-    std::cout << "Frame rendered\n" << std::flush;
-    /*
+
     framebuffer->download(
         readback_framebuffer->host_ptr(), readback_framebuffer->size(), sycl_queue);
 #ifdef REPORT_RAY_STATS
@@ -250,7 +223,6 @@ RenderStats RenderEmbree::render(const glm::vec3 &pos,
     auto start = event.get_profiling_info<sycl::info::event_profiling::command_start>();
     auto end = event.get_profiling_info<sycl::info::event_profiling::command_end>();
     stats.render_time = (end - start) * 1.0e-6;
-    */
 
 #ifdef REPORT_RAY_STATS
     const uint16_t *rstats = reinterpret_cast<uint16_t *>(readback_ray_stats->host_ptr());

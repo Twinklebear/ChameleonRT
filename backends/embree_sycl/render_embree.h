@@ -24,13 +24,13 @@ struct RenderEmbree : RenderBackend {
 
     std::shared_ptr<embree::TopLevelBVH> scene_bvh;
 
-    // std::vector<embree::MaterialParams, usm_shared_allocator<embree::MaterialParams>>
-    //    material_params;
+    std::vector<embree::MaterialParams, usm_shared_allocator<embree::MaterialParams>>
+        material_params;
 
-    // std::vector<QuadLight, usm_shared_allocator<QuadLight>> lights;
+    std::vector<QuadLight, usm_shared_allocator<QuadLight>> lights;
 
-    // std::vector<embree::ISPCTexture2D, usm_shared_allocator<embree::ISPCTexture2D>>
-    //    ispc_textures;
+    std::vector<embree::ISPCTexture2D, usm_shared_allocator<embree::ISPCTexture2D>>
+        ispc_textures;
     // Texture data in device memory
     std::vector<std::shared_ptr<embree::Buffer>> texture_data;
 
