@@ -91,14 +91,20 @@ Embree directory.
 ### Embree4 + SYCL
 
 Dependencies: [Embree 4](https://embree.github.io/),
-[TBB](https://www.threadingbuildingblocks.org/) and Intel's oneAPI SYCL compiler.
+[TBB](https://www.threadingbuildingblocks.org/) and Intel's oneAPI toolkit
+and the nightly SYCL compiler.
 Currently (4/4/2023) the Embree4 + SYCL backend requires the
 [20230304 nightly](https://github.com/intel/llvm/releases/tag/sycl-nightly%2F20230304) build of
 the oneAPI SYCL compiler and the latest Intel Arc GPU drivers.
 I have tested with driver version 31.0.101.4255 on Windows, it seems that the Ubuntu
 drivers are on an older version with their last release showing as being in Oct 2022.
+The regular [oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html)
+is also required to provide additional library
+dependencies, and the build must be run within the oneAPI tools command line
+(or with the build environment scripts source'd).
 
-To build the Embree4 + SYCL backend run CMake with:
+After opening the oneAPI command prompt you can start powershell within it,
+then to build the Embree4 + SYCL backend run CMake with:
 
 ```
 cmake .. -G Ninja `
