@@ -147,8 +147,8 @@ jobs:
       - name: Setup Embree 
         working-directory: ${{github.workspace}}/build/deps
         run: |
-          wget https://github.com/embree/embree/releases/download/v${env:EMBREE_VERSION}/embree-${env:EMBREE_VERSION}.x64.vc14.windows.zip
-          7z x embree-${env:EMBREE_VERSION}.x64.vc14.windows.zip -y
+          wget https://github.com/embree/embree/releases/download/v${env:EMBREE_VERSION}/embree-${env:EMBREE_VERSION}.x64.windows.zip
+          7z x embree-${env:EMBREE_VERSION}.x64.windows.zip -y
 
       - name: Setup TBB
         working-directory: ${{github.workspace}}/build/deps
@@ -173,7 +173,7 @@ jobs:
           -DENABLE_DXR=ON
           -DENABLE_VULKAN=ON
           -DENABLE_OPTIX=ON
-          -Dembree_DIR="${env:GITHUB_WORKSPACE}/build/deps/embree-${env:EMBREE_VERSION}.x64.vc14.windows/lib/cmake/embree-${env:EMBREE_VERSION}"
+          -Dembree_DIR="${env:GITHUB_WORKSPACE}/build/deps/embree-${env:EMBREE_VERSION}.x64.windows/lib/cmake/embree-${env:EMBREE_VERSION}"
           -DTBB_DIR="${env:GITHUB_WORKSPACE}/build/deps/oneapi-tbb-${env:TBB_VERSION}/lib/cmake/tbb/"
           -DISPC_DIR="${env:GITHUB_WORKSPACE}/build/deps/ispc-v${env:ISPC_VERSION}-windows/bin/"
           -DVULKAN_SDK="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/vulkansdk-${env:VULKAN_SDK_VERSION}-windows-x64"
