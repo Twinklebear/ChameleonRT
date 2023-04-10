@@ -4,7 +4,7 @@ if (NOT ENABLE_EMBREE)
     return()
 endif()
 
-find_package(embree 3 REQUIRED)
+find_package(embree 4 REQUIRED)
 find_package(TBB REQUIRED)
 
 include(cmake/ISPC.cmake)

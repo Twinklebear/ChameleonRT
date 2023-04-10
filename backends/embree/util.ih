@@ -1,6 +1,6 @@
 #pragma once
 
-#include <embree3/rtcore.isph>
+#include <embree4/rtcore.isph>
 #include "float3.ih"
 
 #define M_PI 3.14159265358979323846f

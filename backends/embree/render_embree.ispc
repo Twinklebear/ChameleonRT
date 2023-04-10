@@ -6,7 +6,7 @@
 #include "mat4.ih"
 #include "texture2d.ih"
 #include "util.ih"
-#include <embree3/rtcore.isph>
+#include <embree4/rtcore.isph>
 
 struct ViewParams {
     float3 pos, dir_du, dir_dv, dir_top_left;
@@ -109,7 +109,6 @@ float3 sample_direct_light(const SceneContext *uniform scene,
                            const float3 &v_x,
                            const float3 &v_y,
                            const float3 &w_o,
-                           RTCIntersectContext *uniform incoherent_context,
                            QuadLight *uniform lights,
                            uniform uint32_t num_lights,
                            uint16_t &ray_stats,
@@ -120,6 +119,12 @@ float3 sample_direct_light(const SceneContext *uniform scene,
     uint32_t light_id = lcg_randomf(rng) * num_lights;
     light_id = min(light_id, num_lights - 1);
     QuadLight light = lights[light_id];
+
+    uniform RTCOccludedArguments occluded_args;
+    rtcInitOccludedArguments(&occluded_args);
+    occluded_args.flags = RTC_RAY_QUERY_FLAG_INCOHERENT;
+    occluded_args.feature_mask =
+        (RTCFeatureFlags)(RTC_FEATURE_FLAG_TRIANGLE | RTC_FEATURE_FLAG_INSTANCE);
 
     RTCRay shadow_ray;
 
@@ -136,7 +141,7 @@ float3 sample_direct_light(const SceneContext *uniform scene,
 
         set_ray(shadow_ray, hit_p, light_dir, EPSILON);
         shadow_ray.tfar = light_dist;
-        rtcOccludedV(scene->scene, incoherent_context, &shadow_ray);
+        rtcOccludedV(scene->scene, &shadow_ray, &occluded_args);
 #ifdef REPORT_RAY_STATS
         ++ray_stats;
 #endif
@@ -162,7 +167,7 @@ float3 sample_direct_light(const SceneContext *uniform scene,
                 float w = power_heuristic(1.f, bsdf_pdf, 1.f, light_pdf);
                 set_ray(shadow_ray, hit_p, w_i, EPSILON);
                 shadow_ray.tfar = light_dist;
-                rtcOccludedV(scene->scene, incoherent_context, &shadow_ray);
+                rtcOccludedV(scene->scene, &shadow_ray, &occluded_args);
 #ifdef REPORT_RAY_STATS
                 ++ray_stats;
 #endif
@@ -197,9 +202,6 @@ export void trace_rays(void *uniform _scene,
     SceneContext *uniform scene = (SceneContext * uniform) _scene;
     const ViewParams *uniform view_params = (const ViewParams *uniform)_view_params;
     Tile *uniform tile = (Tile * uniform) _tile;
-    uniform RTCIntersectContext context;
-    rtcInitIntersectContext(&context);
-    context.flags = RTC_INTERSECT_CONTEXT_FLAG_COHERENT;
 
     foreach (ray = 0 ... tile->width * tile->height) {
         const uint32_t i = mod(ray, tile->width);
@@ -229,16 +231,22 @@ export void trace_rays(void *uniform _scene,
                 set_ray_hit(path_ray, org, dir, 0.f);
             }
 
+            uniform RTCIntersectArguments intersect_args;
+            rtcInitIntersectArguments(&intersect_args);
+            intersect_args.flags = RTC_RAY_QUERY_FLAG_COHERENT;
+            intersect_args.feature_mask =
+                (RTCFeatureFlags)(RTC_FEATURE_FLAG_TRIANGLE | RTC_FEATURE_FLAG_INSTANCE);
+
             int bounce = 0;
             float3 path_throughput = make_float3(1.0);
             DisneyMaterial mat;
             mat4 matrix;
             do {
-                rtcIntersectV(scene->scene, &context, &path_ray);
+                rtcIntersectV(scene->scene, &path_ray, &intersect_args);
 #ifdef REPORT_RAY_STATS
                 ++ray_stats;
 #endif
-                context.flags = RTC_INTERSECT_CONTEXT_FLAG_INCOHERENT;
+                intersect_args.flags = RTC_RAY_QUERY_FLAG_INCOHERENT;
 
                 const int inst = path_ray.hit.instID[0];
                 const int geom = path_ray.hit.geomID;
@@ -297,7 +305,6 @@ export void trace_rays(void *uniform _scene,
                                                                       v_x,
                                                                       v_y,
                                                                       w_o,
-                                                                      &context,
                                                                       scene->lights,
                                                                       scene->num_lights,
                                                                       ray_stats,
@@ -361,4 +368,3 @@ export void tile_to_uint8(void *uniform _tile, uniform uint8_t *uniform fb)
         fb[fb_px + 3] = 255;
     }
 }
-

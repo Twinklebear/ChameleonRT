@@ -3,7 +3,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
-#include <embree3/rtcore.h>
+#include <embree4/rtcore.h>
 #include "lights.h"
 #include "material.h"
 #include <glm/glm.hpp>

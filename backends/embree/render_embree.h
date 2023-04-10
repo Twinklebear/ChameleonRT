@@ -3,7 +3,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
-#include <embree3/rtcore.h>
+#include <embree4/rtcore.h>
 #include "embree_utils.h"
 #include "material.h"
 #include "render_backend.h"

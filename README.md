@@ -2,7 +2,7 @@
 
 [![CMake](https://github.com/Twinklebear/ChameleonRT/actions/workflows/cmake.yml/badge.svg)](https://github.com/Twinklebear/ChameleonRT/actions/workflows/cmake.yml)
 
-An example path tracer that runs on multiple ray tracing backends (Embree/Embree4+SYCL/DXR/OptiX/Vulkan/Metal/OSPRay).
+An example path tracer that runs on multiple ray tracing backends (Embree/Embree+SYCL/DXR/OptiX/Vulkan/Metal/OSPRay).
 Uses [tinyobjloader](https://github.com/syoyo/tinyobjloader) to load OBJ files,
 [tinygltf](https://github.com/syoyo/tinygltf) to load glTF files and, optionally,
 Ingo Wald's [pbrt-parser](https://github.com/ingowald/pbrt-parser) to load PBRTv3 files.
@@ -72,7 +72,7 @@ your build of [Ingo Wald's pbrt-parser](https://github.com/ingowald/pbrt-parser)
 
 ### Embree
 
-Dependencies: [Embree](https://embree.github.io/),
+Dependencies: [Embree 4](https://embree.github.io/),
 [TBB](https://www.threadingbuildingblocks.org/) and [ISPC](https://ispc.github.io/).
 
 To build the Embree backend run CMake with:
@@ -88,7 +88,7 @@ You can then pass `embree` to use the Embree backend. The `TBBConfig.cmake` will
 be under `<tbb root>/cmake`, while `embree-config.cmake` is in the root of the
 Embree directory.
 
-### Embree4 + SYCL
+### Embree + SYCL
 
 Dependencies: [Embree 4](https://embree.github.io/),
 [TBB](https://www.threadingbuildingblocks.org/) and Intel's oneAPI toolkit
