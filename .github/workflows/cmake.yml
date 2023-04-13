@@ -200,7 +200,7 @@ jobs:
     macos:
       env:
         PACKAGE_NAME: chameleonrt-macOS-x86_64
-      runs-on: macos-11
+      runs-on: macos-12
 
       steps:
       - uses: actions/checkout@v2
