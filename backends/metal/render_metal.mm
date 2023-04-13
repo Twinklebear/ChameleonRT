@@ -4,6 +4,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <Metal/Metal.h>
+#include "metal_params.h"
 #include "metalrt_utils.h"
 #include "render_metal_embedded_metallib.h"
 #include "shader_types.h"
@@ -125,38 +126,25 @@ void RenderMetal::set_scene(const Scene &scene)
             }
         }
 
-        // Build the argument buffer for the instance. Each instance is passed its
+        // Build the instance arguments using bindless parameters. Each instance is passed its
         // inverse object transform (not provided by Metal), the list of geometry IDs
         // that make up its mesh, and a list of material IDs for each geometry
         {
-            metal::ArgumentEncoderBuilder args_builder(*context);
-            args_builder.add_constant(0, MTLDataTypeFloat4x4)
-                .add_buffer(1, MTLArgumentAccessReadOnly)
-                .add_buffer(2, MTLArgumentAccessReadOnly);
+            instance_args_buffer = std::make_shared<metal::Buffer>(
+                *context,
+                scene.instances.size() * sizeof(params::Instance),
+                MTLResourceStorageModeManaged);
 
-            const size_t instance_args_size = args_builder.encoded_length();
-
-            instance_args_buffer =
-                std::make_shared<metal::Buffer>(*context,
-                                                scene.instances.size() * instance_args_size,
-                                                MTLResourceStorageModeManaged);
-
-            size_t offset = 0;
+            auto *inst_params = static_cast<params::Instance *>(instance_args_buffer->data());
             for (size_t i = 0; i < scene.instances.size(); ++i) {
                 const auto &inst = scene.instances[i];
-                auto encoder = args_builder.encoder_for_buffer(*instance_args_buffer, offset);
-                glm::mat4 *inverse_tfm =
-                    reinterpret_cast<glm::mat4 *>(encoder->constant_data_at(0));
-                *inverse_tfm = glm::inverse(scene.instances[i].transform);
-
                 const auto &pm = scene.parameterized_meshes[inst.parameterized_mesh_id];
                 const auto &mesh = bvh->meshes[pm.mesh_id];
 
-                encoder->set_buffer(*mesh->geometry_id_buffer, 0, 1);
-                encoder->set_buffer(
-                    *parameterized_mesh_material_ids[inst.parameterized_mesh_id], 0, 2);
-
-                offset += instance_args_size;
+                inst_params[i].inverse_transform = glm::inverse(scene.instances[i].transform);
+                inst_params[i].geometries = mesh->geometry_id_buffer->gpu_address();
+                inst_params[i].material_ids =
+                    parameterized_mesh_material_ids[inst.parameterized_mesh_id]->gpu_address();
             }
             instance_args_buffer->mark_modified();
         }
@@ -177,26 +165,19 @@ void RenderMetal::set_scene(const Scene &scene)
 
         upload_textures(scene.textures);
 
-        // Pass the handles of the textures through an argument buffer
+        // Pass the handles of the textures through another parameter buffer
         {
-            metal::ArgumentEncoderBuilder args_builder(*context);
-            args_builder.add_texture(0, MTLArgumentAccessReadOnly);
-            const size_t tex_args_size = args_builder.encoded_length();
-
             texture_arg_buffer = std::make_shared<metal::Buffer>(
                 *context,
-                tex_args_size * std::max(textures.size(), size_t(1)),
+                sizeof(params::Texture) * std::max(textures.size(), size_t(1)),
                 MTLResourceStorageModeManaged);
 
-            size_t tex_args_offset = 0;
-            for (const auto &t : textures) {
-                auto encoder =
-                    args_builder.encoder_for_buffer(*texture_arg_buffer, tex_args_offset);
-                encoder->set_texture(*t, 0);
-                tex_args_offset += tex_args_size;
+            auto *tex_params = static_cast<params::Texture *>(texture_arg_buffer->data());
+            for (size_t i = 0; i < textures.size(); ++i) {
+                tex_params[i].tex = textures[i]->gpu_resource_id();
             }
+            texture_arg_buffer->mark_modified();
         }
-        texture_arg_buffer->mark_modified();
     }
 }
 
@@ -506,47 +487,33 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
             meshes.push_back(mesh);
         }
 
-        // Build the argument buffer for each geometry
-        metal::ArgumentEncoderBuilder geom_args_encoder_builder(*context);
-        geom_args_encoder_builder.add_buffer(0, MTLArgumentAccessReadOnly)
-            .add_buffer(1, MTLArgumentAccessReadOnly)
-            .add_buffer(2, MTLArgumentAccessReadOnly)
-            .add_buffer(3, MTLArgumentAccessReadOnly)
-            .add_constant(4, MTLDataTypeUInt)
-            .add_constant(5, MTLDataTypeUInt);
-
-        const uint32_t geom_args_size = geom_args_encoder_builder.encoded_length();
-        geometry_args_buffer = std::make_shared<metal::Buffer>(
-            *context, geom_args_size * total_geometries, MTLResourceStorageModeManaged);
-
         // Write the geometry arguments to the buffer
-        size_t geom_args_offset = 0;
+        geometry_args_buffer =
+            std::make_shared<metal::Buffer>(*context,
+                                            sizeof(params::Geometry) * total_geometries,
+                                            MTLResourceStorageModeManaged);
+
+        auto *geom_args = static_cast<params::Geometry *>(geometry_args_buffer->data());
+        size_t geom_idx = 0;
         for (const auto &m : meshes) {
             // Write the geometry data arguments
             for (const auto &g : m->geometries) {
-                auto encoder = geom_args_encoder_builder.encoder_for_buffer(
-                    *geometry_args_buffer, geom_args_offset);
-                encoder->set_buffer(*g.vertex_buf, 0, 0);
-                encoder->set_buffer(*g.index_buf, 0, 1);
+                geom_args[geom_idx].vertices = g.vertex_buf->gpu_address();
+                geom_args[geom_idx].indices = g.index_buf->gpu_address();
 
-                uint32_t *num_normals =
-                    reinterpret_cast<uint32_t *>(encoder->constant_data_at(4));
+                geom_args[geom_idx].num_normals = 0;
                 if (g.normal_buf) {
-                    encoder->set_buffer(*g.normal_buf, 0, 2);
-                    *num_normals = g.normal_buf->size() / sizeof(glm::vec3);
-                } else {
-                    *num_normals = 0;
+                    geom_args[geom_idx].normals = g.normal_buf->gpu_address();
+                    geom_args[geom_idx].num_normals = g.normal_buf->size() / sizeof(glm::vec3);
                 }
 
-                uint32_t *num_uvs = reinterpret_cast<uint32_t *>(encoder->constant_data_at(5));
+                geom_args[geom_idx].num_uvs = 0;
                 if (g.uv_buf) {
-                    encoder->set_buffer(*g.uv_buf, 0, 3);
-                    *num_uvs = g.uv_buf->size() / sizeof(glm::vec2);
-                } else {
-                    *num_uvs = 0;
+                    geom_args[geom_idx].uvs = g.uv_buf->gpu_address();
+                    geom_args[geom_idx].num_uvs = g.uv_buf->size() / sizeof(glm::vec2);
                 }
 
-                geom_args_offset += geom_args_size;
+                ++geom_idx;
             }
         }
         geometry_args_buffer->mark_modified();
@@ -584,4 +551,3 @@ void RenderMetal::upload_textures(const std::vector<Image> &scene_textures)
         }
     }
 }
-

@@ -105,6 +105,11 @@ void *Buffer::data()
     return buffer.contents;
 }
 
+uint64_t Buffer::gpu_address() const
+{
+    return buffer.gpuAddress;
+}
+
 void Buffer::mark_modified()
 {
     mark_range_modified(glm::uvec2(0, buffer.length));
@@ -174,6 +179,11 @@ void Texture2D::upload(const void *data) const
                bytesPerRow:pixel_size() * tex_dims.x];
 }
 
+MTLResourceID Texture2D::gpu_resource_id() const
+{
+    return texture.gpuResourceID;
+}
+
 size_t Texture2D::pixel_size() const
 {
     switch (format) {
@@ -231,75 +241,6 @@ std::shared_ptr<Heap> HeapBuilder::build()
     std::shared_ptr<Heap> heap = std::make_shared<Heap>();
     heap->heap = [device newHeapWithDescriptor:descriptor];
     return heap;
-}
-
-void ArgumentEncoder::set_buffer(Buffer &buffer, const size_t offset, const size_t index)
-{
-    [encoder setBuffer:buffer.buffer offset:offset atIndex:index];
-}
-
-void ArgumentEncoder::set_texture(Texture2D &texture, const size_t index)
-{
-    [encoder setTexture:texture.texture atIndex:index];
-}
-
-void *ArgumentEncoder::constant_data_at(const size_t index)
-{
-    return [encoder constantDataAtIndex:index];
-}
-
-ArgumentEncoderBuilder::ArgumentEncoderBuilder(Context &context) : device(context.device) {}
-
-ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_buffer(const size_t index,
-                                                           const MTLArgumentAccess access)
-{
-    MTLArgumentDescriptor *buf_desc = [MTLArgumentDescriptor argumentDescriptor];
-    buf_desc.index = index;
-    buf_desc.access = access;
-    buf_desc.dataType = MTLDataTypePointer;
-    [arguments addObject:buf_desc];
-
-    return *this;
-}
-
-ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_texture(const size_t index,
-                                                            const MTLArgumentAccess access)
-{
-    MTLArgumentDescriptor *buf_desc = [MTLArgumentDescriptor argumentDescriptor];
-    buf_desc.index = index;
-    buf_desc.access = access;
-    buf_desc.dataType = MTLDataTypeTexture;
-    [arguments addObject:buf_desc];
-
-    return *this;
-}
-
-ArgumentEncoderBuilder &ArgumentEncoderBuilder::add_constant(const size_t index,
-                                                             const MTLDataType type)
-{
-    MTLArgumentDescriptor *buf_desc = [MTLArgumentDescriptor argumentDescriptor];
-    buf_desc.index = index;
-    buf_desc.access = MTLArgumentAccessReadOnly;
-    buf_desc.dataType = type;
-    [arguments addObject:buf_desc];
-
-    return *this;
-}
-
-size_t ArgumentEncoderBuilder::encoded_length() const
-{
-    id<MTLArgumentEncoder> encoder = [device newArgumentEncoderWithArguments:arguments];
-    const size_t length = encoder.encodedLength;
-    return length;
-}
-
-std::shared_ptr<ArgumentEncoder> ArgumentEncoderBuilder::encoder_for_buffer(
-    Buffer &buffer, const size_t offset)
-{
-    auto encoder = std::make_shared<ArgumentEncoder>();
-    encoder->encoder = [device newArgumentEncoderWithArguments:arguments];
-    [encoder->encoder setArgumentBuffer:buffer.buffer offset:offset];
-    return encoder;
 }
 
 Geometry::Geometry(const std::shared_ptr<Buffer> &vertex_buf,
@@ -459,4 +400,3 @@ void TopLevelBVH::enqueue_build(Context &context,
 }
 
 };
-

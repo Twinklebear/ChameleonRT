@@ -7,49 +7,9 @@
 #include "shader_types.h"
 #include "util.metal"
 #include "util/texture_channel_mask.h"
+#include "metal_params.h"
 
-using namespace metal;
 using namespace raytracing;
-
-struct Geometry {
-    device packed_float3 *vertices [[id(0)]];
-    device packed_uint3 *indices [[id(1)]];
-    device packed_float3 *normals [[id(2)]];
-    device packed_float2 *uvs [[id(3)]];
-    uint32_t num_normals [[id(4)]];
-    uint32_t num_uvs [[id(5)]];
-};
-
-struct Instance {
-    float4x4 inverse_transform [[id(0)]];
-    device uint32_t *geometries [[id(1)]];
-    device uint32_t *material_ids [[id(2)]];
-};
-
-struct MaterialParams {
-    packed_float3 base_color;
-    float metallic;
-
-    float specular;
-    float roughness;
-    float specular_tint;
-    float anisotropy;
-
-    float sheen;
-    float sheen_tint;
-    float clearcoat;
-    float clearcoat_gloss;
-
-    float ior;
-    float specular_transmission;
-    float2 pad;
-};
-
-// Not sure if there's a cleaner way to pass a buffer of texture handles,
-// Metal didn't like device texture2d<float> *textures as a buffer parameter
-struct Texture {
-    texture2d<float> tex [[id(0)]];
-};
 
 constexpr sampler texture_sampler(address::repeat, filter::linear);
 
