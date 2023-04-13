@@ -32,6 +32,7 @@ struct RenderMetal : RenderBackend {
 #endif
 
     std::shared_ptr<metal::Heap> data_heap;
+    std::shared_ptr<metal::Heap> bottom_level_bvh_heap;
     std::shared_ptr<metal::Buffer> geometry_args_buffer;
 
     std::shared_ptr<metal::TopLevelBVH> bvh;

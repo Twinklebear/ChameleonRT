@@ -236,6 +236,13 @@ HeapBuilder &HeapBuilder::add_texture2d(const uint32_t width,
     return *this;
 }
 
+HeapBuilder &HeapBuilder::add_acceleration_structure(const size_t size)
+{
+    MTLSizeAndAlign size_align = [device heapAccelerationStructureSizeAndAlignWithSize:size];
+    descriptor.size += align_to(size_align.size, size_align.align);
+    return *this;
+}
+
 std::shared_ptr<Heap> HeapBuilder::build()
 {
     std::shared_ptr<Heap> heap = std::make_shared<Heap>();
@@ -285,11 +292,17 @@ void BVH::build(Context &context,
 }
 
 void BVH::enqueue_compaction(Context &context,
-                             id<MTLAccelerationStructureCommandEncoder> command_encoder)
+                             id<MTLAccelerationStructureCommandEncoder> command_encoder,
+                             std::shared_ptr<Heap> bvh_heap)
 {
-    const uint32_t compact_size = *reinterpret_cast<uint32_t *>(compacted_size_buffer->data());
-    id<MTLAccelerationStructure> compact_as =
-        [context.device newAccelerationStructureWithSize:compact_size];
+    const uint32_t compact_size = get_compact_size();
+    // Allocate the compact BVH in the heap if we were given a heap
+    id<MTLAccelerationStructure> compact_as;
+    if (bvh_heap) {
+        compact_as = [bvh_heap->heap newAccelerationStructureWithSize:compact_size];
+    } else {
+        compact_as = [context.device newAccelerationStructureWithSize:compact_size];
+    }
     [command_encoder copyAndCompactAccelerationStructure:bvh
                                  toAccelerationStructure:compact_as];
 
@@ -298,6 +311,11 @@ void BVH::enqueue_compaction(Context &context,
     scratch_buffer = nullptr;
 
     bvh = compact_as;
+}
+
+uint32_t BVH::get_compact_size() const
+{
+    return *reinterpret_cast<uint32_t *>(compacted_size_buffer->data());
 }
 
 BottomLevelBVH::BottomLevelBVH(const std::vector<Geometry> &geometries,

@@ -213,15 +213,6 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
         [command_encoder setBytes:&view_params length:sizeof(ViewParams) atIndex:0];
 
         [command_encoder setAccelerationStructure:bvh->bvh atBufferIndex:1];
-        // Also mark all BLAS's used
-        // TODO: Seems like we can't do a similar heap thing for the BLAS's to mark
-        // them all used at once?
-        // TODO: In Metal 3 it is now possible to allocate the acceleration structures on a
-        // heap, update this code to do that
-        // Metal 3 indirect command buffers also now support RT
-        for (auto &mesh : bvh->meshes) {
-            [command_encoder useResource:mesh->bvh usage:MTLResourceUsageRead];
-        }
 
         [command_encoder setBuffer:geometry_args_buffer->buffer offset:0 atIndex:2];
         [command_encoder setBuffer:bvh->instance_buffer->buffer offset:0 atIndex:3];
@@ -230,6 +221,7 @@ RenderStats RenderMetal::render(const glm::vec3 &pos,
         [command_encoder setBuffer:texture_arg_buffer->buffer offset:0 atIndex:6];
         [command_encoder setBuffer:light_buffer->buffer offset:0 atIndex:7];
         [command_encoder useHeap:data_heap->heap];
+        [command_encoder useHeap:bottom_level_bvh_heap->heap];
 
         [command_encoder setComputePipelineState:pipeline->pipeline];
 
@@ -475,16 +467,32 @@ std::vector<std::shared_ptr<metal::BottomLevelBVH>> RenderMetal::build_meshes(
             [command_buffer commit];
             [command_buffer waitUntilCompleted];
 
-            command_buffer = context->command_buffer();
-            command_encoder = [command_buffer accelerationStructureCommandEncoder];
+            // Split up build and compaction of the Mesh so that we can place the
+            // compact BVHs in a heap
 
-            mesh->enqueue_compaction(*context, command_encoder);
+            meshes.push_back(mesh);
+        }
+
+        // Compute the heap size we need to store all the compact BVHs
+        {
+            metal::HeapBuilder bvh_heap_builder(*context);
+            for (const auto &m : meshes) {
+                bvh_heap_builder.add_acceleration_structure(m->get_compact_size());
+            }
+            bottom_level_bvh_heap = bvh_heap_builder.build();
+        }
+
+        // Compact the BVHs into the heap
+        for (const auto &m : meshes) {
+            id<MTLCommandBuffer> command_buffer = context->command_buffer();
+            id<MTLAccelerationStructureCommandEncoder> command_encoder =
+                [command_buffer accelerationStructureCommandEncoder];
+
+            m->enqueue_compaction(*context, command_encoder, bottom_level_bvh_heap);
 
             [command_encoder endEncoding];
             [command_buffer commit];
             [command_buffer waitUntilCompleted];
-
-            meshes.push_back(mesh);
         }
 
         // Write the geometry arguments to the buffer

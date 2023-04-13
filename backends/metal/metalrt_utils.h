@@ -127,6 +127,9 @@ public:
                                MTLPixelFormat format,
                                MTLTextureUsage usage);
 
+    // Add a BVH based on its compacted size to the heap
+    HeapBuilder &add_acceleration_structure(const size_t size);
+
     std::shared_ptr<Heap> build();
 };
 
@@ -148,6 +151,7 @@ struct BVH {
 protected:
     std::shared_ptr<Buffer> compacted_size_buffer;
     std::shared_ptr<Buffer> scratch_buffer;
+    std::shared_ptr<Heap> heap;
 
     void build(Context &context,
                id<MTLAccelerationStructureCommandEncoder> command_encoder,
@@ -162,7 +166,11 @@ public:
                                id<MTLAccelerationStructureCommandEncoder> command_encoder) = 0;
 
     void enqueue_compaction(Context &context,
-                            id<MTLAccelerationStructureCommandEncoder> command_encoder);
+                            id<MTLAccelerationStructureCommandEncoder> command_encoder,
+                            std::shared_ptr<Heap> bvh_heap = nullptr);
+
+    // Get the compacted size after the build commands have been completed
+    uint32_t get_compact_size() const;
 };
 
 struct BottomLevelBVH : BVH {
