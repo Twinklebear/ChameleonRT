@@ -44,13 +44,14 @@ if (NOT TARGET SDL2::SDL2)
     endif()
 endif()
 
-target_link_libraries(util PUBLIC
-    SDL2::SDL2)
-
+# Put SDL2main before SDL2
 if (WIN32)
     target_link_libraries(util PUBLIC
         SDL2::SDL2main)
 endif()
+
+target_link_libraries(util PUBLIC
+    SDL2::SDL2)
 
 install(IMPORTED_RUNTIME_ARTIFACTS SDL2::SDL2
     DESTINATION bin)
