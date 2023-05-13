@@ -34,20 +34,6 @@ if (NOT TARGET SDL2::SDL2)
         IMPORTED_LOCATION ${SDL2_SHARED_LIBRARY})
     target_include_directories(SDL2::SDL2 INTERFACE
         ${SDL2_INCLUDE_DIRS})
-
-    if (WIN32)
-        # Same for SDL2main
-        find_library(SDL2MAIN_SHARED_LIBRARY SDL2main REQUIRED)
-        add_library(SDL2::SDL2main SHARED IMPORTED)
-        set_target_properties(SDL2::SDL2main PROPERTIES
-            IMPORTED_LOCATION ${SDL2MAIN_SHARED_LIBRARY})
-    endif()
-endif()
-
-# Put SDL2main before SDL2
-if (WIN32)
-    target_link_libraries(util PUBLIC
-        SDL2::SDL2main)
 endif()
 
 target_link_libraries(util PUBLIC

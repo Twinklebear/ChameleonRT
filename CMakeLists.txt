@@ -7,11 +7,8 @@ endif()
 
 add_definitions(-DNOMINMAX
     -DGLM_ENABLE_EXPERIMENTAL
-    -DWIN32_LEAN_AND_MEAN)
-
-if (NOT MSYS)
-    add_definitions(-DSDL_MAIN_HANDLED)
-endif()
+    -DWIN32_LEAN_AND_MEAN
+    -DSDL_MAIN_HANDLED)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
 # Output all render plugins to the root binary dir where the executable is
