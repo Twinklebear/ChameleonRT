@@ -12,7 +12,7 @@ env:
     EMBREE_VERSION: 4.0.1
     ISPC_VERSION: 1.19.0
     TBB_VERSION: 2021.2.0
-    OPTIX_VERSION: 7.6.0
+    OPTIX_VERSION: 7.7.0
 
 jobs:
     ubuntu:
