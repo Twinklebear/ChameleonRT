@@ -339,14 +339,14 @@ Module::Module(OptixDeviceContext &device,
 {
     char log[2048] = {0};
     size_t log_size = sizeof(log);
-    CHECK_OPTIX(optixModuleCreateFromPTX(device,
-                                         &compile_opts,
-                                         &pipeline_opts,
-                                         reinterpret_cast<const char *>(ptx),
-                                         ptex_len,
-                                         log,
-                                         &log_size,
-                                         &module));
+    CHECK_OPTIX(optixModuleCreate(device,
+                                  &compile_opts,
+                                  &pipeline_opts,
+                                  reinterpret_cast<const char *>(ptx),
+                                  ptex_len,
+                                  log,
+                                  &log_size,
+                                  &module));
 #if 0
 	if (log_size > 0) {
 		std::cout << log << "\n";
