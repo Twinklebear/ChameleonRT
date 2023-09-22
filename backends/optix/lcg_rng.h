@@ -47,8 +47,12 @@ __device__ uint32_t lcg_random(LCGRand &rng)
 
 __device__ float lcg_randomf(LCGRand &rng)
 {
-    return ldexp((float)lcg_random(rng), -32);
+    // ldexp(float(lcg_random(rng)), -32);
+    // ldexp has a few special cases, none of them applies when passing an integer to the function.
+    // Thus compute the result directly.
+    return float(lcg_random(rng)) * 2.3283064e-10f;
 }
+
 
 __device__ LCGRand get_rng(int frame_id)
 {
