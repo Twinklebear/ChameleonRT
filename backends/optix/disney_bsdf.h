@@ -99,12 +99,13 @@ __device__ float fresnel_dielectric(float cos_theta_i, float eta_i, float eta_t)
 // Burley notes eq. 4
 __device__ float gtr_1(float cos_theta_h, float alpha)
 {
-    if (alpha >= 1.f) {
-        return M_1_PIF;
-    }
     float alpha_sqr = alpha * alpha;
-    return M_1_PIF * (alpha_sqr - 1.f) /
-           (log(alpha_sqr) * (1.f + (alpha_sqr - 1.f) * cos_theta_h * cos_theta_h));
+    float result = M_1_PIF * (alpha_sqr - 1.f) /
+                   (log(alpha_sqr) * (1.f + (alpha_sqr - 1.f) * cos_theta_h * cos_theta_h));
+
+    result = alpha >= 1.f ? M_1_PIF : result;
+
+    return result;
 }
 
 // D_GTR2: Generalized Trowbridge-Reitz with gamma=2
@@ -198,26 +199,21 @@ __device__ float lambertian_pdf(const float3 &w_i, const float3 &n)
 
 __device__ float gtr_1_pdf(const float3 &w_o, const float3 &w_i, const float3 &n, float alpha)
 {
-    if (!same_hemisphere(w_o, w_i, n)) {
-        return 0.f;
-    }
+    float result_scale = same_hemisphere(w_o, w_i, n) ? 1.f : 0.f;
     float3 w_h = normalize(w_i + w_o);
     float cos_theta_h = dot(n, w_h);
     float d = gtr_1(cos_theta_h, alpha);
-    return d * cos_theta_h / (4.f * dot(w_o, w_h));
+    return result_scale * d * cos_theta_h / (4.f * dot(w_o, w_h));
 }
 
 __device__ float gtr_2_pdf(const float3 &w_o, const float3 &w_i, const float3 &n, float alpha)
 {
-    if (!same_hemisphere(w_o, w_i, n)) {
-        return 0.f;
-    }
+    float result_scale = same_hemisphere(w_o, w_i, n) ? 1.f : 0.f;
     float3 w_h = normalize(w_i + w_o);
     float cos_theta_h = dot(n, w_h);
     float d = gtr_2(cos_theta_h, alpha);
-    return d * cos_theta_h / (4.f * dot(w_o, w_h));
+    return result_scale * d * cos_theta_h / (4.f * dot(w_o, w_h));
 }
-
 __device__ float gtr_2_transmission_pdf(
     const float3 &w_o, const float3 &w_i, const float3 &n, float alpha, float ior)
 {
