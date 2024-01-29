@@ -22,7 +22,7 @@ jobs:
       runs-on: ubuntu-latest
 
       steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Create Build Environment
         run: |
@@ -49,7 +49,7 @@ jobs:
 
       # Provides VulkanSDK for Windows and OptiX for Windows/Linux
       - name: Fetch RT CI Dependencies
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
             ssh-key: ${{secrets.RT_CI_DEPS_KEY}}
             repository: Twinklebear/rt-ci-deps
@@ -98,7 +98,7 @@ jobs:
           tar -czvf ${PACKAGE_NAME}.tar.gz ${PACKAGE_NAME}
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
             name: ${{env.PACKAGE_NAME}}
             path: ${{github.workspace}}/install/${{env.PACKAGE_NAME}}.tar.gz
@@ -109,7 +109,7 @@ jobs:
       runs-on: windows-2022
 
       steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Create Build Environment
         run: |
@@ -123,7 +123,7 @@ jobs:
 
       # Provides VulkanSDK for Windows and OptiX for Windows/Linux
       - name: Fetch RT CI Dependencies
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
             ssh-key: ${{secrets.RT_CI_DEPS_KEY}}
             repository: Twinklebear/rt-ci-deps
@@ -192,7 +192,7 @@ jobs:
           7z a -tzip ${env:PACKAGE_NAME}.zip ${env:PACKAGE_NAME}
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
             name: ${{env.PACKAGE_NAME}}
             path: ${{github.workspace}}/install/${{env.PACKAGE_NAME}}.zip
@@ -203,7 +203,7 @@ jobs:
       runs-on: macos-13
 
       steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Create Build Environment
         run: |
@@ -250,7 +250,7 @@ jobs:
           tar -czvf ${PACKAGE_NAME}.tar.gz ${PACKAGE_NAME}
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
             name: ${{env.PACKAGE_NAME}}
             path: ${{github.workspace}}/install/${{env.PACKAGE_NAME}}.tar.gz
