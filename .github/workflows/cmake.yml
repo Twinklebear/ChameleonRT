@@ -225,6 +225,13 @@ jobs:
           wget https://github.com/oneapi-src/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-mac.tgz
           tar -xf oneapi-tbb-${TBB_VERSION}-mac.tgz
 
+      # Clean up python and other stuff we don't need so the right python can be installed with brew         
+      - name: Cleanup Python
+        run: |
+          brew uninstall azure-cli
+          brew uninstall --ignore-dependencies python
+          brew install --force --overwrite python@3.12
+
       - name: Setup ISPC
         run: brew install ispc
 
