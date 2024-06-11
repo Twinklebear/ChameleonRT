@@ -106,6 +106,7 @@ jobs:
     windows:
       env:
         PACKAGE_NAME: chameleonrt-windows-x86_64
+        CUDA_VERSION: 12.5
       runs-on: windows-2022
 
       steps:
@@ -135,10 +136,9 @@ jobs:
 
       - name: Setup CUDA
         run: |
-          $CUDA_VERSION_FULL = "12.0.0"
-          $CUDA_REPO_PKG_REMOTE = "https://developer.download.nvidia.com/compute/cuda/12.0.0/network_installers/cuda_12.0.0_windows_network.exe"
-          $CUDA_REPO_PKG_LOCAL = "cuda_12.0.0_windows_network.exe"
-          $CUDA_PACKAGES = "nvcc_12.0 cudart_12.0"
+          $CUDA_REPO_PKG_REMOTE = "https://developer.download.nvidia.com/compute/cuda/${env:CUDA_VERSION}.0/network_installers/cuda_${env:CUDA_VERSION}.0_windows_network.exe"
+          $CUDA_REPO_PKG_LOCAL = "cuda_${env:CUDA_VERSION}.0_windows_network.exe"
+          $CUDA_PACKAGES = "nvcc_${env:CUDA_VERSION} cudart_${env:CUDA_VERSION}"
           # Download the cuda network installer
           Invoke-WebRequest $CUDA_REPO_PKG_REMOTE -OutFile $CUDA_REPO_PKG_LOCAL | Out-Null
           # Invoke silent install of CUDA (via network installer)
@@ -178,7 +178,7 @@ jobs:
           -DISPC_DIR="${env:GITHUB_WORKSPACE}/build/deps/ispc-v${env:ISPC_VERSION}-windows/bin/"
           -DVULKAN_SDK="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/vulkansdk-${env:VULKAN_SDK_VERSION}-windows-x64"
           -DOptiX_INSTALL_DIR="${env:GITHUB_WORKSPACE}/build/deps/rt-ci-deps/NVIDIA-OptiX-SDK-${env:OPTIX_VERSION}-x86_64"
-          -DCUDA_TOOLKIT_ROOT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.0"
+          -DCUDA_TOOLKIT_ROOT_DIR="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v${env:CUDA_VERSION}"
           -DCMAKE_SYSTEM_VERSION="10.0.19042"
 
       - name: Build
