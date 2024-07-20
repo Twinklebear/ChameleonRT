@@ -134,7 +134,7 @@ vec3 sample_gtr_1_h(in const vec3 n, in const vec3 v_x, in const vec3 v_y, float
 	float alpha_sqr = alpha * alpha;
 	float cos_theta_h_sqr = (1.f - pow(alpha_sqr, 1.f - s.y)) / (1.f - alpha_sqr);
 	float cos_theta_h = sqrt(cos_theta_h_sqr);
-	float sin_theta_h = 1.f - cos_theta_h_sqr;
+	float sin_theta_h = sqrt(1.f - cos_theta_h_sqr);
 	vec3 hemi_dir = normalize(spherical_dir(sin_theta_h, cos_theta_h, phi_h));
 	return hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n;
 }
@@ -143,7 +143,7 @@ vec3 sample_gtr_2_h(in const vec3 n, in const vec3 v_x, in const vec3 v_y, float
 	float phi_h = 2.f * M_PI * s.x;
 	float cos_theta_h_sqr = (1.f - s.y) / (1.f + (alpha * alpha - 1.f) * s.y);
 	float cos_theta_h = sqrt(cos_theta_h_sqr);
-	float sin_theta_h = 1.f - cos_theta_h_sqr;
+	float sin_theta_h = sqrt(1.f - cos_theta_h_sqr);
 	vec3 hemi_dir = normalize(spherical_dir(sin_theta_h, cos_theta_h, phi_h));
 	return hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n;
 }

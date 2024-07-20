@@ -160,7 +160,7 @@ __device__ float3 sample_gtr_1_h(
     float alpha_sqr = alpha * alpha;
     float cos_theta_h_sqr = (1.f - pow(alpha_sqr, 1.f - s.y)) / (1.f - alpha_sqr);
     float cos_theta_h = sqrt(cos_theta_h_sqr);
-    float sin_theta_h = 1.f - cos_theta_h_sqr;
+    float sin_theta_h = sqrt(1.f - cos_theta_h_sqr);
     float3 hemi_dir = normalize(spherical_dir(sin_theta_h, cos_theta_h, phi_h));
     return hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n;
 }
@@ -171,7 +171,7 @@ __device__ float3 sample_gtr_2_h(
     float phi_h = 2.f * M_PIF * s.x;
     float cos_theta_h_sqr = (1.f - s.y) / (1.f + (alpha * alpha - 1.f) * s.y);
     float cos_theta_h = sqrt(cos_theta_h_sqr);
-    float sin_theta_h = 1.f - cos_theta_h_sqr;
+    float sin_theta_h = sqrt(1.f - cos_theta_h_sqr);
     float3 hemi_dir = normalize(spherical_dir(sin_theta_h, cos_theta_h, phi_h));
     return hemi_dir.x * v_x + hemi_dir.y * v_y + hemi_dir.z * n;
 }
