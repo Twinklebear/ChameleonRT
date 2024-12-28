@@ -52,6 +52,10 @@ target_link_libraries(crt_optix PUBLIC
     display
     ${CUDA_LIBRARIES})
 
+if (WIN32)
+    target_link_libraries(crt_optix PUBLIC ${CUDA_CUDA_LIBRARY})
+endif()
+
 install(TARGETS crt_optix
     LIBRARY DESTINATION bin)
 
