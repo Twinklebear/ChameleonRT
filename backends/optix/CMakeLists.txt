@@ -50,8 +50,7 @@ target_link_libraries(crt_optix PUBLIC
     util
     glad
     display
-    ${CUDA_LIBRARIES}
-    ${CUDA_CUDA_LIBRARY})
+    ${CUDA_LIBRARIES})
 
 install(TARGETS crt_optix
     LIBRARY DESTINATION bin)
