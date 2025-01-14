@@ -19,7 +19,7 @@ jobs:
       env:
         PACKAGE_NAME: chameleonrt-ubuntu2204-x86_64
 
-      runs-on: ubuntu-latest
+      runs-on: ubuntu-22.04
 
       steps:
       - uses: actions/checkout@v4
@@ -42,10 +42,10 @@ jobs:
 
       - name: Setup CUDA
         run: |
-          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
-          sudo dpkg -i cuda-keyring_1.0-1_all.deb
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update
-          sudo apt-get -y install cuda
+          sudo apt-get -y install cuda-toolkit
 
       # Provides VulkanSDK for Windows and OptiX for Windows/Linux
       - name: Fetch RT CI Dependencies
@@ -224,13 +224,6 @@ jobs:
         run: |
           wget https://github.com/oneapi-src/oneTBB/releases/download/v${TBB_VERSION}/oneapi-tbb-${TBB_VERSION}-mac.tgz
           tar -xf oneapi-tbb-${TBB_VERSION}-mac.tgz
-
-      # Clean up python and other stuff we don't need so the right python can be installed with brew         
-      - name: Cleanup Python
-        run: |
-          brew uninstall azure-cli
-          brew uninstall --ignore-dependencies python
-          brew install --force --overwrite python@3.12
 
       - name: Setup ISPC
         run: brew install ispc
